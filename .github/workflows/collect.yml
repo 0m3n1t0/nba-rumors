@@ -11,7 +11,7 @@ permissions:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +40,21 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: python src/script.py
+
+      - name: Cache voice models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: voice-models-v1
+
+      - name: Install voice engine
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q espeak-ng ffmpeg
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-voice.txt
+
+      - name: "Stage 4: voice (Kokoro, chosen voice #11)"
+        run: python src/tts.py
 
       - name: Save results
         if: always()

@@ -6,6 +6,7 @@ Four levers, tested one by one and then combined:
   mix        a bit more Bella (the energetic voice)
   text       punchier punctuation: Kokoro raises its intonation on "!" and short lines
   pitch/eq   a touch higher pitch and a light "bright" EQ for a livelier sound
+  flirty     playful, teasing script style (9-11)
 
 Output: samples/<name>.mp3
 """
@@ -37,7 +38,16 @@ TEXT_ENERGY = (
     "Wemby goes down with an ankle... and he comes back! Spurs win by one! "
     "So be honest. Is this the best game you've seen all season?"
 )
-TEXTS = {"calm": TEXT_CALM, "energy": TEXT_ENERGY}
+# Flirty = playful and teasing, not explicit (advertiser-friendly): short teasing lines,
+# a pause before the payoff, talking to "you" like a secret.
+TEXT_FLIRTY = (
+    "Okay, come closer. You missed Wembanyama on Wednesday? Oh, you're gonna hate yourself. "
+    "Fifty-two points. Twenty-four rebounds. Eight blocks. Nobody's done that since 1973! "
+    "And here's the juicy part... Dallas comes back. Takes the lead in the fourth. "
+    "Wemby goes down with an ankle... and then? He comes back. Spurs win by one! "
+    "So tell me, babe... is this the best game you've seen all season?"
+)
+TEXTS = {"calm": TEXT_CALM, "energy": TEXT_ENERGY, "flirty": TEXT_FLIRTY}
 
 BRIGHT = "equalizer=f=3500:t=q:w=1.2:g=2.5,acompressor=threshold=-18dB:ratio=2.5:attack=5:release=60"
 
@@ -51,6 +61,9 @@ CANDIDATES = {
     "6_B60_energytext_speed120_bright": ({"af_bella": 0.6, "af_nicole": 0.4}, 1.20, "energy", 1.0, True),
     "7_B60_energytext_speed120_pitchup": ({"af_bella": 0.6, "af_nicole": 0.4}, 1.20, "energy", 1.03, True),
     "8_B65_energytext_speed125_bright": ({"af_bella": 0.65, "af_nicole": 0.35}, 1.25, "energy", 1.0, True),
+    "9_B_flirty_speed115": ({"af_bella": 0.5, "af_nicole": 0.5}, 1.15, "flirty", 1.0, False),
+    "10_B60_flirty_speed120_bright": ({"af_bella": 0.6, "af_nicole": 0.4}, 1.20, "flirty", 1.0, True),
+    "11_B45_flirty_speed115": ({"af_bella": 0.45, "af_nicole": 0.55}, 1.15, "flirty", 1.0, True),
 }
 
 

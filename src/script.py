@@ -75,6 +75,8 @@ TASK
    story about the same player (for example an unrelated injury) unless a source links them.
    Quotes: only quote words that appear exactly in the source material.
 4. The last beat ends with ONE question to the viewer.
+   Write "say" for the ear in the voice profile's playful, flirty style: contractions,
+   "..." before the payoff, "!" on the big facts, no symbols or stat lines like "52-24-8".
 5. Write 10 title options (max 60 characters, include a name or a number) and a thumbnail
    text of max 3 words that does NOT repeat the title's words.
 6. List which sources you used by their number.

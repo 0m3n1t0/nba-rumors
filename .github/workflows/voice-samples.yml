@@ -9,24 +9,32 @@ permissions:
 jobs:
   samples:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
-      - name: Install voice engine (Kokoro, CPU)
+      - name: Cache voice models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: voice-models-chatterbox-v1
+
+      - name: Install voice engines (Kokoro + Chatterbox, CPU)
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q espeak-ng ffmpeg
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install "kokoro>=0.9" soundfile numpy
+          pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install chatterbox-tts
+          pip install "kokoro>=0.9" soundfile
 
       - name: Record samples
         run: python src/voice_samples.py
 
       - name: Save samples
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: voice-samples

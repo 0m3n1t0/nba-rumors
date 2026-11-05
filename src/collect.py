@@ -37,6 +37,11 @@ HOT_WORDS = {
     "out for season": 5, "surgery": 3, "contract": 2, "extension": 2, "max": 2,
     "free agent": 3, "buyout": 3, "waived": 2, "signs": 2, "sources": 2,
     "reportedly": 2, "shocking": 2, "blockbuster": 5,
+    "fires back": 5, "responds": 3, "tension": 4, "altercation": 5, "scuffle": 4,
+    "wants out": 5, "investigation": 4, "controversy": 4, "accused": 3, "benched": 3,
+    "furious": 4, "heated": 3, "shade": 3, "slam": 3, "jab": 3, "trash talk": 4,
+    "unloads": 5, "rips": 5, "clap back": 5, "trade request": 6, "confrontation": 5,
+    "disrespect": 4, "criticizes": 4, "argument": 4,
 }
 
 # Routine in-game notes ("X exits to locker room") are not stories.
@@ -230,7 +235,7 @@ def score(group: list[dict]) -> dict:
     value = (
         len(publishers) * 4          # many outlets covering it = big story
         + len(tier1) * 3             # trusted outlets = safer and bigger
-        + min(hot, 15)               # drama / click words, capped
+        + min(hot, 25)               # drama / click words, capped (drama is the channel)
         + max(0, 12 - hours_old) / 2 # freshness bonus for the last 12 hours
     )
     if routine:

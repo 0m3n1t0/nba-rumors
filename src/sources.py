@@ -23,6 +23,13 @@ FEEDS = [
     {"name": "GN: drama", "url": GOOGLE_NEWS.format(q="NBA+drama+OR+feud+OR+locker+room"), "tier": 2},
     {"name": "GN: free agency", "url": GOOGLE_NEWS.format(q="NBA+free+agency+OR+contract+extension"), "tier": 2},
     {"name": "GN: fired coach", "url": GOOGLE_NEWS.format(q="NBA+coach+fired+OR+suspended+OR+fined"), "tier": 2},
+    # Drama and intrigue: the channel's main focus
+    {"name": "GN: trade request", "url": GOOGLE_NEWS.format(q="NBA+%22trade+request%22+OR+%22wants+out%22+OR+%22requests+trade%22"), "tier": 2},
+    {"name": "GN: beef", "url": GOOGLE_NEWS.format(q="NBA+beef+OR+%22calls+out%22+OR+%22fires+back%22+OR+%22responds+to%22"), "tier": 2},
+    {"name": "GN: rift", "url": GOOGLE_NEWS.format(q="NBA+rift+OR+tension+OR+frustrated+OR+unhappy"), "tier": 2},
+    {"name": "GN: ejected", "url": GOOGLE_NEWS.format(q="NBA+ejected+OR+altercation+OR+scuffle+OR+technical"), "tier": 2},
+    {"name": "GN: front office", "url": GOOGLE_NEWS.format(q="NBA+%22front+office%22+OR+owner+OR+GM+controversy"), "tier": 2},
+    {"name": "GN: investigation", "url": GOOGLE_NEWS.format(q="NBA+investigation+OR+%22league+office%22+OR+punishment"), "tier": 2},
 ]
 
 # Publishers found inside Google News items that count as tier 1.

@@ -342,7 +342,8 @@ def main() -> None:
 
     # Editor's picks first, then the next best eligible stories as backups.
     picked = set(editor["shorts"])
-    backups = [r["id"] for r in sorted(editor["ranked"], key=lambda r: -r.get("virality", 0))
+    backups = [r["id"] for r in sorted(editor["ranked"],
+                                       key=lambda r: (-r.get("drama", 0), -r.get("virality", 0)))
                if r["id"] not in picked and r.get("nba") and r.get("kind") != "filler"]
     dupes = set()
     shorts = []

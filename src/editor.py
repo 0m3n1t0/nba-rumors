@@ -25,7 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-TOP_N = 30          # how many collector topics the editor reads
+TOP_N = 40          # how many collector topics the editor reads
 TIMEOUT = 300       # seconds
 
 PROMPT = """You are the head editor of "NBA Rumors", a fast-growing YouTube channel about
@@ -45,6 +45,10 @@ Judge every topic:
   ("filler" = betting previews, odds, generic stat recaps, opinion lists, routine injury reports)
 - "virality": 1-10. 10 = everyone in NBA Twitter is talking about it. Big names,
   real conflict, surprise and stakes raise it. Routine news lowers it.
+- "drama": 1-10. How much scandal, conflict and intrigue it carries: feuds, players vs
+  their team, trade requests, locker room tension, coaches on the hot seat, fines,
+  suspensions, ejections, front office fights, a star calling someone out. A great stat
+  line alone is drama 2-3, however historic.
 - "same_as": list of other ids that are the same story (so we never make two videos about it)
 - "why": one short sentence, the reason fans will care (or not)
 - "hook": the first sentence of a Short about it, max 15 words, punchy but TRUE to
@@ -53,11 +57,17 @@ Judge every topic:
 Then pick:
 - "shorts": the 3 best ids for Shorts today. Must be nba=true, kind != "filler",
   verified=true, and not duplicates of each other.
+  THIS CHANNEL IS ABOUT DRAMA AND INTRIGUE. Rank by drama first, virality second.
+  At least 2 of the 3 must have drama >= 6 when such stories exist today. A historic
+  performance gets a slot only if it is truly the story of the day.
+  Sensitive legal or personal allegations (crime, abuse, private life): pick them only if
+  trusted outlets report them, and never as entertainment. No gossip about private life,
+  family, relationships or health that the sources do not report.
 - "long": one id (or a short theme that ties several ids together) for an
   8-10 minute video this week, with "long_ids" listing the ids it uses.
 
 Return ONLY valid JSON, no markdown, in exactly this shape:
-{"ranked": [{"id": 0, "nba": true, "kind": "...", "virality": 7, "same_as": [], "why": "...", "hook": "..."}],
+{"ranked": [{"id": 0, "nba": true, "kind": "...", "virality": 7, "drama": 8, "same_as": [], "why": "...", "hook": "..."}],
  "shorts": [0, 1, 2],
  "long": {"title_idea": "...", "long_ids": [0, 3]}}
 
@@ -122,16 +132,19 @@ def write_summary(data: dict, topics: list[dict]) -> None:
     for n, i in enumerate(data["shorts"], 1):
         r = by_id.get(i, {})
         lines.append(f"**{n}. {topics[i]['headline']}**  ")
-        lines.append(f"virality {r.get('virality', '?')}/10 · {r.get('kind', '?')} · {r.get('why', '')}  ")
+        lines.append(f"drama {r.get('drama', '?')}/10 · virality {r.get('virality', '?')}/10 · "
+                     f"{r.get('kind', '?')} · {r.get('why', '')}  ")
         lines.append(f"> Hook: {r.get('hook', '')}")
         lines.append("")
     lg = data["long"]
     lines += ["### 📺 Long video idea", "", f"**{lg.get('title_idea', '')}**",
               "uses: " + ", ".join(topics[i]["headline"] for i in lg["long_ids"]), ""]
-    lines += ["### All judged topics", "", "| id | virality | kind | NBA | topic |", "|---|---|---|---|---|"]
-    for r in sorted(data["ranked"], key=lambda r: -r.get("virality", 0)):
+    lines += ["### All judged topics", "", "| id | drama | virality | kind | NBA | topic |",
+              "|---|---|---|---|---|---|"]
+    for r in sorted(data["ranked"], key=lambda r: (-r.get("drama", 0), -r.get("virality", 0))):
         nba = "✅" if r.get("nba") else "❌"
-        lines.append(f"| {r['id']} | {r.get('virality')} | {r.get('kind')} | {nba} | {topics[r['id']]['headline']} |")
+        lines.append(f"| {r['id']} | {r.get('drama')} | {r.get('virality')} | {r.get('kind')} | {nba} | "
+                     f"{topics[r['id']]['headline']} |")
     text = "\n".join(lines)
     print(text)
     path = os.environ.get("GITHUB_STEP_SUMMARY")

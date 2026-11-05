@@ -48,10 +48,29 @@ ROUTINE = re.compile(
 # Speculation and filler ("predicted to trade", "trade idea") is not news.
 SPECULATION = re.compile(
     r"\b(predicted|prediction|trade idea|proposal|mock|could trade|should trade|"
-    r"could part|could land|ideal trade|dream trade|hypothetical|ranking every)\b",
+    r"could part|could land|ideal trade|dream trade|hypothetical|ranking every|"
+    r"odds|betting|best bets?|picks|player props|preview|start time|how to watch|"
+    r"box score|stats tonight|fantasy)\b",
     re.I,
 )
 # Overlapping pairs of capitalized words, so Title Case Headlines still match names.
+TEAMS = (
+    "hawks celtics nets hornets bulls cavaliers cavs mavericks mavs nuggets pistons warriors "
+    "rockets pacers clippers lakers grizzlies heat bucks timberwolves wolves pelicans knicks "
+    "thunder magic 76ers sixers suns blazers kings spurs raptors jazz wizards"
+).split()
+# Stars whose name alone makes it an NBA story (drama often skips the team name).
+STARS = (
+    "lebron bronny wembanyama jokic curry durant giannis antetokounmpo doncic luka embiid "
+    "tatum edwards morant kyrie harden butler gilgeous-alexander shai booker brunson haliburton"
+).split()
+NBA_ANCHOR = re.compile(r"\bnba\b|\b(" + "|".join(TEAMS + STARS) + r")\b", re.I)
+OTHER_LEAGUE = re.compile(
+    r"\b(wnba|nhl|nfl|mlb|mls|ncaa|college|football|hockey|baseball|soccer|euroleague|"
+    r"g league|liberty|valkyries)\b",
+    re.I,
+)
+
 NAME = re.compile(r"(?=\b([A-Z][a-z]+(?:[-'][A-Za-z]+)?) ([A-Z][a-z]+(?:[-'][A-Za-z]+)?)\b)")
 NOT_NAMES = {"Trade Rumors", "Free Agency", "Trade Deadline", "Locker Room", "Season Debut",
              "Golden State", "New York", "Los Angeles", "San Antonio", "Oklahoma City",
@@ -97,6 +116,10 @@ def normalize(entry, feed) -> dict | None:
         if " - " in title:
             title = title.rsplit(" - ", 1)[0].strip()
         tier = 1 if any(p in publisher.lower() for p in TIER1_PUBLISHERS) else 2
+        # Wide-net searches leak other leagues; keep only clearly NBA stories.
+        text = f"{title} {entry.get('summary', '')}"
+        if OTHER_LEAGUE.search(title) or not NBA_ANCHOR.search(text):
+            return None
 
     published = None
     for key in ("published_parsed", "updated_parsed"):
@@ -197,8 +220,8 @@ def score(group: list[dict]) -> dict:
     text = " ".join(it["title"].lower() for it in group)
 
     hot = sum(w for word, w in HOT_WORDS.items() if re.search(rf"\b{re.escape(word)}\b", text))
-    routine = all(ROUTINE.search(it["title"]) for it in group)
-    speculative = all(SPECULATION.search(it["title"]) for it in group)
+    routine = sum(bool(ROUTINE.search(it["title"])) for it in group) * 2 >= len(group)
+    speculative = sum(bool(SPECULATION.search(it["title"])) for it in group) * 2 >= len(group)
     newest = max((it["published"] for it in group if it["published"]), default=None)
     hours_old = 24.0
     if newest:

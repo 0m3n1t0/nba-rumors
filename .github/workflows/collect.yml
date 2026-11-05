@@ -62,6 +62,14 @@ jobs:
       - name: "Stage 4: voice (Kokoro, chosen voice #11)"
         run: python src/tts.py
 
+      - name: "Stage 4b: yt-edit (cut dead air in the narration)"
+        run: python src/audio_qc.py
+
+      - name: "Long-video skills: yt-chapters + yt-shorts (sleep until a long video exists)"
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: python src/long_tools.py
+
       - name: Save results
         if: always()
         uses: actions/upload-artifact@v4

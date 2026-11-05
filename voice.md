@@ -76,7 +76,7 @@ in the last 3 hours. No slurs, no insults about a player's family or body.
 
 ## My format
 
-- Shorts: 40-55 seconds (100-135 words). Hook in the first sentence, no intro, no channel name
+- Shorts: 25-35 seconds (60-80 words), the length of the niche's top Shorts. Hook in the first sentence, no intro, no channel name
   at the start. One clear story. End with one question to the viewer to drive comments.
 - Long videos: 8-10 minutes, 3-5 connected stories, chapters, a recap at the end.
 - Faceless: stat cards, headline cards, quote cards with the source on screen. No game footage,

@@ -94,7 +94,9 @@ Return ONLY valid JSON in exactly this shape:
 """
 
 
-HUMANIZE = """You are the editor who makes NBA Rumors scripts sound human.
+HUMANIZE = """You are the editor who makes NBA Rumors scripts sound human, and you edit to the
+level of America's best sports writers and NBA insiders (see "How the best write" in the
+voice profile): a vivid detail first, tension and a turn, clear stakes, a kicker at the end.
 
 VOICE PROFILE:
 {voice}

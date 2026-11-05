@@ -67,10 +67,21 @@ def finish(wav: Path, mp3: Path) -> None:
                     "-ar", "44100", "-b:a", "192k", str(mp3)], check=True)
 
 
+def load_16k(mp3: Path) -> np.ndarray:
+    """Decode with ffmpeg to 16 kHz mono float32 (what Whisper expects).
+
+    faster-whisper's own decoder (PyAV) breaks with newer `av` releases,
+    so we never let it open files.
+    """
+    raw = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(mp3), "-f", "f32le",
+                          "-ac", "1", "-ar", "16000", "-"], check=True, capture_output=True).stdout
+    return np.frombuffer(raw, dtype=np.float32)
+
+
 def word_times(mp3: Path) -> list[dict]:
     from faster_whisper import WhisperModel
     model = WhisperModel("base.en", device="cpu", compute_type="int8")
-    segments, _ = model.transcribe(str(mp3), word_timestamps=True, language="en")
+    segments, _ = model.transcribe(load_16k(mp3), word_timestamps=True, language="en")
     return [{"word": w.word.strip(), "start": round(w.start, 2), "end": round(w.end, 2)}
             for seg in segments for w in seg.words]
 

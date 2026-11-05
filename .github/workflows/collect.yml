@@ -26,6 +26,12 @@ jobs:
       - name: "Stage 1: collect and rank headlines"
         run: python src/collect.py
 
+      - name: "Stage 1b: audience signals (YouTube views + search)"
+        env:
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: python src/signals.py
+
       - name: Install Claude Code
         run: |
           curl -fsSL https://claude.ai/install.sh | bash

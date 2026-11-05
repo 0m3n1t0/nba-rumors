@@ -84,6 +84,20 @@ TOPICS:
 """
 
 
+PLAN = ROOT / "plan" / "week.json"
+
+
+def plan_note() -> str:
+    """This week's yt-plan (written by the weekly job), so the plan steers the daily picks."""
+    if not PLAN.exists():
+        return ""
+    plan = json.loads(PLAN.read_text(encoding="utf-8"))
+    return ("\nTHIS WEEK'S PLAN (yt-plan): focus: " + str(plan.get("focus", "")) + "; long videos: "
+            + "; ".join(f"{l.get('day')}: {l.get('title_idea')}" for l in plan.get("long_videos", []))
+            + "; Shorts themes: " + ", ".join(plan.get("shorts_themes", []))
+            + ". Prefer stories that fit the plan when they are equally strong; news still wins.\n")
+
+
 def build_input(topics: list[dict]) -> str:
     rows = []
     for i, t in enumerate(topics[:TOP_N]):
@@ -97,7 +111,7 @@ def build_input(topics: list[dict]) -> str:
             "search_hits": t.get("search_hits", 0),
             "samples": [f'{it["title"]} ({it["publisher"]})' for it in t["items"][:4]],
         })
-    return PROMPT + json.dumps(rows, indent=1)
+    return PROMPT.replace("TOPICS:\n", plan_note() + "TOPICS:\n") + json.dumps(rows, indent=1)
 
 
 def ask_claude(prompt: str) -> str:

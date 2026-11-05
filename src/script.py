@@ -33,6 +33,7 @@ import hookscore  # noqa: E402  (youtube-agent-skill)
 import title as titlecheck  # noqa: E402  (youtube-agent-skill)
 
 MAX_ARTICLES = 3
+MIN_MATERIAL = 600   # characters of real article text; less = the story is only a headline
 ARTICLE_CHARS = 3500
 TIMEOUT = 300
 NO_TOOLS = "Bash,Edit,Write,Read,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task"
@@ -144,11 +145,14 @@ def ask_claude(prompt: str) -> dict:
     return json.loads(text[start:end + 1])
 
 
+# "one", "first" and "second" are left out: in speech they are rarely numbers
+# ("one of these stars", "second quarter").
 WORD_NUMBERS = {w: str(i) for i, w in enumerate(
     "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
-    "fifteen sixteen seventeen eighteen nineteen twenty".split())}
-WORD_NUMBERS.update({"thirty": "30", "forty": "40", "fifty": "50", "first": "1", "second": "2",
+    "fifteen sixteen seventeen eighteen nineteen twenty".split()) if i > 1}
+WORD_NUMBERS.update({"thirty": "30", "forty": "40", "fifty": "50",
                      "third": "3", "fourth": "4", "fifth": "5"})
+IGNORED_NUMBERS = {"1", "2"}
 
 
 def numbers(text: str) -> set[str]:
@@ -162,7 +166,7 @@ def numbers(text: str) -> set[str]:
 def fact_check(script_text: str, sources: list[dict]) -> list[str]:
     """Every number spoken must exist somewhere in the source material."""
     material = " ".join(f"{s['title']} {s.get('summary', '')} {s['text']}" for s in sources)
-    return sorted(numbers(script_text) - numbers(material))
+    return sorted(numbers(script_text) - numbers(material) - IGNORED_NUMBERS)
 
 
 def quote_check(text: str, sources: list[dict]) -> list[str]:
@@ -181,6 +185,9 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     topic = editor["topics"][topic_id]
     judged = next((r for r in editor["ranked"] if r["id"] == topic_id), {})
     sources = gather_sources(topic, editor, topic_id)
+    material = sum(len(src["text"]) for src in sources)
+    if material < MIN_MATERIAL:
+        raise ValueError(f"only {material} characters of article text, not enough for a true script")
 
     prompt = PROMPT.format(
         voice=voice,
@@ -208,7 +215,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     spoken = " ".join([hooks[0]["text"]] + [b.get("say", "") for b in beats]) if hooks else ""
     on_screen = " ".join(b.get("on_screen", "") for b in beats)
     unsupported = fact_check(f"{spoken} {on_screen}", sources)
-    bad_quotes = quote_check(f"{spoken} {on_screen}", sources)
+    bad_quotes = quote_check(spoken, sources)
     words = len(spoken.split())
 
     used = [sources[i - 1] for i in draft.get("sources_used", []) if 1 <= i <= len(sources)]
@@ -275,13 +282,25 @@ def main() -> None:
     formulas = json.loads((VENDOR / "hooks.json").read_text(encoding="utf-8"))
     OUT.mkdir(parents=True, exist_ok=True)
 
+    # Editor's picks first, then the next best eligible stories as backups.
+    picked = set(editor["shorts"])
+    backups = [r["id"] for r in sorted(editor["ranked"], key=lambda r: -r.get("virality", 0))
+               if r["id"] not in picked and r.get("nba") and r.get("kind") != "filler"]
+    dupes = set()
     shorts = []
-    for n, topic_id in enumerate(editor["shorts"], 1):
+    for topic_id in editor["shorts"] + backups:
+        if len(shorts) == 3:
+            break
+        if topic_id in dupes:
+            continue
+        n = len(shorts) + 1
         try:
             short = build_short(n, topic_id, editor, voice, formulas)
         except Exception as exc:
-            print(f"[!] Short {n} failed: {exc}")
+            print(f"[!] skipped topic {topic_id}: {exc}")
             continue
+        judged = next((r for r in editor["ranked"] if r["id"] == topic_id), {})
+        dupes.update(judged.get("same_as", []))
         (OUT / f"short_{n}.json").write_text(json.dumps(short, indent=2), encoding="utf-8")
         shorts.append(short)
     write_summary(shorts)

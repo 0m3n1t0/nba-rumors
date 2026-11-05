@@ -27,8 +27,9 @@ import trafilatura
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 OUT = DATA / "scripts"
-VENDOR = ROOT / "vendor" / "yt_skills"
-sys.path.insert(0, str(VENDOR))
+VENDOR = ROOT / "vendor" / "youtube-agent-skill" / "skills"
+sys.path.insert(0, str(VENDOR / "yt-script"))
+sys.path.insert(0, str(VENDOR / "yt-package"))
 import hookscore  # noqa: E402  (youtube-agent-skill)
 import title as titlecheck  # noqa: E402  (youtube-agent-skill)
 
@@ -44,6 +45,15 @@ PROMPT = """You write YouTube Shorts scripts for the NBA Rumors channel.
 
 VOICE PROFILE (follow it exactly):
 {voice}
+
+THE METHOD (youtube-agent-skill SKILL.md files, follow them; ignore their "ask the user"
+and "ship it?" steps, this runs automatically):
+--- yt-script ---
+{skill_script}
+--- yt-package ---
+{skill_package}
+--- yt-seo ---
+{skill_seo}
 
 HOOK FORMULAS (from youtube-agent-skill):
 {formulas}
@@ -90,6 +100,10 @@ TASK
 5. Write 10 title options (max 60 characters, include a name or a number) and a thumbnail
    text of max 3 words that does NOT repeat the title's words.
 6. List which sources you used by their number.
+7. SEO (yt-seo): write the 3 search queries this Short should win (from the live search
+   phrases when they fit), a description whose FIRST TWO LINES say what the viewer gets in
+   the words of those queries, and at most 15 tags for disambiguation (names, spellings).
+   Do not add links or a disclaimer; they are added automatically.
 
 NEVER invent a fact, number, quote, date, or source. If the material does not say it, do not say it.
 
@@ -98,7 +112,10 @@ Return ONLY valid JSON in exactly this shape:
   "beats": [{{"say": "...", "on_screen": "..."}}],
   "titles": ["..."],
   "thumbnail_text": "...",
-  "sources_used": [1, 2]}}
+  "sources_used": [1, 2],
+  "queries": ["...", "...", "..."],
+  "description": "line one\nline two\nmore...",
+  "tags": ["..."]}}
 """
 
 
@@ -244,6 +261,24 @@ def quote_check(text: str, sources: list[dict]) -> list[str]:
     return bad
 
 
+SKILLS = {name: (VENDOR / name / "SKILL.md").read_text(encoding="utf-8").split("---", 2)[-1].strip()
+          for name in ("yt-script", "yt-package", "yt-seo")}
+DISCLAIMER = ("Unofficial fan channel. Not affiliated with, endorsed by, or connected to the NBA "
+              "or any of its teams.")
+QSTOP = set("the a an of to in on for with and or is are was his her vs".split())
+
+
+def query_test(title: str, description: str, queries: list[str]) -> list[dict]:
+    """yt-seo's query test: the title + first two description lines must carry each query's words."""
+    head = (title + " " + " ".join(description.splitlines()[:2])).lower()
+    out = []
+    for q in queries:
+        words = [w for w in re.findall(r"[a-z0-9']+", q.lower()) if w not in QSTOP]
+        missing = [w for w in words if w not in head]
+        out.append({"query": q, "pass": not missing, "missing": missing})
+    return out
+
+
 def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict) -> dict:
     topic = editor["topics"][topic_id]
     judged = next((r for r in editor["ranked"] if r["id"] == topic_id), {})
@@ -253,6 +288,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         raise ValueError(f"only {material} characters of article text, not enough for a true script")
 
     prompt = PROMPT.format(
+        skill_script=SKILLS["yt-script"], skill_package=SKILLS["yt-package"], skill_seo=SKILLS["yt-seo"],
         voice=voice,
         formulas="\n".join(f"- {h['name']}: {h['shape']} Example: {h['example']}" for h in formulas["hooks"]),
         rules="\n".join(f"- {r}" for r in formulas["rules"]),
@@ -301,6 +337,13 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     words = len(spoken.split())
 
     used = [sources[i - 1] for i in draft.get("sources_used", []) if 1 <= i <= len(sources)]
+
+    # yt-seo: description = Claude's text + sources + disclaimer; then the query test
+    best_title = titles[0]["title"] if titles else topic["headline"]
+    description = (draft.get("description", "").strip() + "\n\nSources:\n"
+                   + "\n".join(f"- {s['publisher']}: {s['link']}" for s in used) + f"\n\n{DISCLAIMER}")
+    tags = [t for t in draft.get("tags", []) if isinstance(t, str)][:15]
+    seo = query_test(best_title, description, draft.get("queries", [])[:3])
     return {
         "n": n,
         "topic_id": topic_id,
@@ -315,6 +358,9 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         "titles": titles,
         "thumbnail_text": thumb,
         "sources": [{"publisher": s["publisher"], "title": s["title"], "link": s["link"]} for s in used],
+        "description": description,
+        "tags": tags,
+        "seo": seo,
         "unsupported_numbers": unsupported,
         "unsupported_quotes": bad_quotes,
         "banned_phrases": banned,
@@ -350,6 +396,12 @@ def write_summary(shorts: list[dict]) -> None:
         for t in s["titles"][:3]:
             issues = "; ".join(k for k, _ in t["issues"]) or "clean"
             lines.append(f"- {t['score']}/100 · {t['title']} ({issues})")
+        lines += ["", "**SEO (yt-seo query test):**"]
+        for q in s.get("seo", []):
+            mark = "✅" if q["pass"] else f"⚠️ missing: {', '.join(q['missing'])}"
+            lines.append(f"- {q['query']} {mark}")
+        first = " / ".join(s.get("description", "").splitlines()[:2])
+        lines += [f"", f"**Description (first 2 lines):** {first}", f"**Tags:** {', '.join(s.get('tags', []))}"]
         lines += [f"", f"**Thumbnail:** {s['thumbnail_text']}", "", "**Sources:**"]
         for src in s["sources"]:
             lines.append(f"- [{src['publisher']}: {src['title']}]({src['link']})")
@@ -365,7 +417,7 @@ def write_summary(shorts: list[dict]) -> None:
 def main() -> None:
     editor = json.loads((DATA / "editor.json").read_text(encoding="utf-8"))
     voice = (ROOT / "voice.md").read_text(encoding="utf-8")
-    formulas = json.loads((VENDOR / "hooks.json").read_text(encoding="utf-8"))
+    formulas = json.loads((VENDOR / "yt-script" / "hooks.json").read_text(encoding="utf-8"))
     OUT.mkdir(parents=True, exist_ok=True)
 
     # Editor's picks first, then the next best eligible stories as backups.

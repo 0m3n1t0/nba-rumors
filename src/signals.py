@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from collect import TEAMS, names  # noqa: E402
+from collect import names  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -92,11 +92,22 @@ def suggestions(seed: str) -> list[str]:
 # ---------- Matching topics to signals ----------
 
 def topic_keys(topic: dict) -> set[str]:
-    """Words that identify a topic in other titles: surnames and team names."""
-    text = " ".join([topic["headline"]] + [it["title"] for it in topic["items"][:6]])
-    keys = {n.split()[-1].lower() for n in names(text)}
-    keys |= {t for t in TEAMS if re.search(rf"\b{t}\b", text, re.I)}
-    return {k for k in keys if len(k) > 3}
+    """Surnames of the people in a topic. Team names are NOT used: every full-game
+    highlight video has two team names, so teams would make every topic look hot."""
+    found = set()
+    for title in [topic["headline"]] + [it["title"] for it in topic["items"][:6]]:
+        found |= names(title)  # per title, so two titles never glue into a fake name
+    return {n.split()[-1].lower() for n in found if len(n.split()[-1]) > 3}
+
+
+# Words that show people are searching for a STORY about someone, not just their highlights.
+STORY_WORDS = re.compile(
+    r"\b(trade|traded|beef|fight|drama|fined|suspended|ejected|technical|shove|injury|injured|"
+    r"contract|fired|rumou?rs?|news|reaction|responds|calls out|diss|feud|angry|argument|history)\b",
+    re.I,
+)
+# Suggestions that are noise for us (a rapper named NBA YoungBoy, video games, betting...)
+NOISE = re.compile(r"youngboy|2k\d*|\bpicks\b|\bodds\b|\blive\b|type beat|\bmeme", re.I)
 
 
 def mentions(keys: set[str], text: str) -> bool:
@@ -127,17 +138,23 @@ def main() -> None:
             found += suggestions(seed)
         except Exception as exc:
             signals["errors"].append(f"autocomplete '{seed}': {exc}")
-    signals["suggestions"] = list(dict.fromkeys(found))
+    signals["suggestions"] = [x for x in dict.fromkeys(found) if not NOISE.search(x)]
     print(f"[+] Search: {len(signals['suggestions'])} live search phrases")
 
-    max_vph = max([v["views_per_hour"] for v in signals["videos"]] + [1])
-    for t in topics[:TOP_TOPICS]:
+    raw = {}
+    for i, t in enumerate(topics[:TOP_TOPICS]):
         keys = topic_keys(t)
-        vph = sum(v["views_per_hour"] for v in signals["videos"] if mentions(keys, v["title"]))
-        # 0-10, log scale: one monster video should not drown everything else
-        t["youtube_heat"] = round(10 * math.log1p(vph) / math.log1p(max_vph), 1) if vph else 0
-        t["search_hits"] = sum(1 for s in signals["suggestions"] if mentions(keys, s))
-        t["search_phrases"] = [s for s in signals["suggestions"] if mentions(keys, s)][:8]
+        raw[i] = sum(v["views_per_hour"] for v in signals["videos"] if keys and mentions(keys, v["title"]))
+        # A name search only counts when people pair the name with a story word
+        # ("embiid shove", "bronny james kwame brown"), and the phrase is not just the name.
+        story = [x for x in signals["suggestions"]
+                 if keys and mentions(keys, x) and (STORY_WORDS.search(x) or len(keys & set(x.split())) > 1)]
+        t["search_hits"] = len(story)
+        t["search_phrases"] = story[:8]
+    top = max(raw.values(), default=0) or 1
+    for i, t in enumerate(topics[:TOP_TOPICS]):
+        # 0-10 relative to today's hottest topic, log scale so one monster video does not drown the rest
+        t["youtube_heat"] = round(10 * math.log1p(raw[i]) / math.log1p(top), 1) if raw[i] else 0
 
     (DATA / "topics.json").write_text(json.dumps(topics, indent=2), encoding="utf-8")
     (DATA / "signals.json").write_text(json.dumps(signals, indent=2), encoding="utf-8")

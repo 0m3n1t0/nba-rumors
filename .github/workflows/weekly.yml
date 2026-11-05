@@ -1,0 +1,54 @@
+name: Weekly skills
+
+on:
+  schedule:
+    - cron: "43 6 * * 1"   # every Monday, 06:43 UTC (10:43 in Tbilisi)
+  workflow_dispatch:
+
+permissions:
+  contents: write   # to save plan/week.json, which the daily editor reads
+  issues: write     # to open the weekly report as an Issue
+
+jobs:
+  weekly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Today's stories and audience signals (for the plan)
+        env:
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          python src/collect.py
+          python src/signals.py
+
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: "yt-plan, yt-audit, yt-retention"
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python src/weekly.py
+
+      - name: Save the plan for the daily editor
+        run: |
+          git config user.name "nba-rumors-bot"
+          git config user.email "nba-rumors-bot@users.noreply.github.com"
+          git add plan/week.json
+          git diff --cached --quiet || git commit -m "Weekly plan $(date +%F)"
+          git push

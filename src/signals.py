@@ -97,7 +97,19 @@ def topic_keys(topic: dict) -> set[str]:
     found = set()
     for title in [topic["headline"]] + [it["title"] for it in topic["items"][:6]]:
         found |= names(title)  # per title, so two titles never glue into a fake name
-    return {n.split()[-1].lower() for n in found if len(n.split()[-1]) > 3}
+    keys = set()
+    for n in found:
+        last = n.split()[-1].lower()
+        # A rare surname alone is enough ("embiid"); a common one needs the full name ("jalen smith").
+        keys.add(n.lower() if last in COMMON_SURNAMES or len(last) < 5 else last)
+    return keys
+
+
+COMMON_SURNAMES = set("""smith johnson williams brown jones james green davis miller wilson moore
+taylor anderson thomas jackson white harris martin thompson young allen walker king wright scott
+hill adams baker nelson carter mitchell roberts turner phillips campbell parker evans edwards
+collins stewart morris murphy cook rogers morgan cooper peterson bailey reed bell howard ward
+hunter porter murray holiday george paul""".split())
 
 
 # Words that show people are searching for a STORY about someone, not just their highlights.
@@ -153,8 +165,9 @@ def main() -> None:
         t["search_phrases"] = story[:8]
     top = max(raw.values(), default=0) or 1
     for i, t in enumerate(topics[:TOP_TOPICS]):
-        # 0-10 relative to today's hottest topic, log scale so one monster video does not drown the rest
-        t["youtube_heat"] = round(10 * math.log1p(raw[i]) / math.log1p(top), 1) if raw[i] else 0
+        # 0-10 relative to today's hottest topic (square root: differences stay visible,
+        # one monster video still does not flatten everything else)
+        t["youtube_heat"] = round(10 * math.sqrt(raw[i] / top), 1) if raw[i] else 0
 
     (DATA / "topics.json").write_text(json.dumps(topics, indent=2), encoding="utf-8")
     (DATA / "signals.json").write_text(json.dumps(signals, indent=2), encoding="utf-8")
@@ -170,7 +183,8 @@ def main() -> None:
     hot = sorted(topics[:TOP_TOPICS], key=lambda t: -(t.get("youtube_heat", 0) + t.get("search_hits", 0)))
     for t in hot[:12]:
         lines.append(f"| {t.get('youtube_heat', 0)} | {t.get('search_hits', 0)} | {t['headline']} |")
-    lines += ["", "**What people are typing:** " + " · ".join(signals["suggestions"][:25])]
+    matched = list(dict.fromkeys(p for t in topics[:TOP_TOPICS] for p in t.get("search_phrases", [])))
+    lines += ["", "**What people are typing about today's stories:** " + (" · ".join(matched[:25]) or "none yet")]
     text = "\n".join(lines)
     print(text)
     if os.environ.get("GITHUB_STEP_SUMMARY"):

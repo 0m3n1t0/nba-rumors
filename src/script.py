@@ -77,6 +77,8 @@ TASK
 4. The last beat ends with ONE question to the viewer.
    Follow the voice profile's 5-part STORY shape (action, missed detail, why it matters,
    her take, question). It must sound like a real person talking, not a template.
+   NO flirty, teasing or intimate wording of any kind and NO pet names: the voice alone
+   carries that. The words are a sharp NBA fan's.
 5. Write 10 title options (max 60 characters, include a name or a number) and a thumbnail
    text of max 3 words that does NOT repeat the title's words.
 6. List which sources you used by their number.
@@ -101,7 +103,9 @@ Here is a draft Short (JSON). Read every line out loud in your head as the narra
 25-year-old woman obsessed with the NBA telling a friend what just happened.
 
 Rewrite anything that sounds like AI, a press release, a template or a stock phrase.
-Add her real reactions and one clear opinion. Vary sentence length. Keep it to 80-105 words
+Add her real reactions and one clear opinion. Vary sentence length.
+Remove any flirty, teasing or intimate wording and any pet name: the words must be a sharp
+NBA fan's, never flirty (the voice does that). Keep it to 80-105 words
 after the hook. Keep EVERY fact, number, name, quote and source attribution exactly true;
 do not add any new fact. Keep the same JSON shape and the same number of hooks.
 
@@ -194,6 +198,20 @@ def fact_check(script_text: str, sources: list[dict]) -> list[str]:
     return sorted(numbers(script_text) - numbers(material) - IGNORED_NUMBERS)
 
 
+# Automatic safety net: these never reach a video, whatever the AI writes.
+BANNED = re.compile(
+    r"\b(babe|baby|honey|sweetie|sweetheart|darling|sugar|handsome|gorgeous|sexy|"
+    r"come closer|get closer|juicy|you're gonna love|you are gonna love|let me tell you a secret|"
+    r"just between us|our little secret|hey guys|welcome back|in today's video|let's dive in|"
+    r"buckle up|let that sink in|without further ado|game-changer)\b",
+    re.I,
+)
+
+
+def banned_check(text: str) -> list[str]:
+    return sorted({m.group(0).lower() for m in BANNED.finditer(text)})
+
+
 def quote_check(text: str, sources: list[dict]) -> list[str]:
     """Every quoted phrase (4+ words) must appear word for word in the source material."""
     material = " ".join(f"{s['title']} {s.get('summary', '')} {s['text']}" for s in sources)
@@ -249,6 +267,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     on_screen = " ".join(b.get("on_screen", "") for b in beats)
     unsupported = fact_check(f"{spoken} {on_screen}", sources)
     bad_quotes = quote_check(spoken, sources)
+    banned = banned_check(f"{spoken} {on_screen} {' '.join(draft.get('titles', []))} {thumb}")
     words = len(spoken.split())
 
     used = [sources[i - 1] for i in draft.get("sources_used", []) if 1 <= i <= len(sources)]
@@ -268,7 +287,8 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         "sources": [{"publisher": s["publisher"], "title": s["title"], "link": s["link"]} for s in used],
         "unsupported_numbers": unsupported,
         "unsupported_quotes": bad_quotes,
-        "ready": bool(hooks) and not unsupported and not bad_quotes and 25 <= round(words / 150 * 60) <= 58,
+        "banned_phrases": banned,
+        "ready": bool(hooks) and not unsupported and not bad_quotes and not banned and 25 <= round(words / 150 * 60) <= 58,
     }
 
 
@@ -280,6 +300,9 @@ def write_summary(shorts: list[dict]) -> None:
                   f"{status} · {s['words']} words · ~{s['seconds']}s · virality {s['virality']}/10", ""]
         if s["unsupported_numbers"]:
             lines.append(f"**Fact check:** numbers not found in sources: {', '.join(s['unsupported_numbers'])}")
+            lines.append("")
+        if s["banned_phrases"]:
+            lines.append(f"**Banned phrases:** {', '.join(s['banned_phrases'])}")
             lines.append("")
         if s["unsupported_quotes"]:
             lines.append("**Quote check:** not found word for word in sources: "

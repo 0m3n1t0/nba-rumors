@@ -72,9 +72,10 @@ def gradient(c1: str, c2: str) -> Image.Image:
     return Image.composite(glow, img, gmask.filter(ImageFilter.GaussianBlur(160)))
 
 
-def photo_bg(path: Path) -> Image.Image:
-    """Real photo, filled to 9:16 (faces sit high), a little darker so captions read."""
-    img = ImageOps.fit(Image.open(path).convert("RGB"), (W, H), Image.LANCZOS, centering=(0.5, 0.3))
+def photo_bg(path: Path, focus: list | None = None) -> Image.Image:
+    """Real photo, cropped to 9:16 around the subject Claude marked, a little darker so captions read."""
+    fx, fy = (focus or [0.5, 0.3])[:2]
+    img = ImageOps.fit(Image.open(path).convert("RGB"), (W, H), Image.LANCZOS, centering=(fx, fy))
     return ImageEnhance.Brightness(img).enhance(0.8)
 
 
@@ -187,9 +188,12 @@ def video_segment(item: dict, layer: Image.Image, dur: float, seg: Path, work: P
     """Real footage, muted, filled to 9:16, looped if shorter than the beat."""
     ov_path = work / f"ov_{i}.png"
     layer.save(ov_path)
-    run(["ffmpeg", "-y", "-stream_loop", "-1", "-i", str(ROOT / item["file"]), "-i", str(ov_path),
-         "-filter_complex",
-         f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+    fx, fy = (item.get("focus") or [0.5, 0.5])[:2]
+    start = float(item.get("start") or 0)
+    run(["ffmpeg", "-y", "-ss", f"{start:.2f}", "-stream_loop", "-1", "-i", str(ROOT / item["file"]),
+         "-i", str(ov_path), "-filter_complex",
+         f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
+         f"crop={W}:{H}:(iw-{W})*{fx:.3f}:(ih-{H})*{fy:.3f},"
          f"eq=brightness=-0.05:saturation=1.1,fps={FPS},setsar=1[b];[b][1:v]overlay=0:0",
          "-t", f"{dur:.3f}", "-an", *ENC, str(seg)])
 
@@ -221,7 +225,7 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
                 print(f"[!] clip failed on beat {i}: {exc.stderr.decode(errors='replace')[-300:]}")
                 item = None
                 layer = overlay(None, hook, accent)
-        bg = photo_bg(ROOT / item["file"]) if item else gradient(*colors)
+        bg = photo_bg(ROOT / item["file"], item.get("focus")) if item else gradient(*colors)
         still_segment(bg, layer, dur, seg, work, i, zoom_in=i % 2 == 0)
         if i == 0:
             Image.alpha_composite(bg.convert("RGBA"), layer).convert("RGB").save(work / "thumb.png")

@@ -134,30 +134,67 @@ def ass_time(t: float) -> str:
     return f"{int(t // 3600)}:{int(t % 3600 // 60):02d}:{t % 60:05.2f}"
 
 
+def norm(w: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", w.lower())
+
+
+def script_words(words: list[dict], beats: list[dict]) -> list[dict]:
+    """Captions spelled like the SCRIPT (not like speech recognition heard it: "Dylan" -> "Dillon",
+    "warrior's son's" -> "Warriors-Suns"), timed by the recognised words."""
+    import difflib
+    text = [t for b in beats for t in b.get("say", "").split()]
+    if not text or not words:
+        return words
+    a, b = [norm(w["word"]) for w in words], [norm(t) for t in text]
+    out: list[dict] = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if op == "equal" or (op == "replace" and i2 - i1 == j2 - j1):
+            out += [{"word": text[j1 + k], "start": words[i1 + k]["start"], "end": words[i1 + k]["end"]}
+                    for k in range(i2 - i1)]
+        elif op == "replace":  # different word counts: spread the script words over that time
+            t0, t1 = words[i1]["start"], words[i2 - 1]["end"]
+            n = j2 - j1
+            out += [{"word": text[j1 + k], "start": round(t0 + (t1 - t0) * k / n, 2),
+                     "end": round(t0 + (t1 - t0) * (k + 1) / n, 2)} for k in range(n)]
+        elif op == "insert" and out:  # script word the recogniser missed: glue to the previous
+            out[-1]["word"] += " " + " ".join(text[j1:j2])
+        # "delete": recogniser heard something the script does not have -> drop it
+    return out or words
+
+
 def captions(words: list[dict], path: Path, accent: str) -> None:
+    """Big viral-style captions: 2 words at a time, centred, the spoken word in the accent
+    colour with a small pop."""
     hex6 = accent.lstrip("#")
     bgr = f"&H00{hex6[4:6]}{hex6[2:4]}{hex6[0:2]}"
     header = (
-        "[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n\n"
+        "[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nWrapStyle: 2\n\n"
         "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, "
         "Outline, Shadow, Alignment, MarginL, MarginR, MarginV\n"
-        "Style: Cap,Anton,104,&H00FFFFFF,&H00000000,&H80000000,1,8,3,5,60,60,0\n\n"
+        "Style: Cap,Anton,150,&H00FFFFFF,&H00000000,&HA0000000,1,10,5,5,40,40,0\n\n"
         "[Events]\nFormat: Layer, Start, End, Style, Text\n"
     )
     events = []
-    groups = [words[i:i + 3] for i in range(0, len(words), 3)]
+    size = 2
+    groups = [words[i:i + size] for i in range(0, len(words), size)]
     starts = [w["start"] for w in words]
     for gi, g in enumerate(groups):
         for j, w in enumerate(g):
-            idx = gi * 3 + j
-            nxt = starts[idx + 1] if idx + 1 < len(starts) else w["end"] + 0.3
+            idx = gi * size + j
+            nxt = starts[idx + 1] if idx + 1 < len(starts) else w["end"] + 0.4
             end = min(nxt, w["end"] + 0.6)  # never overlaps the next caption
             parts = []
             for k, x in enumerate(g):
                 word = re.sub(r"[{}\\]", "", x["word"]).upper()
-                parts.append(f"{{\\c{bgr}}}{word}{{\\c&H00FFFFFF}}" if k == j else word)
+                if k == j:
+                    parts.append(f"{{\\c{bgr}\\fscx112\\fscy112\\t(0,90,\\fscx100\\fscy100)}}{word}"
+                                 f"{{\\c&H00FFFFFF\\fscx100\\fscy100}}")
+                else:
+                    parts.append(word)
+            chars = len(" ".join(x["word"] for x in g))
+            fs = min(150, int(150 * 13 / max(13, chars)))  # long words shrink, never run off screen
             events.append(f"Dialogue: 0,{ass_time(w['start'])},{ass_time(end)},Cap,"
-                          f"{{\\pos(540,1430)}}{' '.join(parts)}")
+                          f"{{\\pos(540,1240)\\fs{fs}}}{' '.join(parts)}")
     path.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
 
 
@@ -198,14 +235,17 @@ def video_segment(item: dict, layer: Image.Image, dur: float, seg: Path, work: P
          "-t", f"{dur:.3f}", "-an", *ENC, str(seg)])
 
 
+ERRORS: list[str] = []
+
+
 def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
-           media: list | None = None) -> None:
+           media: list | None = None, music: dict | None = None) -> list[str]:
     work.mkdir(parents=True, exist_ok=True)
     colors = team_colors(" ".join([short["headline"]] + [b.get("say", "") for b in short["beats"]]))
     accent = colors[1] if colors[1] not in ("#000000", "#FFFFFF") else "#FACC15"
     beats = timing["beats"]
     media = list(media or []) + [None] * len(beats)
-    segments = []
+    segments, log = [], []
     for i, b in enumerate(beats):
         start = 0.0 if i == 0 else b["start"]
         end = beats[i + 1]["start"] if i + 1 < len(beats) else timing["duration"] + 0.4
@@ -214,18 +254,24 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
         hook = (short.get("thumbnail_text") or short["hook"]["text"]) if i == 0 else ""
         layer = overlay(item, hook, accent)
         seg = work / f"seg_{i}.mp4"
+        failed = False
         if item and item["kind"] == "video":
             try:
                 video_segment(item, layer, dur, seg, work, i)
                 segments.append(seg)
+                log.append("🎥")
                 if i == 0:
                     run(["ffmpeg", "-y", "-i", str(seg), "-frames:v", "1", str(work / "thumb.png")])
                 continue
             except subprocess.CalledProcessError as exc:
-                print(f"[!] clip failed on beat {i}: {exc.stderr.decode(errors='replace')[-300:]}")
+                err = exc.stderr.decode(errors='replace')[-300:]
+                print(f"[!] clip failed on beat {i}: {err}")
+                failed = True
+                ERRORS.append(f"{out.stem} beat {i}: {err.splitlines()[-1] if err else 'ffmpeg error'}")
                 item = None
                 layer = overlay(None, hook, accent)
         bg = photo_bg(ROOT / item["file"], item.get("focus")) if item else gradient(*colors)
+        log.append("❌🎥→⬛" if failed else ("📷" if item else "⬛"))
         still_segment(bg, layer, dur, seg, work, i, zoom_in=i % 2 == 0)
         if i == 0:
             Image.alpha_composite(bg.convert("RGBA"), layer).convert("RGB").save(work / "thumb.png")
@@ -234,14 +280,31 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(work / "list.txt"), "-c", "copy",
          str(work / "visuals.mp4")])
     ass = work / "captions.ass"
-    captions(timing["words"], ass, accent)
+    words = script_words(timing["words"], timing["beats"])
+    captions(words, ass, accent)
+    log.append(f"captions: {len(words)} words")
     total = timing["duration"] + 0.4
     bar = f"drawbox=x=0:y=0:w='iw*t/{total:.2f}':h=14:color={accent.replace('#', '0x')}@1:t=fill"
     fonts = f":fontsdir={FONT_DIR}" if FONT_DIR.exists() else ""
-    run(["ffmpeg", "-y", "-i", str(work / "visuals.mp4"), "-i", str(mp3), "-vf",
-         f"{bar},ass={ass}{fonts}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart",
-         str(out)])
+    vf = f"[0:v]{bar},ass={ass}{fonts}[v]"
+    if music and (ROOT / music["file"]).exists():
+        # music: start a bit in (skip intros), quiet, ducks under the voice, fades in and out
+        offset = min(15.0, max(0.0, music.get("duration", 0) - total - 1))
+        af = (f"[1:a]asplit=2[voice][key];"
+              f"[2:a]atrim=start={offset:.1f},asetpts=PTS-STARTPTS,volume=0.22,"
+              f"afade=t=in:d=0.8,afade=t=out:st={max(total - 1.5, 0):.2f}:d=1.5[bed];"
+              f"[bed][key]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=350[duck];"
+              f"[voice][duck]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]")
+        inputs = ["-i", str(work / "visuals.mp4"), "-i", str(mp3), "-stream_loop", "-1", "-i", str(ROOT / music["file"])]
+        log.append("music: " + music.get("mood", ""))
+    else:
+        af = "[1:a]anull[a]"
+        inputs = ["-i", str(work / "visuals.mp4"), "-i", str(mp3)]
+        log.append("music: none")
+    run(["ffmpeg", "-y", *inputs, "-filter_complex", f"{vf};{af}", "-map", "[v]", "-map", "[a]",
+         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+         "-c:a", "aac", "-b:a", "192k", "-t", f"{total:.2f}", "-movflags", "+faststart", str(out)])
+    return log
 
 
 def main() -> None:
@@ -258,19 +321,25 @@ def main() -> None:
         out = VIDEO / f"{name}.mp4"
         media_path = MEDIA / f"{name}.json"
         media = json.loads(media_path.read_text(encoding="utf-8")) if media_path.exists() else []
+        music_path = MEDIA / f"{name}_music.json"
+        music = json.loads(music_path.read_text(encoding="utf-8")) if music_path.exists() else None
         try:
-            render(short, timing, mp3, out, VIDEO / f"_{name}", media)
+            log = render(short, timing, mp3, out, VIDEO / f"_{name}", media, music)
         except subprocess.CalledProcessError as exc:
             print(f"[!] {name}: ffmpeg failed: {exc.stderr.decode(errors='replace')[-800:]}")
             continue
         # keep the hook card as a still (preview / thumbnail)
         (VIDEO / f"_{name}" / "thumb.png").replace(VIDEO / f"{name}_thumb.png")
-        rendered.append((name, short, timing))
+        rendered.append((name, short, timing, log))
         print(f"[+] {name}: {out.stat().st_size / 1e6:.1f} MB, {timing['duration']:.1f}s")
-    lines = ["## 🎬 Video", "", "| Short | length | ready | title |", "|---|---|---|---|"]
-    for name, short, timing in rendered:
+    lines = ["## 🎬 Video", "", "| Short | length | ready | beats (🎥 clip 📷 photo ⬛ empty) | title |",
+             "|---|---|---|---|---|"]
+    for name, short, timing, log in rendered:
         title = short["titles"][0]["title"] if short.get("titles") else short["headline"]
-        lines.append(f"| {name} | {timing['duration']:.0f}s | {'✅' if short.get('ready') else '⚠️'} | {title} |")
+        lines.append(f"| {name} | {timing['duration']:.0f}s | {'✅' if short.get('ready') else '⚠️'} | "
+                     f"{' '.join(log)} | {title} |")
+    if ERRORS:
+        lines += ["", "**Render errors:**", ""] + [f"- `{e}`" for e in ERRORS]
     text = "\n".join(lines)
     print(text)
     import os

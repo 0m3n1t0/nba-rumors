@@ -234,7 +234,7 @@ def commons_photos(person: str) -> list[dict]:
     except Exception as exc:
         print(f"[!] Commons search failed for {person}: {exc}")
         data = {}
-    first, last = (person.lower().split() + [""])[:2]
+    first, last = (person.lower().split() + ["", ""])[:2]
     for page in (data.get("query", {}).get("pages") or {}).values():
         info = (page.get("imageinfo") or [{}])[0]
         meta = {k: v.get("value", "") for k, v in (info.get("extmetadata") or {}).items()}
@@ -288,7 +288,7 @@ def openverse_photos(person: str) -> list[dict]:
     except Exception as exc:
         print(f"[!] Openverse search failed for {person}: {exc}")
         return []
-    first, last = (person.lower().split() + [""])[:2]
+    first, last = (person.lower().split() + ["", ""])[:2]
     out = []
     for r in data.get("results", []):
         text = (r.get("title", "") + " " + " ".join(t.get("name", "") for t in r.get("tags") or [])).lower()
@@ -346,7 +346,7 @@ def commons_videos(search: str, person: str = "") -> list[dict]:
     except Exception as exc:
         print(f"[!] Commons video search failed for {search}: {exc}")
         data = {}
-    first, last = (person.lower().split() + [""])[:2]
+    first, last = (person.lower().split() + ["", ""])[:2]
     for page in (data.get("query", {}).get("pages") or {}).values():
         info = (page.get("videoinfo") or [{}])[0]
         meta = {k: v.get("value", "") for k, v in (info.get("extmetadata") or {}).items()}
@@ -395,7 +395,7 @@ def dvids_videos(person: str) -> list[dict]:
     if person in _dvids_cache:
         return _dvids_cache[person]
     found: list[dict] = []
-    first, last = (person.lower().split() + [""])[:2]
+    first, last = (person.lower().split() + ["", ""])[:2]
     try:
         q = urllib.parse.urlencode({"api_key": DVIDS_KEY, "q": f'"{person}"', "type": "video", "max_results": "15"})
         hits = json.loads(get(DVIDS + "search?" + q)).get("results", [])
@@ -749,7 +749,13 @@ def main() -> None:
         short = json.loads(script_path.read_text(encoding="utf-8"))
         name = script_path.stem
         MOOD[0] = "tense"
-        items = collect_for(short, MEDIA / name, used)
+        try:
+            items = collect_for(short, MEDIA / name, used)
+        except Exception as exc:  # one broken Short must never stop the others
+            import traceback
+            traceback.print_exc()
+            print(f"[!] {name}: visuals failed ({exc}); this Short gets colour backgrounds")
+            items = []
         (MEDIA / f"{name}.json").write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
         music = pick_music(MOOD[0], MEDIA / name, used)
         (MEDIA / f"{name}_music.json").write_text(json.dumps(music, indent=2, ensure_ascii=False), encoding="utf-8")

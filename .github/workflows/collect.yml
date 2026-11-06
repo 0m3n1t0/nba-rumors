@@ -11,7 +11,7 @@ permissions:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -75,9 +75,11 @@ jobs:
           mkdir -p fonts
           curl -fsSL -o fonts/Anton-Regular.ttf https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf
 
-      - name: "Stage 4c: real visuals (Commons photos + Pixabay footage, free licences)"
+      - name: "Stage 4c: real visuals (all free sources searched, AI picks and crops the best)"
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
+          OPENVERSE_CLIENT_SECRET: ${{ secrets.OPENVERSE_CLIENT_SECRET }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: python src/media.py
 

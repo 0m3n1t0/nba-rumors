@@ -94,10 +94,27 @@ jobs:
       - name: "Stage 5: render the Shorts (MP4)"
         run: python src/render.py
 
-      - name: Save results
+      - name: "Download 1: finished Shorts only (small)"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shorts-ready
+          path: |
+            data/video/short_*.mp4
+            data/video/short_*_thumb.png
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: "Download 2: working data for checking problems (no big media files)"
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pipeline-data
-          path: data/
+          path: |
+            data/
+            !data/video/
+            !data/media/**/*.mp4
+            !data/media/**/*.webm
+            !data/media/**/*.jpg
+            !data/media/**/*.mp3
           retention-days: 7

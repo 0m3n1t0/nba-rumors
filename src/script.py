@@ -115,7 +115,9 @@ TASK
    never build the story on them alone. Stay on ONE story: do not mix in a different
    story about the same player (for example an unrelated injury) unless a source links them.
    Quotes: only quote words that appear exactly in the source material.
-4. The last beat ends with ONE question to the viewer.
+4. The last beat ends with ONE question to the viewer. Shorts replay in a loop, so word the
+   question so it runs straight back into the hook: it names the same person or stake the hook
+   opens with, and the hook's first words make sense as the answer's next line.
    Follow the voice profile's 5-part STORY shape (action, missed detail, why it matters,
    her take, question). It must sound like a real person talking, not a template.
    NO flirty, teasing or intimate wording of any kind and NO pet names: the voice alone

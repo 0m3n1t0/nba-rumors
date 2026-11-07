@@ -207,21 +207,23 @@ def run(cmd: list[str]) -> None:
 ENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(FPS)]
 
 
-def still_segment(bg: Image.Image, layer: Image.Image, dur: float, seg: Path, work: Path, i: int,
+def still_segment(bg: Image.Image, layer: Image.Image, dur: float, seg: Path, work: Path, i,
                   zoom_in: bool) -> None:
     """Photo with a slow Ken Burns move (in or out), overlay on top (not zoomed)."""
     bg_path, ov_path = work / f"bg_{i}.jpg", work / f"ov_{i}.png"
     bg.save(bg_path, quality=92)
     layer.save(ov_path)
     frames = int(round(dur * FPS))
-    z = f"1+0.08*on/{frames}" if zoom_in else f"1.08-0.08*on/{frames}"
+    # punch-in on the cut (first 6 frames 1.10 -> 1.0), then a slow Ken Burns move
+    punch = "if(lt(on,6),0.10*(1-on/6),0)"
+    z = (f"1+0.08*on/{frames}+{punch}" if zoom_in else f"1.08-0.08*on/{frames}+{punch}")
     run(["ffmpeg", "-y", "-loop", "1", "-i", str(bg_path), "-i", str(ov_path), "-filter_complex",
          f"[0:v]scale={W * 2}:{H * 2},zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
          f"d={frames}:s={W}x{H}:fps={FPS},setsar=1[b];[b][1:v]overlay=0:0",
          "-frames:v", str(frames), "-an", *ENC, str(seg)])
 
 
-def video_segment(item: dict, layer: Image.Image, dur: float, seg: Path, work: Path, i: int) -> None:
+def video_segment(item: dict, layer: Image.Image, dur: float, seg: Path, work: Path, i) -> None:
     """Real footage, muted, filled to 9:16, looped if shorter than the beat."""
     ov_path = work / f"ov_{i}.png"
     layer.save(ov_path)
@@ -231,7 +233,10 @@ def video_segment(item: dict, layer: Image.Image, dur: float, seg: Path, work: P
          "-i", str(ov_path), "-filter_complex",
          f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
          f"crop={W}:{H}:(iw-{W})*{fx:.3f}:(ih-{H})*{fy:.3f},"
-         f"eq=brightness=-0.05:saturation=1.1,fps={FPS},setsar=1[b];[b][1:v]overlay=0:0",
+         f"eq=brightness=-0.05:saturation=1.1,fps={FPS},"
+         # punch-in on the cut: starts 10% bigger and settles in 0.2 s
+         f"scale=w='trunc({W}*(1+0.10*max(0,1-t/0.2))/2)*2':h=-2:eval=frame,crop={W}:{H},"
+         f"setsar=1[b];[b][1:v]overlay=0:0",
          "-t", f"{dur:.3f}", "-an", *ENC, str(seg)])
 
 
@@ -250,32 +255,41 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
         start = 0.0 if i == 0 else b["start"]
         end = beats[i + 1]["start"] if i + 1 < len(beats) else timing["duration"] + 0.4
         dur = max(0.6, end - start)
-        item = media[i]
         hook = (short.get("thumbnail_text") or short["hook"]["text"]) if i == 0 else ""
-        layer = overlay(item, hook, accent)
-        seg = work / f"seg_{i}.mp4"
-        failed = False
-        if item and item["kind"] == "video":
-            try:
-                video_segment(item, layer, dur, seg, work, i)
-                segments.append(seg)
-                log.append("🎥")
-                if i == 0:
-                    run(["ffmpeg", "-y", "-i", str(seg), "-frames:v", "1", str(work / "thumb.png")])
-                continue
-            except subprocess.CalledProcessError as exc:
-                err = exc.stderr.decode(errors='replace')[-300:]
-                print(f"[!] clip failed on beat {i}: {err}")
-                failed = True
-                ERRORS.append(f"{out.stem} beat {i}: {err.splitlines()[-1] if err else 'ffmpeg error'}")
-                item = None
-                layer = overlay(None, hook, accent)
-        bg = photo_bg(ROOT / item["file"], item.get("focus")) if item else gradient(*colors)
-        log.append("❌🎥→⬛" if failed else ("📷" if item else "⬛"))
-        still_segment(bg, layer, dur, seg, work, i, zoom_in=i % 2 == 0)
-        if i == 0:
-            Image.alpha_composite(bg.convert("RGBA"), layer).convert("RGB").save(work / "thumb.png")
-        segments.append(seg)
+        main = media[i]
+        # a long beat is split into two shots (cut in the middle), like real Shorts editing
+        shots = [(main, dur)]
+        if main and main.get("alt") and dur > 4.0:
+            first = round(dur / 2, 2)
+            shots = [(main, first), (main["alt"], round(dur - first, 2))]
+        marks = []
+        for s_no, (item, sdur) in enumerate(shots):
+            tag = f"{i}_{s_no}"
+            layer = overlay(item, hook, accent)
+            seg = work / f"seg_{tag}.mp4"
+            failed = False
+            if item and item["kind"] == "video":
+                try:
+                    video_segment(item, layer, sdur, seg, work, tag)
+                    segments.append(seg)
+                    marks.append("🎥")
+                    if i == 0 and s_no == 0:
+                        run(["ffmpeg", "-y", "-i", str(seg), "-frames:v", "1", str(work / "thumb.png")])
+                    continue
+                except subprocess.CalledProcessError as exc:
+                    err = exc.stderr.decode(errors='replace')[-300:]
+                    print(f"[!] clip failed on beat {i}: {err}")
+                    failed = True
+                    ERRORS.append(f"{out.stem} beat {i}: {err.splitlines()[-1] if err else 'ffmpeg error'}")
+                    item = None
+                    layer = overlay(None, hook, accent)
+            bg = photo_bg(ROOT / item["file"], item.get("focus")) if item else gradient(*colors)
+            marks.append("❌🎥→⬛" if failed else ("📷" if item else "⬛"))
+            still_segment(bg, layer, sdur, seg, work, tag, zoom_in=(i + s_no) % 2 == 0)
+            if i == 0 and s_no == 0:
+                Image.alpha_composite(bg.convert("RGBA"), layer).convert("RGB").save(work / "thumb.png")
+            segments.append(seg)
+        log.append("+".join(marks))
     (work / "list.txt").write_text("".join(f"file '{s.name}'\n" for s in segments))
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(work / "list.txt"), "-c", "copy",
          str(work / "visuals.mp4")])

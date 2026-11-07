@@ -617,6 +617,22 @@ def candidates(p: dict, work: Path, i: int, used: set, main_person: str = "") ->
     return cands
 
 
+LONG_BEAT = 4.0  # seconds: a beat longer than this gets two shots
+
+
+def beat_seconds(short: dict, i: int) -> float:
+    """How long beat i is spoken (from the voice timing written by tts.py / audio_qc.py)."""
+    try:
+        name = short.get("_name", "")
+        t = json.loads((DATA / "audio" / f"{name}.timing.json").read_text(encoding="utf-8"))
+        b = t["beats"]
+        start = 0.0 if i == 0 else b[i]["start"]
+        end = b[i + 1]["start"] if i + 1 < len(b) else t["duration"]
+        return end - start
+    except Exception:
+        return 0.0
+
+
 def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
     folder.mkdir(parents=True, exist_ok=True)
     beats = spoken(short)
@@ -728,6 +744,29 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 chosen["match"] = (int(scores[idx]) if idx in scores
                                    else choice.get("score") if idx == (k or 0) - 1 else None)
                 break
+            # Shorts cut every 2-3 seconds: a long beat gets a SECOND shot - the next candidate
+            # Claude ranked as fitting (score 5+), a clip if possible, never a repeat
+            if chosen and beat_seconds(short, i) > LONG_BEAT:
+                fits = [j for j in ranked if scores.get(j, 5) >= 5]
+                fits.sort(key=lambda j: cands[j]["kind"] != "video")
+                for j in fits:
+                    c = cands[j]
+                    key = c.get("id") or c["page"]
+                    if key in shown:
+                        continue
+                    ext = ".jpg" if c["kind"] == "photo" else ".mp4"
+                    path = folder / f"beat{i}_alt_{c['kind']}{ext}"
+                    ok = shutil.copy(c["thumb"], path) if c["kind"] == "photo" else download(c["url"], path, 180)
+                    if not ok:
+                        continue
+                    alt = {k2: v for k2, v in c.items() if k2 not in ("score", "thumb", "frames", "preview")}
+                    alt["file"] = str(path.relative_to(ROOT))
+                    alt["match"] = int(scores[j]) if j in scores else None
+                    chosen["alt"] = alt
+                    shown.add(key)
+                    if c["kind"] == "video":
+                        used.add(c["id"])
+                    break
             result.append(chosen)
         return result
     finally:
@@ -791,8 +830,55 @@ def music_tracks(mood: str) -> list[dict]:
 MUSIC_LOG: list[str] = []
 
 
+LIBRARY = ROOT / "music_library"            # private repo of YouTube Audio Library tracks (optional)
+MUSIC_USED = DATA / "history" / "music_used.json"  # rotation, kept between runs by the cache
+AUDIO_EXT = (".mp3", ".wav", ".m4a", ".ogg")
+
+
+def library_track(mood: str, folder: Path, used: set) -> dict | None:
+    """Our own music library first: music_library/<mood>/*.mp3 (dark, tense, hype, upbeat).
+    The track used longest ago is picked, so the same song does not come back for days.
+    A file <song>.txt next to a song holds its credit line, if the track needs one."""
+    if not LIBRARY.exists():
+        return None
+    try:
+        history = json.loads(MUSIC_USED.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        history = {}
+    moods = [mood] + [m for m in MUSIC_QUERIES if m != mood]
+    for m in moods:
+        files = sorted(f for f in (LIBRARY / m).glob("*") if f.suffix.lower() in AUDIO_EXT) \
+            if (LIBRARY / m).is_dir() else []
+        files = [f for f in files if f.name not in used]
+        if not files:
+            continue
+        pick = min(files, key=lambda f: history.get(f"{m}/{f.name}", ""))
+        used.add(pick.name)
+        history[f"{m}/{pick.name}"] = __import__("datetime").datetime.utcnow().isoformat()
+        MUSIC_USED.parent.mkdir(parents=True, exist_ok=True)
+        MUSIC_USED.write_text(json.dumps(history, indent=1), encoding="utf-8")
+        dest = folder / f"music{pick.suffix.lower()}"
+        shutil.copy(pick, dest)
+        credit = pick.with_suffix(".txt")
+        dur = 0.0
+        try:
+            dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                        "-of", "csv=p=0", str(dest)], capture_output=True, text=True).stdout.strip())
+        except ValueError:
+            pass
+        return {"kind": "music", "title": pick.stem, "mood": m, "duration": dur,
+                "file": str(dest.relative_to(ROOT)), "library": True,
+                "credit": credit.read_text(encoding="utf-8").strip() if credit.exists() else ""}
+    return None
+
+
 def pick_music(mood: str, folder: Path, used: set) -> dict | None:
-    """Fresh track for this mood; else a track found for another mood; else a reused one."""
+    """Own library first (YouTube Audio Library tracks); else Openverse: fresh track for this
+    mood, else a track found for another mood, else a reused one."""
+    own = library_track(mood, folder, used)
+    if own:
+        MUSIC_LOG.append(f"library: {own['mood']}/{own['title']}")
+        return own
     pool = list(music_tracks(mood))
     pool += [t for m, ts in _music_cache.items() if m != mood for t in ts]
     pool = [t for t in pool if t["url"] not in used] + [t for t in pool if t["url"] in used]
@@ -810,6 +896,10 @@ def pick_music(mood: str, folder: Path, used: set) -> dict | None:
 def credits(items: list[dict]) -> str:
     lines, seen = [CREDIT_MARK], set()
     for it in items:
+        if it and it.get("library"):  # YouTube Audio Library: credit only when the track asks for it
+            if it.get("credit"):
+                lines.append(f"- Music: {it['credit']}")
+            continue
         if not it or it["page"] in seen:
             continue
         seen.add(it["page"])
@@ -829,6 +919,7 @@ def main() -> None:
         short = json.loads(script_path.read_text(encoding="utf-8"))
         name = script_path.stem
         MOOD[0] = "tense"
+        short["_name"] = name
         try:
             items = collect_for(short, MEDIA / name, used)
         except Exception as exc:  # one broken Short must never stop the others
@@ -840,13 +931,15 @@ def main() -> None:
         music = pick_music(MOOD[0], MEDIA / name, used)
         (MEDIA / f"{name}_music.json").write_text(json.dumps(music, indent=2, ensure_ascii=False), encoding="utf-8")
         desc = short.get("description", "").split("\n\n" + CREDIT_MARK)[0]
-        if any(items) or music:
-            desc += "\n\n" + credits(items + [music])
+        shots = [x for it in items if it for x in (it, it.get("alt")) if x]
+        if shots or music:
+            desc += "\n\n" + credits(shots + [music])
         short["description"] = desc
+        short.pop("_name", None)
         script_path.write_text(json.dumps(short, indent=2, ensure_ascii=False), encoding="utf-8")
-        photos = sum(1 for i in items if i and i["kind"] == "photo")
-        clips = sum(1 for i in items if i and i["kind"] == "video")
-        real = sum(1 for i in items if i and i.get("real"))
+        photos = sum(1 for i in shots if i["kind"] == "photo")
+        clips = sum(1 for i in shots if i["kind"] == "video")
+        real = sum(1 for i in shots if i.get("real"))
         tune = f"{music['mood']}: {music['title'][:40]}" if music else "none found"
         match = " ".join(str(i.get("match")) if i and i.get("match") is not None else "-" for i in items)
         report.append(f"| {name} | {photos} | {clips} ({real} real) | {sum(1 for i in items if not i)} | {match} | {tune} |")

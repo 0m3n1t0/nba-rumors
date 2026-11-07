@@ -13,6 +13,7 @@ Output: data/video/short_N.mp4 + short_N_thumb.png
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -241,6 +242,7 @@ def video_segment(item: dict, layer: Image.Image, dur: float, seg: Path, work: P
 
 
 ERRORS: list[str] = []
+MUSIC_UNDER_DB = float(os.environ.get("MUSIC_UNDER_DB", "18"))  # music bed this many dB under the voice
 
 
 def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
@@ -304,11 +306,18 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     if music and (ROOT / music["file"]).exists():
         # music: start a bit in (skip intros), quiet, ducks under the voice, fades in and out
         offset = min(15.0, max(0.0, music.get("duration", 0) - total - 1))
+        # Mixing by loudness, not by a fixed volume (every track is mastered differently):
+        # the voice is at -14 LUFS (YouTube's level); the music bed is measured and set
+        # MUSIC_UNDER_DB below it (18 dB = the usual starting point for narration), then ducks
+        # a few more dB while she speaks and comes back up in the pauses. Final mix: -14 LUFS.
+        bed_lufs = -14 - MUSIC_UNDER_DB
         af = (f"[1:a]asplit=2[voice][key];"
-              f"[2:a]atrim=start={offset:.1f},asetpts=PTS-STARTPTS,volume=0.22,"
+              f"[2:a]atrim=start={offset:.1f},asetpts=PTS-STARTPTS,"
+              f"loudnorm=I={bed_lufs}:TP=-9:LRA=7,aresample=44100,"
               f"afade=t=in:d=0.8,afade=t=out:st={max(total - 1.5, 0):.2f}:d=1.5[bed];"
-              f"[bed][key]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=350[duck];"
-              f"[voice][duck]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]")
+              f"[bed][key]sidechaincompress=threshold=0.04:ratio=4:attack=20:release=400[duck];"
+              f"[voice][duck]amix=inputs=2:duration=first:normalize=0,"
+              f"loudnorm=I=-14:TP=-1.5:LRA=11,aresample=44100[a]")
         inputs = ["-i", str(work / "visuals.mp4"), "-i", str(mp3), "-stream_loop", "-1", "-i", str(ROOT / music["file"])]
         log.append("music: " + music.get("mood", ""))
     else:

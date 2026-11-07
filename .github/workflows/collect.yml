@@ -15,6 +15,7 @@ env:
   SHORTS_PER_RUN: "2"          # Shorts made per run
   CLAUDE_MODEL: sonnet         # writing, judging, choosing pictures (Opus would use the plan 5x faster)
   CLAUDE_MODEL_LIGHT: haiku    # simple steps (trimming, search words)
+  MUSIC_UNDER_DB: "18"         # background music this many dB under the voice
 
 jobs:
   pipeline:
@@ -96,6 +97,15 @@ jobs:
         run: |
           mkdir -p fonts
           curl -fsSL -o fonts/Anton-Regular.ttf https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf
+
+      - name: Music library (private repo with YouTube Audio Library tracks; skipped if not set up)
+        if: hashFiles('data/skip_reason.txt') == ''
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: 0m3n1t0/music-library
+          token: ${{ secrets.MUSIC_REPO_TOKEN }}
+          path: music_library
 
       - name: "Stage 4c: real visuals (all free sources searched, AI picks and crops the best)"
         if: hashFiles('data/skip_reason.txt') == ''

@@ -71,10 +71,11 @@ SPORT_WORDS = re.compile(r"\b(basketball|sport|sports|athlete|player|arena|stadi
 UNRELATED = re.compile(r"\b(nurse|wheelchair|elderly|senior|patient|baby|child|kid|wedding|family|"
                        r"garden|nature|beach|cooking|food|cat|dog|yoga|meditation)\b", re.I)
 MUSIC_QUERIES = {  # background music by story mood (Openverse audio, CC0 / CC BY only)
-    "dark": ["dark trap instrumental", "dark hip hop beat"],
-    "tense": ["suspense hip hop instrumental", "tense beat instrumental"],
-    "hype": ["hype trap beat", "energetic hip hop instrumental"],
-    "upbeat": ["upbeat hip hop instrumental", "funky beat instrumental"],
+    # short queries: Openverse matches few words well, long phrases return nothing
+    "dark": ["dark trap", "trap beat"],
+    "tense": ["suspense", "dark beat"],
+    "hype": ["trap", "hip hop beat"],
+    "upbeat": ["funk", "upbeat hip hop"],
 }
 SHEET_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 

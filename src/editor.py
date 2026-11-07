@@ -76,7 +76,7 @@ Then pick:
   8-10 minute video this week, with "long_ids" listing the ids it uses.
 
 Return ONLY valid JSON, no markdown, in exactly this shape:
-{"ranked": [{"id": 0, "nba": true, "kind": "...", "virality": 7, "drama": 8, "same_as": [], "why": "...", "hook": "..."}],
+{"ranked": [{"id": 0, "nba": true, "kind": "...", "virality": 7, "drama": 8, "same_as": [], "repeat": false, "why": "...", "hook": "..."}],
  "shorts": [0, 1, 2],
  "long": {"title_idea": "...", "long_ids": [0, 3]}}
 
@@ -98,6 +98,23 @@ def plan_note() -> str:
             + ". Prefer stories that fit the plan when they are equally strong; news still wins.\n")
 
 
+def history_note() -> str:
+    """Stories already made in the last days (kept between runs by the GitHub cache)."""
+    path = DATA / "history" / "made.json"
+    try:
+        made = json.loads(path.read_text(encoding="utf-8"))[-30:]
+    except (OSError, ValueError):
+        return ""
+    if not made:
+        return ""
+    return ("\nALREADY MADE (last 7 days, newest last):\n"
+            + "\n".join(f"- {m['time'][:16]} {m['headline']}" for m in made)
+            + "\nFor every topic that is the same story as one already made, set \"repeat\": true "
+              "UNLESS today's headlines bring a real new development (new facts, a response, a "
+              "punishment, a trade completed) - then set \"repeat\": false and say the new part in "
+              "\"why\". Never pick a repeat for \"shorts\".\n")
+
+
 def build_input(topics: list[dict]) -> str:
     rows = []
     for i, t in enumerate(topics[:TOP_N]):
@@ -111,7 +128,7 @@ def build_input(topics: list[dict]) -> str:
             "search_hits": t.get("search_hits", 0),
             "samples": [f'{it["title"]} ({it["publisher"]})' for it in t["items"][:4]],
         })
-    return PROMPT.replace("TOPICS:\n", plan_note() + "TOPICS:\n") + json.dumps(rows, indent=1)
+    return PROMPT.replace("TOPICS:\n", plan_note() + history_note() + "TOPICS:\n") + json.dumps(rows, indent=1)
 
 
 def ask_claude(prompt: str) -> str:
@@ -144,7 +161,8 @@ def parse(text: str, n_topics: int) -> dict:
 
     valid = set(range(n_topics))
     data["ranked"] = [r for r in data.get("ranked", []) if r.get("id") in valid]
-    data["shorts"] = [i for i in data.get("shorts", []) if i in valid][:3]
+    repeats = {r["id"] for r in data["ranked"] if r.get("repeat")}
+    data["shorts"] = [i for i in data.get("shorts", []) if i in valid and i not in repeats][:3]
     long = data.get("long") or {}
     long["long_ids"] = [i for i in long.get("long_ids", []) if i in valid]
     data["long"] = long

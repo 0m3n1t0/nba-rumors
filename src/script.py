@@ -33,6 +33,29 @@ sys.path.insert(0, str(VENDOR / "yt-package"))
 import hookscore  # noqa: E402  (youtube-agent-skill)
 import title as titlecheck  # noqa: E402  (youtube-agent-skill)
 
+# ---- Claude Pro budget: model choice + clean stop when the plan's usage limit is reached ----
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")             # writing, judging, looking at pictures
+CLAUDE_MODEL_LIGHT = os.environ.get("CLAUDE_MODEL_LIGHT", "haiku")  # simple, mechanical steps
+LIMIT_TEXT = re.compile(r"usage limit|rate.?limit|limit reached|limit will reset|resets at|out of extra usage", re.I)
+
+
+class UsageLimit(RuntimeError):
+    """The Claude Pro plan's 5-hour or weekly limit is used up: stop cleanly, try next run."""
+
+
+def check_limit(stdout: str, stderr: str) -> None:
+    try:
+        env = json.loads(stdout)
+    except ValueError:
+        env = None
+    if isinstance(env, dict):
+        if env.get("is_error") and LIMIT_TEXT.search(str(env.get("result", ""))):
+            raise UsageLimit(str(env.get("result", ""))[:200])
+        return
+    if LIMIT_TEXT.search(f"{stdout[-3000:]} {stderr[-3000:]}"):
+        raise UsageLimit(f"{stdout} {stderr}".strip()[:200])
+
+
 MAX_ARTICLES = 3
 WPM = 135           # measured speed of our voice (#11 at 1.15x)
 MAX_WORDS = 85      # about 38 seconds: the niche's top Shorts run 25-35s (benchmark)
@@ -161,6 +184,23 @@ DRAFT:
 """
 
 
+
+def log_claude_usage(stdout: str, where: str) -> None:
+    """Every Claude call writes its token use to data/claude_usage.jsonl (for the budget table)."""
+    try:
+        env = json.loads(stdout)
+        u = env.get("usage") or {}
+        row = {"where": where, "cost_usd": env.get("total_cost_usd"),
+               "in": (u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0)
+               + (u.get("cache_creation_input_tokens") or 0),
+               "out": u.get("output_tokens") or 0, "seconds": round((env.get("duration_ms") or 0) / 1000)}
+        path = Path(__file__).resolve().parent.parent / "data" / "claude_usage.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except Exception:
+        pass
+
 def gather_sources(topic: dict, editor: dict, topic_id: int) -> list[dict]:
     """The pick's own headlines plus those of topics the editor marked as the same story."""
     ranked = {r["id"]: r for r in editor["ranked"]}
@@ -203,14 +243,17 @@ def format_sources(sources: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
-def ask_claude(prompt: str) -> dict:
+def ask_claude(prompt: str, model: str = "") -> dict:
     with tempfile.TemporaryDirectory() as empty:
         result = subprocess.run(
-            ["claude", "-p", "--output-format", "json", "--disallowedTools", NO_TOOLS],
+            ["claude", "-p", "--model", model or CLAUDE_MODEL, "--output-format", "json",
+             "--disallowedTools", NO_TOOLS],
             input=prompt, capture_output=True, text=True, cwd=empty, timeout=TIMEOUT,
         )
+    check_limit(result.stdout, result.stderr)
     if result.returncode != 0:
         raise RuntimeError(f"Claude failed: {result.stderr[-1500:]}")
+    log_claude_usage(result.stdout, "script")
     text = json.loads(result.stdout).get("result", "")
     start, end = text.find("{"), text.rfind("}")
     return json.loads(text[start:end + 1])
@@ -353,15 +396,19 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
                                              draft=json.dumps(draft, indent=1)))
         if revised.get("hooks") and revised.get("beats"):
             draft = revised
+    except UsageLimit:
+        raise
     except Exception as exc:
         print(f"[!] humanize pass skipped: {exc}")
 
     # Too long for a Short? One trimming pass (facts stay, words go).
     if len(" ".join(b.get("say", "") for b in draft.get("beats", [])).split()) > MAX_WORDS - 20:
         try:
-            trimmed = ask_claude(TRIM.format(draft=json.dumps(draft, indent=1)))
+            trimmed = ask_claude(TRIM.format(draft=json.dumps(draft, indent=1)), CLAUDE_MODEL_LIGHT)
             if trimmed.get("beats"):
                 draft["beats"] = trimmed["beats"]
+        except UsageLimit:
+            raise
         except Exception as exc:
             print(f"[!] trim pass skipped: {exc}")
 
@@ -386,6 +433,8 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
                 scored="\n".join(f"- {h['score']} {h['band']} | {h['text']} | weakest: "
                                  + ", ".join(f"{k} {v}" for k, v in sorted(h["properties"].items(), key=lambda kv: kv[1])[:2])
                                  for h in hooks)))
+        except UsageLimit:
+            raise
         except Exception as exc:
             print(f"[!] hook rewrite skipped: {exc}")
             break
@@ -489,6 +538,8 @@ def write_summary(shorts: list[dict]) -> None:
 
 
 HISTORY = DATA / "history" / "made.json"
+# 3 runs a day x 2 Shorts = 6 a day: fits the YouTube upload quota and Claude Pro's limits
+SHORTS_PER_RUN = int(os.environ.get("SHORTS_PER_RUN", "2"))
 
 
 def remember(shorts: list[dict]) -> None:
@@ -519,8 +570,9 @@ def main() -> None:
                if r["id"] not in picked and r.get("nba") and r.get("kind") != "filler"]
     dupes = set()
     shorts = []
+    limit_hit = False
     for topic_id in editor["shorts"] + backups:
-        if len(shorts) == 3:
+        if len(shorts) == SHORTS_PER_RUN:
             break
         if topic_id in dupes:
             continue
@@ -531,6 +583,10 @@ def main() -> None:
         n = len(shorts) + 1
         try:
             short = build_short(n, topic_id, editor, voice, formulas)
+        except UsageLimit as exc:
+            print(f"[i] Claude Pro usage limit reached, stopping with {len(shorts)} Short(s): {exc}")
+            limit_hit = True
+            break
         except Exception as exc:
             print(f"[!] skipped topic {topic_id}: {exc}")
             continue
@@ -540,6 +596,11 @@ def main() -> None:
         shorts.append(short)
     write_summary(shorts)
     remember(shorts)
+    if not shorts and limit_hit:
+        (DATA / "skip_reason.txt").write_text("Claude Pro usage limit reached before any script was "
+                                             "written; the next run continues.", encoding="utf-8")
+        print("[i] run skipped: usage limit")
+        return
     if not shorts:
         sys.exit("[!] No scripts were written.")
 

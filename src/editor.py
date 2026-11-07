@@ -17,6 +17,7 @@ Claude gets no tools, runs in an empty folder, and its answer is validated.
 from __future__ import annotations
 
 import json
+import re
 import os
 import subprocess
 import sys
@@ -27,6 +28,29 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 TOP_N = 40          # how many collector topics the editor reads
 TIMEOUT = 300       # seconds
+
+# ---- Claude Pro budget: model choice + clean stop when the plan's usage limit is reached ----
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")             # writing, judging, looking at pictures
+CLAUDE_MODEL_LIGHT = os.environ.get("CLAUDE_MODEL_LIGHT", "haiku")  # simple, mechanical steps
+LIMIT_TEXT = re.compile(r"usage limit|rate.?limit|limit reached|limit will reset|resets at|out of extra usage", re.I)
+
+
+class UsageLimit(RuntimeError):
+    """The Claude Pro plan's 5-hour or weekly limit is used up: stop cleanly, try next run."""
+
+
+def check_limit(stdout: str, stderr: str) -> None:
+    try:
+        env = json.loads(stdout)
+    except ValueError:
+        env = None
+    if isinstance(env, dict):
+        if env.get("is_error") and LIMIT_TEXT.search(str(env.get("result", ""))):
+            raise UsageLimit(str(env.get("result", ""))[:200])
+        return
+    if LIMIT_TEXT.search(f"{stdout[-3000:]} {stderr[-3000:]}"):
+        raise UsageLimit(f"{stdout} {stderr}".strip()[:200])
+
 
 PROMPT = """You are the head editor of "NBA Rumors", a fast-growing YouTube channel about
 NBA news, rumors, trades, injuries, feuds and locker room drama. Your job: decide
@@ -60,7 +84,7 @@ Judge every topic:
   the headlines (no invented facts, no invented quotes)
 
 Then pick:
-- "shorts": the 3 best ids for Shorts today. Must be nba=true, kind != "filler",
+- "shorts": the 3 best ids for Shorts today, best first (the pipeline makes the top SHORTS_PER_RUN). Must be nba=true, kind != "filler",
   verified=true, and not duplicates of each other.
   Every pick needs ONE strong reason people will watch: drama >= 6 (a feud, a scandal,
   a conflict) OR virality >= 8 (something everyone is sharing, positive or negative:
@@ -86,6 +110,23 @@ TOPICS:
 
 PLAN = ROOT / "plan" / "week.json"
 
+
+
+def log_claude_usage(stdout: str, where: str) -> None:
+    """Every Claude call writes its token use to data/claude_usage.jsonl (for the budget table)."""
+    try:
+        env = json.loads(stdout)
+        u = env.get("usage") or {}
+        row = {"where": where, "cost_usd": env.get("total_cost_usd"),
+               "in": (u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0)
+               + (u.get("cache_creation_input_tokens") or 0),
+               "out": u.get("output_tokens") or 0, "seconds": round((env.get("duration_ms") or 0) / 1000)}
+        path = Path(__file__).resolve().parent.parent / "data" / "claude_usage.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except Exception:
+        pass
 
 def plan_note() -> str:
     """This week's yt-plan (written by the weekly job), so the plan steers the daily picks."""
@@ -136,7 +177,7 @@ def ask_claude(prompt: str) -> str:
     with tempfile.TemporaryDirectory() as empty:
         result = subprocess.run(
             [
-                "claude", "-p",
+                "claude", "-p", "--model", CLAUDE_MODEL,
                 "--output-format", "json",
                 "--disallowedTools", "Bash,Edit,Write,Read,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
             ],
@@ -146,8 +187,10 @@ def ask_claude(prompt: str) -> str:
             cwd=empty,
             timeout=TIMEOUT,
         )
+    check_limit(result.stdout, result.stderr)
     if result.returncode != 0:
         sys.exit(f"[!] Claude failed ({result.returncode}): {result.stderr[-2000:]}")
+    log_claude_usage(result.stdout, "editor")
     envelope = json.loads(result.stdout)
     return envelope.get("result", "")
 
@@ -196,11 +239,25 @@ def write_summary(data: dict, topics: list[dict]) -> None:
             fh.write(text + "\n")
 
 
+def stop_run(reason: str) -> None:
+    """Mark this run as skipped: the later workflow steps see data/skip_reason.txt and do nothing."""
+    DATA.mkdir(parents=True, exist_ok=True)
+    (DATA / "skip_reason.txt").write_text(reason, encoding="utf-8")
+    print(f"[i] {reason}")
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+            fh.write(f"## ⏸️ Run skipped\n\n{reason}\n")
+
+
 def main() -> None:
     topics = json.loads((DATA / "topics.json").read_text(encoding="utf-8"))
     if not topics:
         sys.exit("[!] No topics to judge.")
-    raw = ask_claude(build_input(topics))
+    try:
+        raw = ask_claude(build_input(topics))
+    except UsageLimit as exc:
+        stop_run(f"Claude Pro usage limit reached ({exc}). Nothing made this run; the next run continues.")
+        return
     try:
         data = parse(raw, min(TOP_N, len(topics)))
     except (ValueError, KeyError) as exc:

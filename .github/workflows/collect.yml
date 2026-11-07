@@ -2,11 +2,19 @@ name: NBA pipeline
 
 on:
   schedule:
-    - cron: "17 */6 * * *"   # every 6 hours (UTC)
+    # 2 runs a day, 2 Shorts each = 4 Shorts a day. 12:17 and 22:17 UTC (morning and late
+    # afternoon in the US). The second channel runs at 03:17 and 17:17, so every run gets its
+    # own 5-hour Claude Pro window (runs are always 5 or more hours apart).
+    - cron: "17 12,22 * * *"
   workflow_dispatch:          # "Run workflow" button for manual tests
 
 permissions:
   contents: read
+
+env:
+  SHORTS_PER_RUN: "2"          # Shorts made per run
+  CLAUDE_MODEL: sonnet         # writing, judging, choosing pictures (Opus would use the plan 5x faster)
+  CLAUDE_MODEL_LIGHT: haiku    # simple steps (trimming, search words)
 
 jobs:
   pipeline:
@@ -50,39 +58,47 @@ jobs:
         run: python src/editor.py
 
       - name: "Stage 3: write scripts (youtube-agent-skill hooks + titles)"
+        if: hashFiles('data/skip_reason.txt') == ''
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: python src/script.py
 
       - name: Cache voice models
+        if: hashFiles('data/skip_reason.txt') == ''
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: voice-models-v1
 
       - name: Install voice engine
+        if: hashFiles('data/skip_reason.txt') == ''
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q espeak-ng ffmpeg
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-voice.txt
 
       - name: "Stage 4: voice (Kokoro, chosen voice #11)"
+        if: hashFiles('data/skip_reason.txt') == ''
         run: python src/tts.py
 
       - name: "Stage 4b: yt-edit (cut dead air in the narration)"
+        if: hashFiles('data/skip_reason.txt') == ''
         run: python src/audio_qc.py
 
       - name: "Long-video skills: yt-chapters + yt-shorts (sleep until a long video exists)"
+        if: hashFiles('data/skip_reason.txt') == ''
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: python src/long_tools.py
 
       - name: Fonts for the video (Anton, open font license)
+        if: hashFiles('data/skip_reason.txt') == ''
         run: |
           mkdir -p fonts
           curl -fsSL -o fonts/Anton-Regular.ttf https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf
 
       - name: "Stage 4c: real visuals (all free sources searched, AI picks and crops the best)"
+        if: hashFiles('data/skip_reason.txt') == ''
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
@@ -92,7 +108,12 @@ jobs:
         run: python src/media.py
 
       - name: "Stage 5: render the Shorts (MP4)"
+        if: hashFiles('data/skip_reason.txt') == ''
         run: python src/render.py
+
+      - name: Budget table (Claude use this run)
+        if: always()
+        run: python src/budget.py
 
       - name: "Download 1: finished Shorts only (small)"
         if: always()
@@ -103,7 +124,7 @@ jobs:
             data/video/short_*.mp4
             data/video/short_*_thumb.png
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
 
       - name: "Download 2: working data for checking problems (no big media files)"
         if: always()
@@ -117,4 +138,4 @@ jobs:
             !data/media/**/*.webm
             !data/media/**/*.jpg
             !data/media/**/*.mp3
-          retention-days: 7
+          retention-days: 3

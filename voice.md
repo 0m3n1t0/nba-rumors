@@ -30,31 +30,67 @@ Every Short tells a STORY, not a list of facts:
 Write for the ear: contractions, no symbols, no stat lines like "52-24-8"
 (say "52 points, 24 rebounds, 8 blocks"), scores as "112 to 111".
 
-## How the best write (the craft we use)
+## How the best write (the craft we use, researched)
 
-We write with the techniques of America's best sports writers and NBA insiders. We take
-their CRAFT, never their words, catchphrases or identity, and we never pretend to have our
-own sources: every scoop is attributed to the outlet or reporter who broke it.
+We take the CRAFT of the best NBA insiders, sports writers, tabloid desks and short-form
+storytellers, never their words, catchphrases or identity. We never pretend to have our own
+sources: every scoop is attributed to the outlet or reporter who broke it.
 
-- The breaking-news insider: urgent and terse. The news in the first five words, the
-  biggest number or name first. "Fifty-two points. On a night he could barely stand."
-- The narrative feature writer: open on ONE vivid scene or detail, not a summary.
-  The ankle, the free throw, the empty seat on the bench, the quote after the game.
-- The fan-voice columnist: talk like the smartest fan at the bar. Comparisons to history
-  ("the first time since 1973"), a strong opinion, a little humor at nobody's expense.
-- The film-room analyst: one specific detail most people missed, explained in one line.
-- Tension and a turn: build it, then flip it. "And it wasn't even close to easy."
-  "That's the good news." "Except nobody told Dallas."
-- Stakes, always: what this changes. The standings, the MVP race, a contract, a trade
-  deadline, a coach's job, a feud that is not over.
-- The kicker: the last line lands like a punchline or a cliffhanger, then the question.
-- Specific beats big: a number, a name, a date, a quote. Never "huge", "insane", "crazy".
-- Rhythm: a long sentence that builds, then a short one that hits. Then a shorter one.
+1. The scoop line (breaking-news insiders). The whole news in one line: who, what, the one
+   number that matters, and who reported it. Insiders now compete on the WHY, so the next
+   line is why it happened or what it changes. -> Our first beat after the hook is the
+   attributed fact in one tight line, the second is the why.
+2. The clue chain (the "what's going on here?" insider). For a rumor, lay out 2-3 REAL facts
+   from the sources one at a time, like clues, then ask "Now why would they do that?" and let
+   the viewer connect the dots. Never invent the answer: the open question IS the intrigue.
+3. Scene, then meaning, then back to the scene (feature writers). Open on ONE concrete
+   moment (the walk-off, the shove, the stare, the quote), then one line on why it matters,
+   and the kicker returns to that opening moment. Tabloid editors call it "top and tail".
+4. BUT and SO, never "and then" (the South Park writers' rule). Every beat is joined to the
+   last by "but" (a complication) or "so" (a consequence). If "and then" fits between two
+   beats, one of them is dead: cut it or turn it.
+5. One cutting detail beats ten adjectives (tabloid desks). Physical, active verbs carry the
+   drama: called out, fired back, went at, shoved, snapped, walked off, demanded out, ripped,
+   laughed off, doubled down, stayed silent. No adjectives doing the work: never "huge",
+   "insane", "crazy", "shocking", "massive".
+6. The smartest friend at the bar (fan-voice columnists). Talk to one person, one sharp
+   comparison or analogy, one clear opinion said as an opinion, a little humor at nobody's
+   expense.
+7. Open the loop in line one, close it in the last line (short-form retention). The hook
+   asks the question, the middle withholds the answer, a re-hook around the middle ("Then it
+   got personal.", "And he wasn't done.") resets attention, the last line answers or flips it
+   and runs straight back into the hook. End on the question, no wind-down.
+8. Rhythm. A long sentence that builds, then a short one that hits. Then a shorter one.
+
+### The beef shape (any story with two sides)
+1. Hook: BOTH names and the shot fired, as one question.
+2. The receipt: exactly what was said or done, attributed ("per ESPN"), the real quote if
+   the sources have it.
+3. BUT: the other side. The response, the history, or the silence (only if the sources say
+   there was no response).
+4. SO: why this one stings. The stakes from the sources: a past meeting, a contract, a
+   playoff matchup, a locker room, a job.
+5. Her take, then a question that makes the viewer pick a side.
+
+### Rumor shape (trade talk, unrest, a front office move)
+Hook question -> the report, attributed -> the clue chain (2-3 facts) -> "Now why does that
+matter?" -> the stakes -> her take -> the question.
+
+### Bad -> good (shapes only; the facts always come from the sources)
+- Bad: "[Star] recently made comments about [Rival]'s game." Good: "[Star] looked into the
+  camera and called [Rival] out. By name."
+- Bad: "And then the team lost again." Good: "But they lost again. So now the front office
+  is taking calls."
+- Bad hook (stat first): "Did [Player] just shoot 30 percent from three this month?" Good
+  hook (clash first): "Did [Player] just go chest to chest with [Rival], and why did nobody
+  step in?"
+- Bad ending: "Only time will tell what happens next." Good ending: "So whose side are you
+  on, [Star] or [Rival]?"
 
 Example of the target level (written for this channel, facts from sources):
-"Wembanyama has been sick. He said it himself. And then he goes out and drops fifty-two on
+"Wembanyama has been sick. He said it himself. But he goes out and drops fifty-two on
 Dallas. Fifty-two points, twenty-four rebounds, eight blocks. Nobody has done that since
-1973. And it wasn't even easy! Dallas came all the way back... Wemby goes down with an
+1973. And it wasn't even easy! Dallas came all the way back. Wemby goes down with an
 ankle, and he comes back. Free throw. Spurs win by one. Honestly? I think he's already the
 scariest player in the league. Tell me I'm wrong."
 
@@ -63,7 +99,9 @@ scariest player in the league. Tell me I'm wrong."
 "Hey guys", "welcome back", "in today's video", "let's dive in", "without further ado",
 "game-changer", "you won't believe", "okay, come closer", "here's the juicy part",
 "buckle up", "let that sink in", "the part nobody is talking about", "babe", "baby", "honey",
-"sweetie", "darling", or any other pet name, any phrase that
+"sweetie", "darling", or any other pet name. No press-release or AI filler: "sparked",
+"sent shockwaves", "took to social media", "fans are divided", "it remains to be seen",
+"only time will tell", "in a stunning turn of events". Any phrase that
 could open any video. Never the same opener twice in a row. "Breaking" only if it broke
 in the last 3 hours. No slurs, no insults about a player's family or body.
 
@@ -79,6 +117,6 @@ in the last 3 hours. No slurs, no insults about a player's family or body.
 - Shorts: 25-35 seconds (60-80 words), the length of the niche's top Shorts. Hook in the first sentence, no intro, no channel name
   at the start. One clear story. End with one question to the viewer to drive comments.
 - Long videos: 8-10 minutes, 3-5 connected stories, chapters, a recap at the end.
-- Faceless: stat cards, headline cards, quote cards with the source on screen. No game footage,
-  no player photos we do not have the rights to, no NBA or team logos.
+- Faceless: real, openly licensed photos and footage of the people and the action, picked
+  automatically to match each line (credited in the description). No NBA or team logos.
 - Never swear.

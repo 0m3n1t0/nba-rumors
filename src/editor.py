@@ -209,6 +209,9 @@ def build_input(topics: list[dict]) -> str:
 
 def ask_claude(prompt: str) -> str:
     # Empty working folder + no tools: a malicious headline cannot make Claude act.
+    # web headlines can carry control characters or broken unicode, which fail the request
+    prompt = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff]", " ",
+                    prompt.encode("utf-8", "replace").decode("utf-8", "replace"))
     with tempfile.TemporaryDirectory() as empty:
         result = subprocess.run(
             [
@@ -224,7 +227,7 @@ def ask_claude(prompt: str) -> str:
         )
     check_limit(result.stdout, result.stderr)
     if result.returncode != 0:
-        sys.exit(f"[!] Claude failed ({result.returncode}): {result.stderr[-2000:]}")
+        sys.exit(f"[!] Claude failed ({result.returncode}): {(result.stdout or '')[-800:]} {result.stderr[-1200:]}")
     log_claude_usage(result.stdout, "editor")
     envelope = json.loads(result.stdout)
     return envelope.get("result", "")

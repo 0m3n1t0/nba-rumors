@@ -31,17 +31,9 @@ AUDIO = DATA / "audio"
 CONFIG = json.loads((ROOT / "config" / "voice.json").read_text(encoding="utf-8"))
 RATE = 24000
 
-# ---- Livelier delivery with the SAME chosen voice (blend, base speed and EQ stay as chosen) ----
-# Each sentence is spoken on its own, so Kokoro gives it its own full intonation curve instead of
-# one flat run, and its pace, pause and loudness follow what kind of line it is:
-# questions slow down and hang, exclamations speed up and hit harder, short punches land slowly.
-PROSODY = {   # pauses kept tiny: long silences between sentences drain the energy
-    "question": {"speed": 0.96, "pause": 0.10, "gain_db": 0.5},
-    "exclaim":  {"speed": 1.08, "pause": 0.06, "gain_db": 1.8},
-    "punch":    {"speed": 0.94, "pause": 0.08, "gain_db": 1.0},   # 1-4 words: "Live on TV."
-    "long":     {"speed": 1.06, "pause": 0.04, "gain_db": 0.0},   # 15+ words: keep it moving
-    "normal":   {"speed": 1.02, "pause": 0.05, "gain_db": 0.0},
-}
+# The whole script is spoken in ONE pass, exactly like the audition sample the voice was chosen
+# on: Kokoro then carries one natural intonation across the story instead of restarting at
+# every beat or sentence (restarting is what made it sound flat and choppy).
 ACRONYMS = {"NBA", "ESPN", "MVP", "TNT", "ABC", "NBC", "CBS", "WNBA", "USA", "GOAT", "OKC", "LA"}
 BRIGHT = "equalizer=f=3500:t=q:w=1.2:g=2.5,acompressor=threshold=-18dB:ratio=2.5:attack=5:release=60"
 
@@ -50,6 +42,7 @@ def speakable(text: str) -> str:
     """Small fixes so the voice reads the way a person would."""
     text = re.sub(r"(\d+)-(\d+)-(\d+)", r"\1, \2, \3", text)      # 52-24-8
     text = re.sub(r"(\d{2,3})-(\d{2,3})", r"\1 to \2", text)       # 112-111
+    text = re.sub(r"\b(\d{1,2})-(\d{1,2})\b", r"\1 and \2", text)   # a 3-6 record
     text = text.replace("&", " and ").replace("%", " percent").replace("vs.", "versus")
     text = re.sub(r"\[[^\]]*\]", "", text)                          # stray [notes]
     return re.sub(r"\s+", " ", text).strip()
@@ -58,24 +51,6 @@ def speakable(text: str) -> str:
 def lower_caps(text: str) -> str:
     """Words in CAPS for emphasis are read as words, not spelled out letter by letter."""
     return re.sub(r"\b[A-Z]{3,}\b", lambda m: m.group(0) if m.group(0) in ACRONYMS else m.group(0).lower(), text)
-
-
-def sentences(text: str) -> list[str]:
-    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"\u201c'])", text.strip())
-    return [p.strip() for p in parts if p.strip()]
-
-
-def kind(sentence: str) -> str:
-    words = len(sentence.split())
-    if sentence.rstrip("\"\u201d' ").endswith("?"):
-        return "question"
-    if sentence.rstrip("\"\u201d' ").endswith("!"):
-        return "exclaim"
-    if words <= 4:
-        return "punch"
-    if words >= 15:
-        return "long"
-    return "normal"
 
 
 def load_pipeline():
@@ -92,20 +67,44 @@ def say_once(pipeline, voice, text: str, speed: float) -> np.ndarray:
 
 
 def speak(pipeline, voice, text: str) -> np.ndarray:
-    """One script part, sentence by sentence, with the delivery each sentence needs."""
-    text = lower_caps(speakable(text))
-    pieces = sentences(text) or [text]
-    out = []
-    for i, sent in enumerate(pieces):
-        style = PROSODY[kind(sent)]
-        clip = say_once(pipeline, voice, sent, CONFIG["speed"] * style["speed"])
-        clip = clip * (10 ** (style["gain_db"] / 20))
-        out.append(clip)
-        if i < len(pieces) - 1:
-            out.append(np.zeros(int(RATE * style["pause"]), dtype=np.float32))
-    audio = np.concatenate(out)
-    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
-    return audio / peak * 0.97 if peak > 0.97 else audio
+    return say_once(pipeline, voice, lower_caps(speakable(text)), CONFIG["speed"])
+
+
+TOKEN = re.compile(r"[a-z0-9']+")
+
+
+def tokens(text: str) -> list[str]:
+    return TOKEN.findall(text.lower().replace("\u2019", "'"))
+
+
+def beat_times(parts: list[dict], words: list[dict], duration: float) -> list[dict]:
+    """Where each beat starts in the one-pass narration: align the script's words with what
+    Whisper heard; a beat whose first words are not found is placed by its share of the words."""
+    import difflib
+    script, owner = [], []
+    for i, part in enumerate(parts):
+        toks = tokens(lower_caps(speakable(part["say"])))
+        script += toks
+        owner += [i] * len(toks)
+    heard = [(tokens(w["word"]) or [""])[0] for w in words]
+    pos = {}
+    for a, b, size in difflib.SequenceMatcher(None, script, heard, autojunk=False).get_matching_blocks():
+        for k in range(size):
+            pos.setdefault(a + k, b + k)
+    starts = []
+    for i in range(len(parts)):
+        idx = [k for k, o in enumerate(owner) if o == i]
+        hit = next((pos[k] for k in idx[:6] if k in pos), None)
+        if hit is not None and hit < len(words):
+            t = words[hit]["start"]
+        else:
+            t = duration * (idx[0] / max(len(script), 1)) if idx else (starts[-1] if starts else 0.0)
+        starts.append(max(t, starts[-1] if starts else 0.0))
+    starts[0] = 0.0
+    return [{"index": i, "say": p["say"], "on_screen": p.get("on_screen", ""),
+             "start": round(starts[i], 2),
+             "end": round(starts[i + 1] if i + 1 < len(parts) else duration, 2)}
+            for i, p in enumerate(parts)]
 
 
 def finish(wav: Path, mp3: Path) -> None:
@@ -145,29 +144,25 @@ def main() -> None:
         sys.exit("[!] No scripts to voice.")
     AUDIO.mkdir(parents=True, exist_ok=True)
     pipeline, voice = load_pipeline()
-    gap = np.zeros(int(RATE * CONFIG["gap_seconds"]), dtype=np.float32)
 
     lines = ["## 🎙️ Voice", "", "| Short | Ready | Length | Beats |", "|---|---|---|---|"]
     for path in scripts:
         short = json.loads(path.read_text(encoding="utf-8"))
         parts = [{"say": short["hook"]["text"], "on_screen": "HOOK"}] + short["beats"]
 
-        audio, beats, t = [], [], 0.0
-        for i, part in enumerate(parts):
-            clip = speak(pipeline, voice, part["say"])
-            beats.append({"index": i, "say": part["say"], "on_screen": part.get("on_screen", ""),
-                          "start": round(t, 2), "end": round(t + len(clip) / RATE, 2)})
-            audio += [clip, gap]
-            t += (len(clip) + len(gap)) / RATE
-
+        clip = speak(pipeline, voice, " ".join(p["say"].strip() for p in parts))
+        tail = np.zeros(int(RATE * 0.3), dtype=np.float32)
         name = path.stem
         wav = AUDIO / f"{name}.wav"
-        sf.write(wav, np.concatenate(audio), RATE)
+        sf.write(wav, np.concatenate([clip, tail]), RATE)
         mp3 = AUDIO / f"{name}.mp3"
         finish(wav, mp3)
         wav.unlink()
 
-        timing = {"duration": round(t, 2), "beats": beats, "words": word_times(mp3)}
+        duration = round((len(clip) + len(tail)) / RATE, 2)
+        words = word_times(mp3)
+        beats = beat_times(parts, words, duration)
+        timing = {"duration": duration, "beats": beats, "words": words}
         (AUDIO / f"{name}.timing.json").write_text(json.dumps(timing, indent=2), encoding="utf-8")
         ready = "✅" if short.get("ready") else "⚠️"
         lines.append(f"| {short['n']}: {short['headline'][:60]} | {ready} | {timing['duration']:.0f}s | {len(beats)} |")

@@ -33,7 +33,7 @@ sys.path.insert(0, str(VENDOR / "yt-script"))
 sys.path.insert(0, str(VENDOR / "yt-package"))
 import hookscore  # noqa: E402  (youtube-agent-skill)
 import title as titlecheck  # noqa: E402  (youtube-agent-skill)
-from editor import niche_data, short_score  # noqa: E402  (same order and niche scan as the editor)
+from editor import MIN_SCORE, niche_data, score_line, short_score  # noqa: E402  (same order and niche scan as the editor)
 
 # ---- Claude Pro budget: model choice + clean stop when the plan's usage limit is reached ----
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")             # writing, judging, looking at pictures
@@ -774,7 +774,8 @@ QUEUE: list[str] = []
 def write_summary(shorts: list[dict]) -> None:
     lines = ["## ✍️ Scripts", ""]
     if QUEUE:
-        lines += ["**Order the stories were tried** (score = drama, conflict and audience; ⭐ editor pick):",
+        lines += [f"**Order the stories were tried** (viral score 0-100, made from {MIN_SCORE}: E emotion, "
+                  "S star power, D audience demand, T timeliness, C comment fuel, V surprise; ⭐ editor pick):",
                   ""] + [f"{n}. {x}" for n, x in enumerate(QUEUE, 1)] + [""]
     if SKIPPED:
         lines += ["**Stories skipped (why):**", ""] + [f"- {x}" for x in SKIPPED] + [""]
@@ -859,7 +860,7 @@ def main() -> None:
     picked = set(editor["shorts"])
     backups = [r["id"] for r in sorted(editor["ranked"], key=lambda r: -short_score(r))
                if r["id"] not in picked and r.get("nba") and r.get("kind") != "filler"
-               and not r.get("repeat") and short_score(r) > 0
+               and not r.get("repeat") and short_score(r) >= MIN_SCORE
                and r["id"] < len(editor["topics"])
                and (editor["topics"][r["id"]].get("verified") or editor["topics"][r["id"]].get("outlets", 0) >= 2)]
     dupes = set()
@@ -868,15 +869,15 @@ def main() -> None:
     score = {r["id"]: short_score(r) for r in editor["ranked"]}
     # a weak story is never made: fewer Shorts beat a boring one (it teaches the algorithm the
     # channel is skippable)
-    strong = [i for i in editor["shorts"] if score.get(i, 1) > 0]
+    strong = [i for i in editor["shorts"] if score.get(i, MIN_SCORE) >= MIN_SCORE]
     for i in editor["shorts"]:
-        if score.get(i, 1) <= 0:
-            SKIPPED.append(f"{editor['topics'][i]['headline'][:90]}: too weak (score {score[i]:.1f}), not made")
+        if score.get(i, MIN_SCORE) < MIN_SCORE:
+            SKIPPED.append(f"{editor['topics'][i]['headline'][:90]}: too weak (score {score[i]:.1f} < {MIN_SCORE}), not made")
     # one queue in drama/audience order; the editor's own picks get a small bonus
     queue = sorted(strong + backups, key=lambda i: -(score.get(i, 0) + (3 if i in picked else 0)))
     top = sorted((r for r in editor["ranked"] if r.get("nba") and r.get("kind") != "filler"),
                  key=lambda r: -(score.get(r["id"], 0) + (3 if r["id"] in picked else 0)))[:8]
-    QUEUE.extend(f"{score.get(r['id'], 0):.1f}{' ⭐' if r['id'] in picked else ''}"
+    QUEUE.extend(f"{score.get(r['id'], 0):.1f} ({score_line(r)}){' ⭐' if r['id'] in picked else ''}"
                  f"{' 🔁 already made' if r.get('repeat') else ''}"
                  f"{' 📈 Google trend ' + str(r['google_trend']) if r.get('google_trend') else ''}"
                  f"{' 🚀 rising +' + str(r['momentum']) + ' outlets' if r.get('momentum') else ''}"

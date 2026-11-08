@@ -154,6 +154,55 @@ def momentum(topics: list[dict]) -> None:
                         encoding="utf-8")
 
 
+WIKI_UA = {"User-Agent": "nba-rumors-pipeline/1.0 (https://github.com/0m3n1t0/nba-rumors)"}
+SPORTS_DESC = re.compile(r"basketball|\bnba\b|coach|executive|sports|athlete|broadcaster|analyst", re.I)
+
+
+def wiki_fame(all_names: set[str]) -> dict[str, float]:
+    """How famous each person is RIGHT NOW: English Wikipedia views of their page in the last
+    7 days (free, no key), 0-10 on a log scale (7K views a week ~ 0, 70K ~ 5, 700K+ = 10).
+    Names are resolved through Wikipedia's redirects first ("Nikola Jokic" -> "Nikola Jokić",
+    otherwise the biggest stars with accents would look unknown), and only pages whose short
+    description is about basketball or sports count (never a same-name actor)."""
+    from datetime import date
+    names_list = sorted(all_names)[:150]
+    resolved: dict[str, str] = {}
+    for i in range(0, len(names_list), 50):
+        q = urllib.parse.urlencode({"action": "query", "format": "json", "redirects": 1,
+                                    "prop": "pageprops", "ppprop": "wikibase-shortdesc",
+                                    "titles": "|".join(names_list[i:i + 50])})
+        req = urllib.request.Request(f"https://en.wikipedia.org/w/api.php?{q}", headers=WIKI_UA)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read().decode("utf-8"))["query"]
+        alias = {}
+        for step in ("normalized", "redirects"):
+            for m in data.get(step, []):
+                alias[m["from"]] = m["to"]
+        sports = {p["title"] for p in data.get("pages", {}).values()
+                  if "missing" not in p and SPORTS_DESC.search(p.get("pageprops", {}).get("wikibase-shortdesc", ""))}
+        for n in names_list[i:i + 50]:
+            t = alias.get(alias.get(n, n), alias.get(n, n))
+            if t in sports:
+                resolved[n] = t
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=6)
+    views: dict[str, int] = {}
+    fame = {}
+    for n, title in resolved.items():
+        if title not in views:
+            url = ("https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia.org/"
+                   f"all-access/user/{urllib.parse.quote(title.replace(' ', '_'), safe='')}/daily/"
+                   f"{start:%Y%m%d}00/{end:%Y%m%d}00")
+            try:
+                with urllib.request.urlopen(urllib.request.Request(url, headers=WIKI_UA), timeout=20) as r:
+                    views[title] = sum(x["views"] for x in json.loads(r.read().decode("utf-8"))["items"])
+            except Exception:
+                views[title] = 0
+        v = views[title]
+        fame[n] = round(max(0.0, min(10.0, 5 * math.log10(v / 7000))), 1) if v > 7000 else 0.0
+    return fame
+
+
 GOOGLE_TRENDS_RSS = "https://trends.google.com/trending/rss?geo=US"   # public, free, hourly
 
 
@@ -245,6 +294,20 @@ def main() -> None:
         # one monster video still does not flatten everything else)
         t["youtube_heat"] = round(10 * math.sqrt(raw[i] / top), 1) if raw[i] else 0
 
+    # Star power: how famous the people in each story are right now (Wikipedia views)
+    try:
+        people = {t_i: set().union(*[names(x) for x in [t["headline"]] + [it["title"] for it in t["items"][:6]]])
+                  for t_i, t in enumerate(topics[:TOP_TOPICS])}
+        fame = wiki_fame(set().union(*people.values()) if people else set())
+        for t_i, t in enumerate(topics[:TOP_TOPICS]):
+            ranked = sorted(((fame.get(n, 0), n) for n in people[t_i]), reverse=True)
+            t["star_fame"] = ranked[0][0] if ranked else 0
+            t["star_names"] = [f"{n} {f}" for f, n in ranked[:3] if f]
+        print(f"[+] Star power: {sum(1 for f in fame.values() if f)} people found on Wikipedia")
+    except Exception as exc:
+        signals["errors"].append(f"star power: {exc}")
+        print(f"[!] star power skipped: {exc}")
+
     try:
         momentum(topics)
     except Exception as exc:
@@ -260,13 +323,13 @@ def main() -> None:
     for v in signals["videos"][:10]:
         lines.append(f"- {v['views_per_hour']:,}/h · {v['title']} ({v['channel']})")
     lines += ["", "**Topics people are watching and searching:**", "",
-              "| YouTube heat | search hits | Google trend | rising (new outlets) | topic |", "|---|---|---|---|---|"]
+              "| YouTube heat | search hits | Google trend | rising (new outlets) | star power | topic |", "|---|---|---|---|---|---|"]
     hot = sorted(topics[:TOP_TOPICS], key=lambda t: -(t.get("youtube_heat", 0) + t.get("search_hits", 0)
                                                      + t.get("google_trend", 0)))
     for t in hot[:12]:
         gq = f" ({', '.join(t['google_queries'])})" if t.get("google_queries") else ""
         rise = f"+{t['momentum']}" if t.get("momentum") else "0"
-        lines.append(f"| {t.get('youtube_heat', 0)} | {t.get('search_hits', 0)} | {t.get('google_trend', 0)}{gq} | {rise} | {t['headline']} |")
+        lines.append(f"| {t.get('youtube_heat', 0)} | {t.get('search_hits', 0)} | {t.get('google_trend', 0)}{gq} | {rise} | {t.get('star_fame', 0)} | {t['headline']} |")
     nba_trends = [g for g in signals.get("google_trends", [])
                   if re.search(r"nba|lakers|celtics|warriors|knicks|bucks|heat|nuggets|suns|mavericks|"
                                r"76ers|sixers|nets|bulls|cavaliers|thunder|spurs|rockets|clippers|kings|"

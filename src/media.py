@@ -60,8 +60,12 @@ ALLOW_SA = os.environ.get("MEDIA_ALLOW_SA") == "1"  # off: share-alike could bin
 CREDIT_MARK = "Photo and video credits:"
 NO_TOOLS = "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task"
 LOGO_WORDS = re.compile(r"\b(logo|brand|nike|adidas|jordan|nba|wnba|jersey number|trademark|text)\b", re.I)
-FALLBACK_BROLL = ["basketball dunk", "basketball arena crowd", "basketball game"]
-MAX_PHOTOS, MAX_CLIPS = 4, 8          # candidates shown to Claude per beat
+FALLBACK_BROLL = ["basketball dunk", "basketball game", "basketball player dribbling",
+                  "basketball arena crowd", "basketball court action"]
+MAX_PHOTOS, MAX_CLIPS = 3, 9          # candidates shown to Claude per beat
+MIN_CLIPS = 6                         # every beat gets at least this many clips to choose from
+CLIP_MARGIN = 2                       # a clip wins unless the photo is 3+ points more relevant
+MIN_CLIP_SCORE = 5                    # ...and the clip itself really fits the line (5+)
 # a stock clip must belong to the world of the story (sport, arena, media), not random life scenes
 SPORT_WORDS = re.compile(r"\b(basketball|sport|sports|athlete|player|arena|stadium|court|ball|hoop|"
                          r"dunk|game|match|crowd|fans?|referee|whistle|gym|training|coach|locker|"
@@ -112,9 +116,10 @@ should SHOW:
              "press conference microphones", "contract signing", "angry crowd arena",
              "locker room", "news camera", "empty arena", "basketball free throw").
              Stock footage never shows real NBA players: no names, no logos, no team gear.
-  "prefer": "photo" or "footage". FOOTAGE IS THE MAIN MATERIAL: at least 2 of every 3 beats
-            are footage. Use "photo" only for beat 0 (the hook, the main person) and at most one
-            more beat where the person's face matters (a quote). Never two photos in a row.
+  "prefer": "photo" or "footage". FOOTAGE IS THE MAIN MATERIAL: say "footage" whenever the line
+            describes an action, a game moment, a scene or a reaction that a clip can show.
+            Say "photo" when the line is about a person's face or words (the hook's main
+            person, a direct quote) and a clip is unlikely to show it better.
 Every query must stay in the world of basketball / sports media (court, arena, ball, crowd,
 press, cameras, phone, money). Never everyday-life scenes (hospital patients, families, nature).
 Also give "mood" for the whole Short's background music: "dark" (beef, scandal, dirty play),
@@ -136,10 +141,13 @@ as closely as possible - the same person, the same kind of action and the same m
   Example: "Draymond called out Brooks on his podcast" -> Draymond talking / at a microphone.
 Score every candidate 0-10 for how well it matches the line:
   10 = the named person doing this kind of thing; 7-9 = the named person in a fitting moment,
-  or a real game clip showing exactly this kind of action; 4-6 = right mood, generic;
+  or a real or stock clip showing exactly the action the line describes (a shove, a dunk, a
+  press conference, an angry crowd); 4-6 = right mood, generic basketball action;
+  a calm portrait of the named person while the line describes an action or a scene: max 6;
   0-3 = does not fit (wrong person, wrong action, unrelated scene, logos, watermarks, text).
-Only when two candidates score the same, prefer: REAL CLIP > photo > STOCK CLIP, and a clip over
-a photo (the video should be mostly moving footage). A wrong person always scores 0. Nothing
+Score honestly: the pipeline itself prefers a clip whenever it is within 2 points of the best
+photo, and keeps the photo only when it is clearly (3+ points) more relevant. So never inflate
+a generic clip and never inflate a photo. Between equal clips: REAL CLIP > STOCK CLIP. A wrong person always scores 0. Nothing
 may repeat: never pick a candidate already picked for an earlier beat. Unrelated everyday
 scenes (hospitals, families, nature, office life) score 0 even if a word matches.
 
@@ -156,8 +164,9 @@ For every beat return:
   "score": the score of the best one,
   "focus": [x, y] (0-1) centre of the face / main action in the best one (for the 9:16 crop),
   "start": for a clip, the second where the best-matching part begins (length is on the sheet),
-  "retry_queries": if the best score is below 7, 3 better 2-4 word English searches that would
-                   find footage matching this line more closely (no names for stock footage).
+  "retry_queries": if the best score is below 7, OR no CLIP scores 5+, 3 better 2-4 word English
+                   searches that would find FOOTAGE matching this line more closely (no names
+                   for stock footage, stay in basketball / sports media).
 Return ONLY JSON: {"beats":[{"beat":0,"ranking":[2,5,1],"scores":{"2":8,"5":7,"1":5},"score":8,"focus":[0.5,0.3]},
 {"beat":1,"ranking":[3,1],"score":5,"start":3.5,"focus":[0.5,0.5],"retry_queries":["a","b","c"]}, ...]}
 
@@ -485,9 +494,14 @@ def dvids_videos(person: str) -> list[dict]:
 
 # ---------- Pixabay b-roll ----------
 
+_pix_cache: dict[str, list[dict]] = {}
+
+
 def pixabay_videos(query: str) -> list[dict]:
     if not PIXABAY_KEY:
         return []
+    if query in _pix_cache:
+        return _pix_cache[query]
     params = {"key": PIXABAY_KEY, "q": query, "per_page": "30", "safesearch": "true", "video_type": "film"}
     try:
         data = json.loads(get(PIXABAY + "?" + urllib.parse.urlencode(params)))
@@ -512,7 +526,8 @@ def pixabay_videos(query: str) -> list[dict]:
             "source": "Pixabay", "duration": hit.get("duration", 0),
             "score": hit.get("views", 0) + (5e6 if pick.get("height", 0) > pick.get("width", 0) else 0),
         })
-    return sorted(out, key=lambda f: -f["score"])
+    _pix_cache[query] = sorted(out, key=lambda f: -f["score"])
+    return _pix_cache[query]
 
 
 # ---------- assemble one Short ----------
@@ -600,8 +615,9 @@ def candidates(p: dict, work: Path, i: int, used: set, main_person: str = "") ->
     real: list[dict] = []
     for who in dict.fromkeys(x for x in (p.get("person"), main_person) if x):
         real += commons_videos(f'"{who}"', who) + dvids_videos(who)
-    real += commons_videos("basketball game")  # real players, real games (not always the NBA)
-    for c in [c for c in real if c["id"] not in used][:4]:
+    real += commons_videos("basketball game") + commons_videos("NBA basketball")  # real players, real games
+    real = list({c["id"]: c for c in real}.values())
+    for c in [c for c in real if c["id"] not in used][:5]:
         prev = work / f"b{i}_r{len(cands)}.webm"
         if download(c["preview"], prev, 90):
             fr = frames_of(prev, c.get("duration", 0), work, f"b{i}_r{len(cands)}")
@@ -614,15 +630,19 @@ def candidates(p: dict, work: Path, i: int, used: set, main_person: str = "") ->
                 cands.append({**c, "thumb": str(thumb)})
     seen_ids = set()
     clips: list[dict] = []
+    # the plan's own queries first (they describe this line), up to 3 clips each; then real
+    # basketball action until the beat has at least MIN_CLIPS clips to choose from
     for q in (p.get("queries") or []) + FALLBACK_BROLL:
-        if len(clips) >= MAX_CLIPS:
+        if len(clips) >= MAX_CLIPS or (q in FALLBACK_BROLL and len(clips) >= MIN_CLIPS):
             break
+        took = 0
         for c in pixabay_videos(q):
             if c["id"] in seen_ids or c["id"] in used:
                 continue
             seen_ids.add(c["id"])
-            clips.append(c)
-            if len(clips) >= MAX_CLIPS or (q in FALLBACK_BROLL and clips):
+            clips.append({**c, "query": q})
+            took += 1
+            if len(clips) >= MAX_CLIPS or took >= (3 if q not in FALLBACK_BROLL else 2):
                 break
     for c in clips:
         prev = work / f"b{i}_v{c['id']}.mp4"
@@ -681,9 +701,17 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             picks = {x.get("beat"): x for x in out.get("beats", []) if isinstance(x, dict)}
         except Exception as exc:
             print(f"[!] Claude visual pick failed, taking the top candidate: {exc}")
-        # second round: beats where nothing matched the line well enough get new, sharper searches
+        def clip_fits(i: int) -> bool:
+            ch = picks.get(i, {})
+            sc = {str(k): v for k, v in (ch.get("scores") or {}).items()}
+            return any(per_beat[i][k - 1]["kind"] == "video" and float(sc.get(str(k), 0) or 0) >= 5
+                       for k in (ch.get("ranking") or []) if isinstance(k, int) and 1 <= k <= len(per_beat[i]))
+
+        # second round: beats where nothing matched the line well enough, or a footage beat with
+        # no fitting clip, get new, sharper searches
         weak = [i for i in range(len(per_beat))
-                if picks and (not per_beat[i] or (picks.get(i, {}).get("score") or 0) < 7)]
+                if picks and (not per_beat[i] or (picks.get(i, {}).get("score") or 0) < 7
+                              or (plans[i].get("prefer") == "footage" and not clip_fits(i)))]
         if weak:
             for old in sheets.glob("*.jpg"):
                 old.unlink()
@@ -729,10 +757,12 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             # the video should be mostly moving footage: a clip wins when it is nearly as
             # relevant as the best photo (within 2 points and at least 6), and after 2 photos
             # any fitting clip (5+) wins
+            # videos first: a fitting clip (5+) wins unless the photo is MUCH more relevant
+            # (3+ points better). No limit on photos: a generic or unrelated clip never beats a
+            # photo that clearly matches the line.
             if ranked and cands[ranked[0]]["kind"] == "photo":
                 best = scores.get(ranked[0], 10)
-                photos_so_far = sum(1 for r in result if r and r["kind"] == "photo")
-                need = 5 if photos_so_far >= 2 else max(6, best - 2)
+                need = max(MIN_CLIP_SCORE, best - CLIP_MARGIN)
                 clip = next((j for j in ranked if cands[j]["kind"] == "video"
                              and scores.get(j, 0) >= need), None)
                 if clip is not None:
@@ -771,8 +801,8 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             # Shorts cut every 2-3 seconds: a long beat gets a SECOND shot - the next candidate
             # Claude ranked as fitting (score 5+), a clip if possible, never a repeat
             if chosen and beat_seconds(short, i) > LONG_BEAT:
-                fits = [j for j in ranked if scores.get(j, 5) >= 5]
-                fits.sort(key=lambda j: cands[j]["kind"] != "video")
+                # the second shot is always moving footage
+                fits = [j for j in ranked if scores.get(j, 5) >= 5 and cands[j]["kind"] == "video"]
                 for j in fits:
                     c = cands[j]
                     key = c.get("id") or c["page"]

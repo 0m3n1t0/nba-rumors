@@ -30,6 +30,19 @@ SCRIPTS = DATA / "scripts"
 AUDIO = DATA / "audio"
 CONFIG = json.loads((ROOT / "config" / "voice.json").read_text(encoding="utf-8"))
 RATE = 24000
+
+# ---- Livelier delivery with the SAME chosen voice (blend, base speed and EQ stay as chosen) ----
+# Each sentence is spoken on its own, so Kokoro gives it its own full intonation curve instead of
+# one flat run, and its pace, pause and loudness follow what kind of line it is:
+# questions slow down and hang, exclamations speed up and hit harder, short punches land slowly.
+PROSODY = {
+    "question": {"speed": 0.94, "pause": 0.34, "gain_db": 0.5},
+    "exclaim":  {"speed": 1.07, "pause": 0.24, "gain_db": 1.8},
+    "punch":    {"speed": 0.90, "pause": 0.28, "gain_db": 1.0},   # 1-4 words: "Live on TV."
+    "long":     {"speed": 1.05, "pause": 0.14, "gain_db": 0.0},   # 15+ words: keep it moving
+    "normal":   {"speed": 1.00, "pause": 0.16, "gain_db": 0.0},
+}
+ACRONYMS = {"NBA", "ESPN", "MVP", "TNT", "ABC", "NBC", "CBS", "WNBA", "USA", "GOAT", "OKC", "LA"}
 BRIGHT = "equalizer=f=3500:t=q:w=1.2:g=2.5,acompressor=threshold=-18dB:ratio=2.5:attack=5:release=60"
 
 
@@ -42,6 +55,29 @@ def speakable(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def lower_caps(text: str) -> str:
+    """Words in CAPS for emphasis are read as words, not spelled out letter by letter."""
+    return re.sub(r"\b[A-Z]{3,}\b", lambda m: m.group(0) if m.group(0) in ACRONYMS else m.group(0).lower(), text)
+
+
+def sentences(text: str) -> list[str]:
+    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"\u201c'])", text.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
+def kind(sentence: str) -> str:
+    words = len(sentence.split())
+    if sentence.rstrip("\"\u201d' ").endswith("?"):
+        return "question"
+    if sentence.rstrip("\"\u201d' ").endswith("!"):
+        return "exclaim"
+    if words <= 4:
+        return "punch"
+    if words >= 15:
+        return "long"
+    return "normal"
+
+
 def load_pipeline():
     from kokoro import KPipeline
     pipeline = KPipeline(lang_code=CONFIG["lang_code"])
@@ -50,9 +86,26 @@ def load_pipeline():
     return pipeline, voice
 
 
+def say_once(pipeline, voice, text: str, speed: float) -> np.ndarray:
+    chunks = [a for _, _, a in pipeline(text, voice=voice, speed=speed)]
+    return np.concatenate(chunks).astype(np.float32) if chunks else np.zeros(1, dtype=np.float32)
+
+
 def speak(pipeline, voice, text: str) -> np.ndarray:
-    chunks = [a for _, _, a in pipeline(speakable(text), voice=voice, speed=CONFIG["speed"])]
-    return np.concatenate(chunks) if chunks else np.zeros(1, dtype=np.float32)
+    """One script part, sentence by sentence, with the delivery each sentence needs."""
+    text = lower_caps(speakable(text))
+    pieces = sentences(text) or [text]
+    out = []
+    for i, sent in enumerate(pieces):
+        style = PROSODY[kind(sent)]
+        clip = say_once(pipeline, voice, sent, CONFIG["speed"] * style["speed"])
+        clip = clip * (10 ** (style["gain_db"] / 20))
+        out.append(clip)
+        if i < len(pieces) - 1:
+            out.append(np.zeros(int(RATE * style["pause"]), dtype=np.float32))
+    audio = np.concatenate(out)
+    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+    return audio / peak * 0.97 if peak > 0.97 else audio
 
 
 def finish(wav: Path, mp3: Path) -> None:

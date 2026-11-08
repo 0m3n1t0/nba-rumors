@@ -71,28 +71,34 @@ Judge every topic:
 - "kind": one of "player_vs_player", "player_vs_team", "coach_or_front_office",
   "trade_rumor", "trade_done", "free_agency", "injury", "suspension_or_fine",
   "historic_performance", "off_court", "filler"
-  ("filler" = betting previews, odds, generic stat recaps, opinion lists, routine injury reports)
+  ("filler" = betting previews, odds, generic stat recaps, routine injury reports, and ANY
+  opinion, analysis or listicle piece: "Why X should trade Y", "5 takeaways", "power rankings",
+  "grades", "predictions". A writer's opinion is not news: only a real event is a story.)
+- "conflict": true if two named sides clash in public: a player calls someone out, a fight,
+  a shove, an ejection, a trade request, a player vs his coach or team, a front office
+  feud, a fine or suspension for something said or done to someone. False otherwise.
 - "virality": 1-10. 10 = everyone in NBA Twitter is talking about it. Big names,
   real conflict, surprise and stakes raise it. Routine news lowers it.
 - "drama": 1-10. How much scandal, conflict and intrigue it carries: feuds, players vs
   their team, trade requests, locker room tension, coaches on the hot seat, fines,
   suspensions, ejections, front office fights, a star calling someone out. A great stat
-  line alone is drama 2-3, however historic.
+  line alone is drama 2-3, however historic. A win streak or a record is drama 2-3.
 - "same_as": list of other ids that are the same story (so we never make two videos about it)
 - "why": one short sentence, the reason fans will care (or not)
 - "hook": the first sentence of a Short about it, max 15 words, punchy but TRUE to
   the headlines (no invented facts, no invented quotes)
 
 Then pick:
-- "shorts": the 3 best ids for Shorts today, best first (the pipeline makes the top SHORTS_PER_RUN). Must be nba=true, kind != "filler",
-  verified=true, and not duplicates of each other.
-  Every pick needs ONE strong reason people will watch: drama >= 6 (a feud, a scandal,
-  a conflict) OR virality >= 8 (something everyone is sharing, positive or negative:
-  a record night, a heartwarming moment, a blockbuster trade, a shock firing).
-  Priority: high on both first, then the most viral, then the most dramatic.
-  This channel's identity is drama and intrigue, so include at least one drama story
-  (drama >= 6) when a verified one exists today; the other two go to whatever is the
-  biggest story, positive or not.
+- "shorts": the 3 best ids for Shorts today, best first (the pipeline makes the top SHORTS_PER_RUN).
+  Must be nba=true, kind != "filler", verified=true, and not duplicates of each other.
+  This channel's identity is BEEF, CONFLICT and INTRIGUE. Choose like a gossip-hungry fan:
+  1. First, conflict stories (conflict=true, drama >= 6): a callout, a beef, a fight, a
+     player vs his team, a trade demand. The juiciest and biggest names first.
+  2. Then high-stakes rumors and shocks with a clear "who wins, who loses" (drama >= 6).
+  3. A positive story (a record, a streak, a big night) only if virality >= 9 AND there
+     are not enough drama stories today.
+  A retired star or analyst calling out an active star counts as a real beef if trusted
+  outlets report it. Never pick an opinion or analysis article.
   Sensitive legal or personal allegations (crime, abuse, private life): pick them only if
   trusted outlets report them, and never as entertainment. No gossip about private life,
   family, relationships or health that the sources do not report.
@@ -100,7 +106,7 @@ Then pick:
   8-10 minute video this week, with "long_ids" listing the ids it uses.
 
 Return ONLY valid JSON, no markdown, in exactly this shape:
-{"ranked": [{"id": 0, "nba": true, "kind": "...", "virality": 7, "drama": 8, "same_as": [], "repeat": false, "why": "...", "hook": "..."}],
+{"ranked": [{"id": 0, "nba": true, "kind": "...", "conflict": true, "virality": 7, "drama": 8, "same_as": [], "repeat": false, "why": "...", "hook": "..."}],
  "shorts": [0, 1, 2],
  "long": {"title_idea": "...", "long_ids": [0, 3]}}
 
@@ -195,7 +201,22 @@ def ask_claude(prompt: str) -> str:
     return envelope.get("result", "")
 
 
-def parse(text: str, n_topics: int) -> dict:
+OPINION = re.compile(r"^(why|how|what|should|could|would|ranking|grading|grades|\d+ (takeaways|things|reasons|teams|players))\b"
+                     r"|takeaways|power rankings|predictions|\bgrades\b", re.I)
+
+
+def short_score(r: dict) -> float:
+    """Code-side order of Shorts: conflict and drama first, a positive story only when it is huge."""
+    drama, viral = r.get("drama", 0) or 0, r.get("virality", 0) or 0
+    score = drama * 2 + viral
+    if r.get("conflict"):
+        score += 6
+    if drama < 6 and viral < 9:
+        score -= 20      # weak on both: only if nothing better exists
+    return score
+
+
+def parse(text: str, n_topics: int, topics: list[dict] | None = None) -> dict:
     text = text.strip()
     if text.startswith("```"):
         text = text.strip("`").split("\n", 1)[1].rsplit("```", 1)[0]
@@ -204,8 +225,16 @@ def parse(text: str, n_topics: int) -> dict:
 
     valid = set(range(n_topics))
     data["ranked"] = [r for r in data.get("ranked", []) if r.get("id") in valid]
+    for r in data["ranked"]:
+        if topics and r["id"] < len(topics):
+            r["headline"] = topics[r["id"]]["headline"]
+        if OPINION.search(r.get("headline", "")):
+            r["kind"] = "filler"          # an opinion piece is never a Short
     repeats = {r["id"] for r in data["ranked"] if r.get("repeat")}
-    data["shorts"] = [i for i in data.get("shorts", []) if i in valid and i not in repeats][:3]
+    by_id = {r["id"]: r for r in data["ranked"]}
+    picks = [i for i in data.get("shorts", []) if i in valid and i not in repeats
+             and by_id.get(i, {}).get("kind") != "filler"]
+    data["shorts"] = sorted(picks, key=lambda i: -short_score(by_id.get(i, {})))[:3]
     long = data.get("long") or {}
     long["long_ids"] = [i for i in long.get("long_ids", []) if i in valid]
     data["long"] = long
@@ -218,7 +247,7 @@ def write_summary(data: dict, topics: list[dict]) -> None:
     for n, i in enumerate(data["shorts"], 1):
         r = by_id.get(i, {})
         lines.append(f"**{n}. {topics[i]['headline']}**  ")
-        lines.append(f"drama {r.get('drama', '?')}/10 · virality {r.get('virality', '?')}/10 · "
+        lines.append(f"{'🥊 conflict · ' if r.get('conflict') else ''}drama {r.get('drama', '?')}/10 · virality {r.get('virality', '?')}/10 · "
                      f"{r.get('kind', '?')} · {r.get('why', '')}  ")
         lines.append(f"> Hook: {r.get('hook', '')}")
         lines.append("")
@@ -259,7 +288,7 @@ def main() -> None:
         stop_run(f"Claude Pro usage limit reached ({exc}). Nothing made this run; the next run continues.")
         return
     try:
-        data = parse(raw, min(TOP_N, len(topics)))
+        data = parse(raw, min(TOP_N, len(topics)), topics)
     except (ValueError, KeyError) as exc:
         (DATA / "editor_raw.txt").write_text(raw, encoding="utf-8")
         sys.exit(f"[!] Could not read Claude's answer ({exc}). Saved to data/editor_raw.txt")

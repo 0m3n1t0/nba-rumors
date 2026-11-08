@@ -785,16 +785,23 @@ def main() -> None:
     shorts = []
     limit_hit = False
     score = {r["id"]: short_score(r) for r in editor["ranked"]}
+    # a weak story is never made: fewer Shorts beat a boring one (it teaches the algorithm the
+    # channel is skippable)
     strong = [i for i in editor["shorts"] if score.get(i, 1) > 0]
-    weak = [i for i in editor["shorts"] if score.get(i, 1) <= 0]   # a weak pick only if nothing better works
+    for i in editor["shorts"]:
+        if score.get(i, 1) <= 0:
+            SKIPPED.append(f"{editor['topics'][i]['headline'][:90]}: too weak (score {score[i]:.1f}), not made")
     # one queue in drama/audience order; the editor's own picks get a small bonus
     queue = sorted(strong + backups, key=lambda i: -(score.get(i, 0) + (3 if i in picked else 0)))
     top = sorted((r for r in editor["ranked"] if r.get("nba") and r.get("kind") != "filler"),
                  key=lambda r: -(score.get(r["id"], 0) + (3 if r["id"] in picked else 0)))[:8]
     QUEUE.extend(f"{score.get(r['id'], 0):.1f}{' ⭐' if r['id'] in picked else ''}"
-                 f"{' 🔁 already made' if r.get('repeat') else ''} · {editor['topics'][r['id']]['headline'][:80]}"
+                 f"{' 🔁 already made' if r.get('repeat') else ''}"
+                 f"{' 📈 Google trend ' + str(r['google_trend']) if r.get('google_trend') else ''}"
+                 f"{' 🎯 wins in niche: ' + ', '.join(r['niche_match']) if r.get('niche_match') else ''}"
+                 f" · {editor['topics'][r['id']]['headline'][:80]}"
                  for r in top)
-    for topic_id in queue + weak:
+    for topic_id in queue:
         if len(shorts) == SHORTS_PER_RUN:
             break
         if topic_id in dupes:
@@ -825,6 +832,11 @@ def main() -> None:
         (DATA / "skip_reason.txt").write_text("Claude Pro usage limit reached before any script was "
                                              "written; the next run continues.", encoding="utf-8")
         print("[i] run skipped: usage limit")
+        return
+    if not shorts and not queue:
+        (DATA / "skip_reason.txt").write_text("No strong NBA story left today (all good ones are already "
+                                             "made or too weak); no Short this run.", encoding="utf-8")
+        print("[i] run skipped: no strong story")
         return
     if not shorts:
         sys.exit("[!] No scripts were written.")

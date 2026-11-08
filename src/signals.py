@@ -122,6 +122,35 @@ STORY_WORDS = re.compile(
 NOISE = re.compile(r"youngboy|2k\d*|\bpicks\b|\bodds\b|\blive\b|type beat|\bmeme", re.I)
 
 
+GOOGLE_TRENDS_RSS = "https://trends.google.com/trending/rss?geo=US"   # public, free, hourly
+
+
+def google_trends() -> list[dict]:
+    """What the US is searching on Google right now (Trending Now, public RSS feed): the query,
+    its approximate traffic and the headlines Google links to it. Spikes often show up here
+    before YouTube catches up."""
+    import urllib.request
+    import xml.etree.ElementTree as ET
+    req = urllib.request.Request(GOOGLE_TRENDS_RSS, headers={"User-Agent": "Mozilla/5.0 (nba-rumors pipeline)"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        root = ET.fromstring(r.read())
+    local = lambda tag: tag.rsplit("}", 1)[-1]
+    out = []
+    for item in root.iter("item"):
+        query, traffic, news = "", 0, []
+        for el in item.iter():
+            name = local(el.tag)
+            if name == "title" and not query:
+                query = (el.text or "").strip()
+            elif name == "approx_traffic":
+                traffic = int(re.sub(r"[^0-9]", "", el.text or "") or 0)
+            elif name == "news_item_title":
+                news.append((el.text or "").strip())
+        if query:
+            out.append({"query": query, "traffic": traffic, "news": news})
+    return out
+
+
 def mentions(keys: set[str], text: str) -> bool:
     return any(re.search(rf"\b{re.escape(k)}\b", text, re.I) for k in keys)
 
@@ -136,6 +165,14 @@ def main() -> None:
     except Exception as exc:
         signals["errors"].append(f"youtube: {exc}")
         print(f"[!] YouTube signal skipped: {exc}")
+
+    try:
+        signals["google_trends"] = google_trends()
+        print(f"[+] Google Trends: {len(signals['google_trends'])} trending searches")
+    except Exception as exc:
+        signals["google_trends"] = []
+        signals["errors"].append(f"google trends: {exc}")
+        print(f"[!] Google Trends signal skipped: {exc}")
 
     # Seeds: general NBA ones plus today's top names (what people type about them).
     top_names = []
@@ -163,6 +200,13 @@ def main() -> None:
                  if keys and mentions(keys, x) and (STORY_WORDS.search(x) or len(keys & set(x.split())) > 1)]
         t["search_hits"] = len(story)
         t["search_phrases"] = story[:8]
+        # Google Trends: a trending US search about this topic's people (0-10, log of the traffic:
+        # 200+ searches ~ 4.6, 20K+ ~ 8.6, 100K+ = 10)
+        hits = [g for g in signals.get("google_trends", [])
+                if keys and (mentions(keys, g["query"]) or any(mentions(keys, n) for n in g["news"]))]
+        best = max((g["traffic"] for g in hits), default=0)
+        t["google_trend"] = round(min(10.0, 2 * math.log10(best)), 1) if best > 1 else 0
+        t["google_queries"] = [g["query"] for g in hits][:3]
     top = max(raw.values(), default=0) or 1
     for i, t in enumerate(topics[:TOP_TOPICS]):
         # 0-10 relative to today's hottest topic (square root: differences stay visible,
@@ -179,10 +223,19 @@ def main() -> None:
     for v in signals["videos"][:10]:
         lines.append(f"- {v['views_per_hour']:,}/h · {v['title']} ({v['channel']})")
     lines += ["", "**Topics people are watching and searching:**", "",
-              "| YouTube heat | search hits | topic |", "|---|---|---|"]
-    hot = sorted(topics[:TOP_TOPICS], key=lambda t: -(t.get("youtube_heat", 0) + t.get("search_hits", 0)))
+              "| YouTube heat | search hits | Google trend | topic |", "|---|---|---|---|"]
+    hot = sorted(topics[:TOP_TOPICS], key=lambda t: -(t.get("youtube_heat", 0) + t.get("search_hits", 0)
+                                                     + t.get("google_trend", 0)))
     for t in hot[:12]:
-        lines.append(f"| {t.get('youtube_heat', 0)} | {t.get('search_hits', 0)} | {t['headline']} |")
+        gq = f" ({', '.join(t['google_queries'])})" if t.get("google_queries") else ""
+        lines.append(f"| {t.get('youtube_heat', 0)} | {t.get('search_hits', 0)} | {t.get('google_trend', 0)}{gq} | {t['headline']} |")
+    nba_trends = [g for g in signals.get("google_trends", [])
+                  if re.search(r"nba|lakers|celtics|warriors|knicks|bucks|heat|nuggets|suns|mavericks|"
+                               r"76ers|sixers|nets|bulls|cavaliers|thunder|spurs|rockets|clippers|kings|"
+                               r"pistons|pacers|hawks|hornets|magic|raptors|wizards|jazz|blazers|"
+                               r"grizzlies|pelicans|timberwolves|basketball", g["query"] + " " + " ".join(g["news"]), re.I)]
+    lines += ["", "**Google Trends (US, now), basketball-related:** "
+              + (" · ".join(f"{g['query']} ({g['traffic']:,}+)" for g in nba_trends[:10]) or "none right now")]
     matched = list(dict.fromkeys(p for t in topics[:TOP_TOPICS] for p in t.get("search_phrases", [])))
     lines += ["", "**What people are typing about today's stories:** " + (" · ".join(matched[:25]) or "none yet")]
     text = "\n".join(lines)

@@ -1,35 +1,40 @@
 {
-  "focus": "Drama and intrigue first: the Luka Doncic ejected-fan story and the fan backlash, the Knicks-Karl-Anthony Towns extension and trade talk, Kings-Sabonis rift, and Nuggets-Jamal Murray trade debate. Biggest viral stories still get in: Steph Curry and the Warriors' win streak, and the Giannis vs Nick Young and Doc Rivers criticism. Every rumor is attributed and framed as a rumor. News decides exact stories each day, and no numbers or quotes are used unless they are in the sources.",
+  "focus": "Drama and intrigue first: the Luka Doncic fan-ejection fallout and the Knicks-Karl-Anthony Towns extension stall lead the week. Then the biggest viral names (Steph Curry and the Warriors' win streak, Jamal Murray trade talk, Giannis and the Doc Rivers criticism) fill the rest. Every rumor is attributed and framed as a rumor. Exact stories are decided by that day's news, and no numbers or quotes are used unless they are in the sources.",
   "long_videos": [
     {
       "day": "Tue",
-      "title_idea": "The Trade Rumors Shaking Up the NBA Right Now",
-      "angle": "Rumor shape with a clue chain. Cover Knicks and Karl-Anthony Towns extension talks, Sabonis and the Kings rift, Jamal Murray and the Nuggets, and the Clippers as possible sellers. Each story is attributed and framed as a rumor. Open with the biggest clash, give two or three real facts per story, and end with a recap and a pick-a-side question."
+      "title_idea": "The Trade Rumors Heating Up Right Now: Towns, Sabonis, Murray and the Teams That Might Sell",
+      "angle": "Rumor shape built as a clue chain. Open on the Knicks putting a Karl-Anthony Towns trade on the table as extension talks stall (the $276 million figure is in the headline). Then connect it to the other trade stories in the feed: Domantas Sabonis and the Kings rift, Jamal Murray and the Nuggets, and the Clippers as possible sellers. Each segment gives 2-3 attributed facts, then asks 'Now why does that matter?', then states her take as an opinion. The recap ends on one question that makes viewers pick a side. Chapters, 3-5 stories."
     },
     {
       "day": "Fri",
-      "title_idea": "Luka, the Ejected Fan, and the Week's Biggest Beefs",
-      "angle": "Beef shape. Lead with the Luka Doncic and ejected Kings fan incident and his wife's side of the story, then Giannis vs Nick Young and Doc Rivers, the announcer vs Ayesha Curry backlash, and the Porzingis locker cleanout reaction. Show where the outlets disagree, and give her take on each. Close with Steph Curry and the Warriors' win streak as the viral payoff."
+      "title_idea": "Luka, the Ejected Fan and Everyone Else Who Had a Week: The NBA Feuds Nobody Dropped",
+      "angle": "Beef shape, 3-5 connected stories. Lead with the Luka Doncic and ejected Kings fan story: the wife's side, and how fans reacted. Then add the other feuds in the feed: Nick Young calling out Giannis amid Doc Rivers' criticism, the NBA announcer and the Ayesha Curry movie scene backlash, and the Robert Williams and Lakers official confrontation. Each segment follows receipt, then BUT (the other side or the silence), then SO (why it stings), then her take. Where outlets disagree or one side has not responded, say so plainly. Finish with a recap and a 'whose side are you on' question."
     }
   ],
   "shorts_themes": [
-    "Beef and call-outs: Luka and the ejected fan, Giannis vs Nick Young, the announcer vs Ayesha Curry backlash",
-    "Trade rumor clue chains: Towns and the Knicks, Sabonis and the Kings, Jamal Murray and the Nuggets, Clippers as possible sellers",
-    "Viral performances: Steph Curry and the Warriors' win streak and clutch overtime history",
-    "Injury and roster news told as stakes: Anthony Davis and the Lakers reunion gossip, Ja Morant, Porzingis and the Warriors locker, Jalen Johnson's return",
-    "Offbeat off-court stories: LeBron stalking arrest report, Tyler Kolek and the Taylor Swift comment, Robert Williams and the Lakers official",
-    "Fan-reaction takes: where the fans picked a side, ending on a pick-a-side question"
+    "Luka and the ejected fan: the wife's side of the story, told from the middle of the moment, ending on a pick-a-side question",
+    "Knicks and Karl-Anthony Towns: the extension stall, with the reported figure attributed to its outlet",
+    "Jamal Murray trade talk: what the Nuggets would be weighing, framed as opinion and rumor",
+    "Steph Curry and the Warriors' win streak: the clutch moment most people missed",
+    "Giannis vs Nick Young and Doc Rivers: the receipt, the response or silence, and her take",
+    "Domantas Sabonis and the Kings rift: where he might land, framed as speculation",
+    "Anthony Davis: the injury announcement and the Lakers reunion gossip, with Brian Windhorst's reaction attributed",
+    "Kristaps Porzingis and the Warriors locker cleanout: the clue chain, with 'now why would they do that?'",
+    "Ayesha Curry movie scene backlash and the announcer who fired back",
+    "Lighter closer of the day: Tyler Kolek and the Taylor Swift comment, or any harmless fan or player moment"
   ],
   "series": [
-    "Rumor Clue Chain: 2 to 3 real facts, then 'Now why would they do that?'",
-    "Pick a Side: one beef, two sides, one question for the comments",
-    "Receipts: the exact attributed report behind a rumor, and what it changes"
+    "Trade Board: a recurring rumor short that ranks or tracks one team's situation, using only reported facts",
+    "Receipts: the beef shape in 30 seconds, with the exact quote or action attributed",
+    "Clue Chain: 2-3 real facts laid out one at a time, ending on 'Now why would they do that?'"
   ],
   "experiments": [
-    "Test clash-first hooks naming both people against single-name hooks on beef Shorts",
-    "Test ending on a pick-a-side question against ending on her take, and compare comment counts",
-    "Test a Tuesday rumor roundup against a Friday beef roundup to see which long video day performs better",
-    "Test a top-and-tail structure (open and close on the same moment) against a straight chronological order on the Luka story"
+    "Test two hook styles on the same story: clash-first (both names and the shot fired) versus clue-first (a single odd fact), and compare 2-second swipe-away and average view duration",
+    "Test ending on a pick-a-side question versus an open 'tell me I'm wrong' challenge, and compare comment counts",
+    "Test putting the Luka fan story as the Tuesday long-video opener versus the Friday one, if the wife's-side story is still fresh, and compare 48-hour views",
+    "Because there are no recent videos or analytics yet, treat the Tue and Fri long-video days as provisional and compare them against the channel's own best-day data once it exists",
+    "Compare the Series shorts (Trade Board, Receipts, Clue Chain) against standalone news shorts on retention and subscribers gained"
   ],
   "week_of": "2026-11-08"
 }

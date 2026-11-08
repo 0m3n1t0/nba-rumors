@@ -1,9 +1,11 @@
 """Stage 4: voice. Turn every ready script into narration audio.
 
-Uses the voice chosen in the audition (config/voice.json), so every video
-sounds the same. Each part of the script (hook + beats) is spoken separately
-and joined with a short gap, so we know exactly when each beat starts; the
-video stage uses that to switch the on-screen cards.
+Uses the voice chosen in the audition (config/voice.json), so every video sounds the same:
+voice #11 (Kokoro, Bella 45 / Nicole 55) performed by Chatterbox with more emotion
+(audition round 5, sample 3_chatterbox_exag08). Kokoro makes a short reference clip of
+voice #11, Chatterbox copies that timbre and reads the script with real intonation.
+If Chatterbox fails or garbles the text (checked by Whisper), the Short falls back to the
+Kokoro voice, so a run never ends without narration.
 
 Then faster-whisper listens to the result to get the time of every word,
 for the word-by-word captions Shorts need.
@@ -53,6 +55,16 @@ def lower_caps(text: str) -> str:
     return re.sub(r"\b[A-Z]{3,}\b", lambda m: m.group(0) if m.group(0) in ACRONYMS else m.group(0).lower(), text)
 
 
+# Reference clip for the voice copy (the same one the audition used): voice #11, lively.
+REFERENCE_TEXT = (
+    "Okay, so here's the thing about this league. Everybody wants to talk about the big names, "
+    "but the stories that really matter? They're hiding in the details. And honestly, that's my "
+    "favorite part. Let me show you what I mean!"
+)
+CHUNK_WORDS = 90      # longer scripts are read in two or more parts (Chatterbox reads ~40 s at most)
+MIN_COVERAGE = 0.85   # Whisper must hear at least this share of the script's words
+
+
 def load_pipeline():
     from kokoro import KPipeline
     pipeline = KPipeline(lang_code=CONFIG["lang_code"])
@@ -68,6 +80,48 @@ def say_once(pipeline, voice, text: str, speed: float) -> np.ndarray:
 
 def speak(pipeline, voice, text: str) -> np.ndarray:
     return say_once(pipeline, voice, lower_caps(speakable(text)), CONFIG["speed"])
+
+
+class Performer:
+    """Chatterbox with voice #11 as the reference: same timbre, livelier delivery."""
+
+    def __init__(self, pipeline, voice):
+        import torch
+        from chatterbox.tts import ChatterboxTTS
+        self.torch = torch
+        cb = CONFIG["chatterbox"]
+        self.cb = cb
+        self.reference = AUDIO / "reference_voice11.wav"
+        sf.write(self.reference, say_once(pipeline, voice, REFERENCE_TEXT, CONFIG["speed"]), RATE)
+        self.model = ChatterboxTTS.from_pretrained(device="cpu")
+        self.rate = self.model.sr
+
+    def chunks(self, text: str) -> list[str]:
+        words = text.split()
+        if len(words) <= CHUNK_WORDS:
+            return [text]
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        n = -(-len(words) // CHUNK_WORDS)
+        target = len(words) / n
+        out, cur = [], []
+        for sent in sentences:
+            if cur and len(" ".join(cur + [sent]).split()) > target * 1.15:
+                out.append(" ".join(cur))
+                cur = []
+            cur.append(sent)
+        return out + ([" ".join(cur)] if cur else [])
+
+    def speak(self, text: str, seed: int) -> np.ndarray:
+        cb = self.cb
+        self.torch.manual_seed(seed)
+        gap = np.zeros(int(self.rate * 0.12), dtype=np.float32)
+        pieces = []
+        for chunk in self.chunks(lower_caps(speakable(text))):
+            wav = self.model.generate(chunk, audio_prompt_path=str(self.reference),
+                                      exaggeration=cb["exaggeration"], cfg_weight=cb["cfg_weight"],
+                                      temperature=cb["temperature"])
+            pieces += [wav.squeeze(0).cpu().numpy().astype(np.float32), gap]
+        return np.concatenate(pieces[:-1])
 
 
 TOKEN = re.compile(r"[a-z0-9']+")
@@ -107,8 +161,8 @@ def beat_times(parts: list[dict], words: list[dict], duration: float) -> list[di
             for i, p in enumerate(parts)]
 
 
-def finish(wav: Path, mp3: Path) -> None:
-    parts = []
+def finish(wav: Path, mp3: Path, tempo: float = 1.0) -> None:
+    parts = [f"atempo={tempo}"] if tempo != 1.0 else []
     pitch = CONFIG.get("pitch", 1.0)
     if pitch != 1.0:
         parts.append(f"asetrate={int(RATE * pitch)},aresample={RATE},atempo={1 / pitch:.4f}")
@@ -130,6 +184,23 @@ def load_16k(mp3: Path) -> np.ndarray:
     return np.frombuffer(raw, dtype=np.float32)
 
 
+def duration_of(mp3: Path) -> float:
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                          str(mp3)], check=True, capture_output=True, text=True).stdout
+    return round(float(out.strip()), 2)
+
+
+def coverage(text: str, words: list[dict]) -> float:
+    """Share of the script's words that Whisper actually heard (catches skipped or garbled parts)."""
+    import difflib
+    script = tokens(lower_caps(speakable(text)))
+    heard = [t for w in words for t in tokens(w["word"])]
+    if not script:
+        return 1.0
+    matched = sum(b.size for b in difflib.SequenceMatcher(None, script, heard, autojunk=False).get_matching_blocks())
+    return matched / len(script)
+
+
 def word_times(mp3: Path) -> list[dict]:
     from faster_whisper import WhisperModel
     model = WhisperModel("base.en", device="cpu", compute_type="int8")
@@ -143,30 +214,57 @@ def main() -> None:
     if not scripts:
         sys.exit("[!] No scripts to voice.")
     AUDIO.mkdir(parents=True, exist_ok=True)
+    import time
     pipeline, voice = load_pipeline()
+    performer = None
+    if CONFIG.get("engine") == "chatterbox":
+        try:
+            performer = Performer(pipeline, voice)
+        except Exception as exc:
+            print(f"[!] Chatterbox could not start, using the Kokoro voice: {exc}")
 
-    lines = ["## 🎙️ Voice", "", "| Short | Ready | Length | Beats |", "|---|---|---|---|"]
+    lines = ["## 🎙️ Voice", "", "| Short | Ready | Length | Beats | Engine | Words heard | Time |",
+             "|---|---|---|---|---|---|---|"]
     for path in scripts:
         short = json.loads(path.read_text(encoding="utf-8"))
         parts = [{"say": short["hook"]["text"], "on_screen": "HOOK"}] + short["beats"]
-
-        clip = speak(pipeline, voice, " ".join(p["say"].strip() for p in parts))
-        tail = np.zeros(int(RATE * 0.3), dtype=np.float32)
+        text = " ".join(p["say"].strip() for p in parts)
         name = path.stem
-        wav = AUDIO / f"{name}.wav"
-        sf.write(wav, np.concatenate([clip, tail]), RATE)
-        mp3 = AUDIO / f"{name}.mp3"
-        finish(wav, mp3)
-        wav.unlink()
+        wav, mp3 = AUDIO / f"{name}.wav", AUDIO / f"{name}.mp3"
+        began = time.time()
 
-        duration = round((len(clip) + len(tail)) / RATE, 2)
-        words = word_times(mp3)
+        # Chatterbox first (two tries with different seeds), Kokoro if it fails or garbles words
+        attempts = [("chatterbox", s) for s in (CONFIG["chatterbox"]["seed"], CONFIG["chatterbox"]["seed"] + 1)] \
+            if performer else []
+        attempts.append(("kokoro", 0))
+        for engine, seed in attempts:
+            try:
+                if engine == "chatterbox":
+                    clip, rate, tempo = performer.speak(text, seed), performer.rate, CONFIG["chatterbox"]["tempo"]
+                else:
+                    clip, rate, tempo = speak(pipeline, voice, text), RATE, 1.0
+            except Exception as exc:
+                print(f"[!] {name}: {engine} failed: {exc}")
+                continue
+            tail = np.zeros(int(rate * 0.3), dtype=np.float32)
+            sf.write(wav, np.concatenate([clip, tail]), rate)
+            finish(wav, mp3, tempo)
+            wav.unlink()
+            words = word_times(mp3)
+            heard = coverage(text, words)
+            if engine == "kokoro" or heard >= MIN_COVERAGE:
+                break
+            print(f"[!] {name}: {engine} seed {seed} garbled the text ({heard:.0%} of words heard), retrying")
+
+        duration = duration_of(mp3)
         beats = beat_times(parts, words, duration)
-        timing = {"duration": duration, "beats": beats, "words": words}
+        timing = {"duration": duration, "beats": beats, "words": words, "engine": engine}
         (AUDIO / f"{name}.timing.json").write_text(json.dumps(timing, indent=2), encoding="utf-8")
         ready = "✅" if short.get("ready") else "⚠️"
-        lines.append(f"| {short['n']}: {short['headline'][:60]} | {ready} | {timing['duration']:.0f}s | {len(beats)} |")
-        print(f"[+] {name}: {timing['duration']:.1f}s, {len(timing['words'])} words timed")
+        engine_note = "Chatterbox (voice #11)" if engine == "chatterbox" else ("Kokoro (fallback)" if performer else "Kokoro")
+        lines.append(f"| {short['n']}: {short['headline'][:60]} | {ready} | {duration:.0f}s | {len(beats)} | "
+                     f"{engine_note} | {heard:.0%} | {(time.time() - began) / 60:.1f} min |")
+        print(f"[+] {name}: {duration:.1f}s, {engine}, {len(words)} words timed, {heard:.0%} heard")
 
     text = "\n".join(lines)
     import os

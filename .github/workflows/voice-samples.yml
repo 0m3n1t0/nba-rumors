@@ -1,4 +1,4 @@
-name: Voice samples
+name: Voice audition
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   samples:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -21,17 +21,24 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: voice-models-chatterbox-v1
+          key: voice-models-chatterbox-v2
 
-      - name: Install voice engines (Kokoro + Chatterbox, CPU)
+      - name: Cache the voice engine's English model (so it is downloaded only once)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/voice-wheels
+          key: voice-wheels-v1
+
+      - name: Install voice engines (Kokoro + Chatterbox + Chatterbox Turbo, CPU)
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q espeak-ng ffmpeg
           pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
-          pip install chatterbox-tts
+          pip install "chatterbox-tts==0.1.7"
           pip install "kokoro>=0.9" soundfile
+          python src/install_voice_model.py
 
-      - name: Record samples
-        run: python src/voice_samples.py
+      - name: Record the audition samples
+        run: python src/voice_audition.py
 
       - name: Save samples
         if: always()

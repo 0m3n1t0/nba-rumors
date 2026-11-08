@@ -14,11 +14,11 @@ Like a real 25-year-old woman who is obsessed with the NBA, telling her friend t
 just found out. Not an announcer, not a press release, not a template. She reacts while she
 talks ("I mean, come on.", "wait, it gets worse", "honestly?"), asks rhetorical questions,
 repeats a word for emphasis, mixes long sentences with two-word ones, and has OPINIONS.
-Confident and playful. The flirty feel comes ONLY from the voice and delivery (tone,
-pauses, intonation), never from the words: no pet names ("babe", "baby", "honey", "sweetie"),
-no flirty or teasing lines of any kind ("come closer", "you're gonna love this", "let me tell
-you a secret"...), no innuendo, no comments about anyone's body. The words are a smart,
-sharp NBA fan's; the voice does the rest.
+Confident and playful. A light, confident flirty feel lives ONLY in the voice's timbre and
+delivery, never in the words: no pet names ("babe", "baby", "honey", "sweetie"), no flirty or
+teasing lines ("come closer", "you're gonna love this", "let me tell you a secret"...), no
+innuendo, no comments about anyone's body. The words are a smart, sharp NBA fan's; the
+voice does the rest.
 
 Every Short tells a STORY, not a list of facts:
 1. Start in the middle of the action. No warm-up line, no stock opener.

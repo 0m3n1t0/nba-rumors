@@ -808,7 +808,10 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 choice = {**choice, "score": int(scores.get(ranked[0], 0)), "focus": None, "start": None}
             # only candidates that relate to the story; nothing unrelated as a fallback
             # (an empty beat later gets a photo of the story's people, then generic pro footage)
-            order = ranked + [j for j in order if j not in ranked and j not in scores]
+            # When Claude judged this beat, only what it rated as related may go on screen: an
+            # unrated clip is unknown, not relevant. (Unrated candidates are used only when
+            # Claude could not judge the beat at all.)
+            order = ranked if scores else ranked + [j for j in order if j not in ranked]
             k = ranked[0] + 1 if ranked else None
             chosen = None
             for idx in order:
@@ -1002,7 +1005,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
     items = list(items) + [None] * max(0, n_beats - len(items))
     folder.mkdir(parents=True, exist_ok=True)
     shown = {it.get("page") for it in items if it} | {it["alt"].get("page") for it in items if it and it.get("alt")}
-    faces = [c for person in (who or []) for c in photos(person)[:4] if c["page"] not in shown]
+    faces = [c for person in (who or []) for c in photos(person)[:8] if c["page"] not in shown]
     for i, it in enumerate(items):
         if it or not faces:
             continue
@@ -1069,7 +1072,7 @@ def main() -> None:
             traceback.print_exc()
             MEDIA_ERRORS.append(f"{type(exc).__name__}: {str(exc)[:160]}")
             items = []
-        items = fill_empty(items, len(spoken(short)), MEDIA / name, used, people(short)[:2])
+        items = fill_empty(items, len(spoken(short)), MEDIA / name, used, people(short)[:3])
         errors_by_short[name] = list(MEDIA_ERRORS)
         (MEDIA / f"{name}.json").write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
         music = pick_music(MOOD[0], MEDIA / name, used)

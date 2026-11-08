@@ -23,6 +23,9 @@ from skills import segments_file, summary, tool  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 AUDIO = ROOT / "data" / "audio"
 FLOOR = 0.45  # seconds of silence we tolerate between words
+PAD = 0.12    # Whisper's word edges are approximate: never cut closer than this to a word,
+              # or the cut eats the last sound of one word or the first of the next
+FADE = 0.012  # a tiny fade at every join, so the cut never clicks
 
 
 def shift(t: float, cuts: list[dict]) -> float:
@@ -35,7 +38,9 @@ def apply_cuts(mp3: Path, cuts: list[dict], duration: float) -> None:
         keep.append((last, c["start"]))
         last = c["end"]
     keep.append((last, duration + 1))
-    parts = "".join(f"[0:a]atrim={a}:{b},asetpts=PTS-STARTPTS[a{i}];" for i, (a, b) in enumerate(keep))
+    parts = "".join(
+        f"[0:a]atrim={a}:{b},asetpts=PTS-STARTPTS,afade=t=in:d={FADE},"
+        f"areverse,afade=t=in:d={FADE},areverse[a{i}];" for i, (a, b) in enumerate(keep))
     concat = "".join(f"[a{i}]" for i in range(len(keep))) + f"concat=n={len(keep)}:v=0:a=1[out]"
     tmp = mp3.with_suffix(".tight.mp3")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(mp3), "-filter_complex",
@@ -55,7 +60,9 @@ def main() -> None:
         seg = segments_file(timing["words"], path.with_suffix(".segments.json"))
         report = tool("yt-edit", "deadair.py", str(seg), "--floor", str(FLOOR)) or {}
         seg.unlink(missing_ok=True)
-        cuts = [c for c in report.get("cuts", []) if c.get("kind") == "DEAD"]
+        cuts = [{**c, "start": round(c["start"] + PAD, 3), "end": round(c["end"] - PAD, 3)}
+                for c in report.get("cuts", []) if c.get("kind") == "DEAD"]
+        cuts = [c for c in cuts if c["end"] - c["start"] >= 0.08]
         if cuts:
             mp3 = path.with_name(path.name.replace(".timing.json", ".mp3"))
             apply_cuts(mp3, cuts, timing["duration"])

@@ -385,11 +385,16 @@ def banned_check(text: str) -> list[str]:
 
 def quote_check(text: str, sources: list[dict]) -> list[str]:
     """Every quoted phrase (4+ words) must appear word for word in the source material."""
+    def tokens(t: str) -> list[str]:
+        # curly quotes used as quotation marks ('...') must not stick to the words
+        t = t.lower().replace("\u2019", "'").replace("\u2018", "'")
+        return [w.strip("'") for w in re.sub(r"[^a-z0-9' ]+", " ", t).split() if w.strip("'")]
+
     material = " ".join(f"{s['title']} {s.get('summary', '')} {s['text']}" for s in sources)
-    flat = " " + " ".join(re.sub(r"[^a-z0-9' ]+", " ", material.lower().replace("\u2019", "'")).split()) + " "
+    flat = " " + " ".join(tokens(material)) + " "
     bad = []
     for q in re.findall(r'["\u201c]([^"\u201d]{12,})["\u201d]', text):
-        words = re.sub(r"[^a-z0-9' ]+", " ", q.lower().replace("\u2019", "'")).split()
+        words = tokens(q)
         if len(words) >= 4 and f" {' '.join(words)} " not in flat:
             bad.append(q.strip())
     return bad
@@ -668,10 +673,14 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
 
 
 SKIPPED: list[str] = []
+QUEUE: list[str] = []
 
 
 def write_summary(shorts: list[dict]) -> None:
     lines = ["## ✍️ Scripts", ""]
+    if QUEUE:
+        lines += ["**Order the stories were tried** (score = drama, conflict and audience; ⭐ editor pick):",
+                  ""] + [f"{n}. {x}" for n, x in enumerate(QUEUE, 1)] + [""]
     if SKIPPED:
         lines += ["**Stories skipped (why):**", ""] + [f"- {x}" for x in SKIPPED] + [""]
     for s in shorts:
@@ -758,6 +767,11 @@ def main() -> None:
     weak = [i for i in editor["shorts"] if score.get(i, 1) <= 0]   # a weak pick only if nothing better works
     # one queue in drama/audience order; the editor's own picks get a small bonus
     queue = sorted(strong + backups, key=lambda i: -(score.get(i, 0) + (3 if i in picked else 0)))
+    top = sorted((r for r in editor["ranked"] if r.get("nba") and r.get("kind") != "filler"),
+                 key=lambda r: -(score.get(r["id"], 0) + (3 if r["id"] in picked else 0)))[:8]
+    QUEUE.extend(f"{score.get(r['id'], 0):.1f}{' ⭐' if r['id'] in picked else ''}"
+                 f"{' 🔁 already made' if r.get('repeat') else ''} · {editor['topics'][r['id']]['headline'][:80]}"
+                 for r in top)
     for topic_id in queue + weak:
         if len(shorts) == SHORTS_PER_RUN:
             break

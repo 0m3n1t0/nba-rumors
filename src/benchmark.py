@@ -48,12 +48,25 @@ def pct(n: int, items: list) -> int:
 
 
 NICHE = ROOT / "plan" / "niche.json"
+OFF_NICHE = re.compile(r"high school|streetball|hooper|handles|wnba|caitlin|highlights|full game|mixtape|"
+                       r"\bkids?\b|college|ncaa|nfl|soccer|glitch|laws of physics", re.I)
+DRAMA = re.compile(r"beef|fight|exposed|banned|called? out|confront|feud|trade|rumou?r|drama|heated|ejected|"
+                   r"fined|suspend|trash|exchange|turn(ed)? against|speak out|media training|cheat|shocking|"
+                   r"ended|refused|ruined|slammed|clap|disrespect|fired|benched|demand|leak|snub", re.I)
+MIN_MEDIAN = 3000     # a channel whose normal Short gets fewer views says nothing about the audience
+MAX_MULTIPLE = 500    # beyond this it is a fluke, not a pattern
 
 
 def save_niche(videos: list[dict], viral: dict) -> None:
     """What wins in the niche right now, for the daily editor and script writer (plan/niche.json).
     Titles are other channels' text: kept short and used only as patterns, never copied."""
-    outliers = viral.get("outliers", [])[:15]
+    # Keep only real NBA drama/news Shorts from channels with a real audience: the raw list also
+    # holds streetball, high school fights, highlight reels and flukes from tiny channels.
+    keep = [r for r in viral.get("outliers", [])
+            if not OFF_NICHE.search(r["title"]) and (r.get("median") or 0) >= MIN_MEDIAN
+            and r.get("multiple", 0) <= MAX_MULTIPLE]
+    keep.sort(key=lambda r: (not DRAMA.search(r["title"]), -r["multiple"]))
+    outliers = keep[:15]
     lens = [v["seconds"] for v in videos[:50]]
     data = {
         "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -62,7 +75,8 @@ def save_niche(videos: list[dict], viral: dict) -> None:
                       "formula": r.get("formula", "")} for r in outliers],
         "top_viewed": [{"title": v["title"][:100], "views": v["views"], "seconds": v["seconds"]}
                        for v in videos[:15]],
-        "formulas": [f for f, _ in Counter(r.get("formula", "") for r in viral.get("outliers", [])).most_common(6) if f],
+        "formulas": [f for f, _ in Counter(r.get("formula", "") for r in keep).most_common(8)
+                     if f and f.lower() != "unclassified"][:6],
     }
     NICHE.parent.mkdir(parents=True, exist_ok=True)
     NICHE.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")

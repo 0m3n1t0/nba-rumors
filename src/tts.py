@@ -82,6 +82,35 @@ def speak(pipeline, voice, text: str) -> np.ndarray:
     return say_once(pipeline, voice, lower_caps(speakable(text)), CONFIG["speed"])
 
 
+def cut_off(clip: np.ndarray, rate: int) -> bool:
+    """True if the audio ends while still speaking (the last word lost its final sound):
+    the last 80 ms are almost as loud as the speech itself instead of fading out."""
+    tail = clip[-int(rate * 0.08):]
+    if len(clip) < rate or not len(tail):
+        return False
+    frame = int(rate * 0.02)
+    levels = [float(np.sqrt(np.mean(clip[i:i + frame] ** 2))) for i in range(0, len(clip) - frame, frame)]
+    speech = float(np.median([v for v in levels if v > 0.01] or [0.0]))
+    return speech > 0 and float(np.sqrt(np.mean(tail ** 2))) > 0.35 * speech
+
+
+def trim_silence(clip: np.ndarray, rate: int) -> np.ndarray:
+    """Chatterbox adds its own silence before and after a line; trimmed so the pause between
+    beats is always the same short beat_gap. Generous margins keep every soft first and last
+    sound (an "h", a fading "-s")."""
+    frame = int(rate * 0.01)
+    levels = np.array([float(np.sqrt(np.mean(clip[i:i + frame] ** 2)))
+                       for i in range(0, max(len(clip) - frame, 1), frame)])
+    if not len(levels) or levels.max() <= 0:
+        return clip
+    loud = np.where(levels > 0.03 * levels.max())[0]
+    if not len(loud):
+        return clip
+    start = max(0, (loud[0] - 5) * frame)                    # keep 50 ms before the first sound
+    end = min(len(clip), (loud[-1] + 1) * frame + int(rate * 0.15))   # and 150 ms after the last
+    return clip[start:end]
+
+
 class Performer:
     """Chatterbox with voice #11 as the reference: same timbre, livelier delivery."""
 
@@ -95,6 +124,13 @@ class Performer:
         sf.write(self.reference, say_once(pipeline, voice, REFERENCE_TEXT, CONFIG["speed"]), RATE)
         self.model = ChatterboxTTS.from_pretrained(device="cpu")
         self.rate = self.model.sr
+        # read the reference voice ONCE (not again for every beat): saves time per Short
+        try:
+            self.model.prepare_conditionals(str(self.reference), exaggeration=cb["exaggeration"])
+            self.prompt = None
+        except Exception as exc:
+            print(f"[i] reference prepared per call: {exc}")
+            self.prompt = str(self.reference)
 
     def chunks(self, text: str) -> list[str]:
         words = text.split()
@@ -111,13 +147,44 @@ class Performer:
             cur.append(sent)
         return out + ([" ".join(cur)] if cur else [])
 
+    def speak_parts(self, parts: list[dict], seed: int) -> np.ndarray:
+        """Each beat performed in the emotion its words call for (the script's "tone"), instead
+        of one emotion level for the whole Short: calm facts stay calm, only the twist sounds
+        shocked. A very short beat joins the next one (Chatterbox needs a few words to act)."""
+        cb, tones = self.cb, CONFIG.get("tones", {})
+        groups = []
+        for k, p in enumerate(parts):
+            say = p["say"].strip()
+            tone = p.get("tone") or ("tense" if k == 0 else "calm")
+            if groups and groups[-1]["carry"]:
+                say, tone = groups[-1]["say"] + " " + say, tone
+                groups.pop()
+            groups.append({"say": say, "tone": tone, "carry": len(say.split()) < 5 and k < len(parts) - 1})
+        gap = np.zeros(int(self.rate * cb.get("beat_gap", 0.18)), dtype=np.float32)
+        pieces = []
+        for g_no, g in enumerate(groups):
+            exag, cfg = tones.get(g["tone"], [cb["exaggeration"], cb["cfg_weight"]])
+            self.torch.manual_seed(seed + g_no)
+            for chunk in self.chunks(lower_caps(speakable(g["say"]))):
+                for attempt in range(3):
+                    wav = self.model.generate(chunk, audio_prompt_path=self.prompt,
+                                              exaggeration=exag, cfg_weight=cfg,
+                                              temperature=cb["temperature"])
+                    clip = wav.squeeze(0).cpu().numpy().astype(np.float32)
+                    if not cut_off(clip, self.rate):
+                        break
+                    print(f"[!] beat {g_no}: the voice stopped mid-sound, generating it again")
+                    self.torch.manual_seed(seed + g_no + 100 * (attempt + 1))
+                pieces += [trim_silence(clip, self.rate), gap]
+        return np.concatenate(pieces[:-1])
+
     def speak(self, text: str, seed: int) -> np.ndarray:
         cb = self.cb
         self.torch.manual_seed(seed)
         gap = np.zeros(int(self.rate * 0.12), dtype=np.float32)
         pieces = []
         for chunk in self.chunks(lower_caps(speakable(text))):
-            wav = self.model.generate(chunk, audio_prompt_path=str(self.reference),
+            wav = self.model.generate(chunk, audio_prompt_path=self.prompt,
                                       exaggeration=cb["exaggeration"], cfg_weight=cb["cfg_weight"],
                                       temperature=cb["temperature"])
             pieces += [wav.squeeze(0).cpu().numpy().astype(np.float32), gap]
@@ -227,7 +294,7 @@ def main() -> None:
              "|---|---|---|---|---|---|---|"]
     for path in scripts:
         short = json.loads(path.read_text(encoding="utf-8"))
-        parts = [{"say": short["hook"]["text"], "on_screen": "HOOK"}] + short["beats"]
+        parts = [{"say": short["hook"]["text"], "on_screen": "HOOK", "tone": "tense"}] + short["beats"]
         text = " ".join(p["say"].strip() for p in parts)
         name = path.stem
         wav, mp3 = AUDIO / f"{name}.wav", AUDIO / f"{name}.mp3"
@@ -240,7 +307,9 @@ def main() -> None:
         for engine, seed in attempts:
             try:
                 if engine == "chatterbox":
-                    clip, rate, tempo = performer.speak(text, seed), performer.rate, CONFIG["chatterbox"]["tempo"]
+                    clip = (performer.speak_parts(parts, seed) if CONFIG.get("tones")
+                            else performer.speak(text, seed))
+                    rate, tempo = performer.rate, CONFIG["chatterbox"]["tempo"]
                 else:
                     clip, rate, tempo = speak(pipeline, voice, text), RATE, 1.0
             except Exception as exc:

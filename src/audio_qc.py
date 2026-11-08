@@ -22,9 +22,10 @@ from skills import segments_file, summary, tool  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 AUDIO = ROOT / "data" / "audio"
-FLOOR = 0.45  # seconds of silence we tolerate between words
-PAD = 0.12    # Whisper's word edges are approximate: never cut closer than this to a word,
-              # or the cut eats the last sound of one word or the first of the next
+FLOOR = 0.5   # seconds of silence we tolerate between words (a short dramatic pause before a
+              # twist is part of the performance; longer is dead air that loses viewers)
+PAD = 0.22    # Whisper's word edges are approximate and often END EARLY on a fading last
+              # sound ("-s", "-t"): never cut closer than this to a word, or the cut eats it
 FADE = 0.012  # a tiny fade at every join, so the cut never clicks
 
 
@@ -53,8 +54,8 @@ def main() -> None:
     if not timings:
         print("[=] yt-edit: no narration yet, sleeping")
         return
-    lines = ["## ✂️ yt-edit (dead air in our narration)", "", "| Short | cuts | removed | new length |",
-             "|---|---|---|---|"]
+    lines = ["## ✂️ yt-edit (dead air in our narration)", "", "| Short | cuts | removed | new length | where |",
+             "|---|---|---|---|---|"]
     for path in timings:
         timing = json.loads(path.read_text(encoding="utf-8"))
         seg = segments_file(timing["words"], path.with_suffix(".segments.json"))
@@ -63,6 +64,12 @@ def main() -> None:
         cuts = [{**c, "start": round(c["start"] + PAD, 3), "end": round(c["end"] - PAD, 3)}
                 for c in report.get("cuts", []) if c.get("kind") == "DEAD"]
         cuts = [c for c in cuts if c["end"] - c["start"] >= 0.08]
+        # where each cut is, so a clipped word can be traced: "word ✂ next"
+        where = []
+        for c in cuts:
+            before = [w["word"] for w in timing["words"] if w["end"] <= c["start"] + 0.01][-1:]
+            after = [w["word"] for w in timing["words"] if w["start"] >= c["start"] - 0.01][:1]
+            where.append(f"{' '.join(before)} ✂ {' '.join(after)}")
         if cuts:
             mp3 = path.with_name(path.name.replace(".timing.json", ".mp3"))
             apply_cuts(mp3, cuts, timing["duration"])
@@ -77,7 +84,7 @@ def main() -> None:
         else:
             removed = 0
         name = path.name.replace(".timing.json", "")
-        lines.append(f"| {name} | {len(cuts)} | {removed}s | {timing['duration']:.1f}s |")
+        lines.append(f"| {name} | {len(cuts)} | {removed}s | {timing['duration']:.1f}s | {' · '.join(where) or '-'} |")
     summary("\n".join(lines))
 
 

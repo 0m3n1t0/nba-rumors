@@ -13,6 +13,7 @@ Output: data/video/short_N.mp4 + short_N_thumb.png
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -238,9 +239,19 @@ def run(cmd: list[str]) -> None:
 ENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(FPS)]
 
 
+def frame_focus(path: Path, focus: list | None) -> tuple[float, float]:
+    """Where the face is in the finished 9:16 frame (same layout rules as photo_bg)."""
+    fx, fy = (focus or [0.5, 0.3])[:2]
+    with Image.open(path) as src:
+        tall = src.width / src.height <= 0.8
+    return (fx, fy) if tall else (0.5, FG_CY / H)
+
+
 def still_segment(bg: Image.Image, layer: Image.Image, dur: float, seg: Path, work: Path, i,
-                  zoom_in: bool) -> None:
-    """Photo with a slow Ken Burns move (in or out), overlay on top (not zoomed)."""
+                  zoom_in: bool, close: tuple[float, float] | None = None) -> None:
+    """Photo with a slow Ken Burns move (in or out), overlay on top (not zoomed).
+    close=(fx, fy): a tighter shot of the same photo framed on the face, so even one photo
+    changes the picture every ~3 seconds (a "punch-in" cut, like real Shorts editors do)."""
     bg_path, ov_path = work / f"bg_{i}.jpg", work / f"ov_{i}.png"
     bg.save(bg_path, quality=92)
     layer.save(ov_path)
@@ -248,8 +259,12 @@ def still_segment(bg: Image.Image, layer: Image.Image, dur: float, seg: Path, wo
     # punch-in on the cut (first 6 frames 1.10 -> 1.0), then a slow Ken Burns move
     punch = "if(lt(on,6),0.10*(1-on/6),0)"
     z = (f"1+0.08*on/{frames}+{punch}" if zoom_in else f"1.08-0.08*on/{frames}+{punch}")
+    x, y = "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
+    if close:
+        z = f"1.30+0.06*on/{frames}+{punch}"
+        x, y = f"(iw-iw/zoom)*{close[0]:.3f}", f"(ih-ih/zoom)*{max(0.0, close[1] - 0.08):.3f}"
     run(["ffmpeg", "-y", "-loop", "1", "-i", str(bg_path), "-i", str(ov_path), "-filter_complex",
-         f"[0:v]scale={W * 2}:{H * 2},zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+         f"[0:v]scale={W * 2}:{H * 2},zoompan=z='{z}':x='{x}':y='{y}':"
          f"d={frames}:s={W}x{H}:fps={FPS},setsar=1[b];[b][1:v]overlay=0:0",
          "-frames:v", str(frames), "-an", *ENC, str(seg)])
 
@@ -291,6 +306,63 @@ ERRORS: list[str] = []
 MUSIC_UNDER_DB = float(os.environ.get("MUSIC_UNDER_DB", "14"))  # music bed this many dB under the voice
 
 
+PHOTO_SHOT, CLIP_SHOT, MIN_SHOT = 3.0, 4.0, 1.5   # seconds (best practice: a change every 2-3 s)
+
+
+def sharp_enough(item: dict) -> bool:
+    """Enough pixels for a ~1.3x punch-in without visible blur."""
+    try:
+        with Image.open(ROOT / item["file"]) as im:
+            w, h = im.size
+    except (OSError, KeyError):
+        return False
+    return h >= 1200 if w / h <= 0.8 else w >= 1000
+
+
+def plan_shots(main: dict | None, dur: float) -> list[tuple]:
+    """Split a beat into shots: a photo at most ~3 s, a clip at most ~4 s (motion holds the eye
+    longer). Extra shots use the beat's other pictures first; when a photo runs out of
+    pictures, the same photo comes back as a tight face shot (punch-in), never a repeat of
+    the same framing. A clip with no other picture stays one shot."""
+    if not main:
+        return [(None, dur, False)]
+    pool = [main] + [a for a in (main.get("alts") or [main.get("alt")]) if a]
+    limit = CLIP_SHOT if main["kind"] == "video" else PHOTO_SHOT
+    n = max(1, min(math.ceil(dur / limit), int(dur // MIN_SHOT) or 1))
+    shots = []
+    for k in range(n):
+        if k < len(pool):
+            item, close = pool[k], False
+        else:
+            # out of pictures: reframe a photo of this beat (alternating wide / close)
+            photos = [p for p in pool if p["kind"] == "photo"]
+            clips = [p for p in pool if p["kind"] == "video"]
+            if photos:
+                item = photos[(k - len(pool)) % len(photos)]
+                # a face close-up only from a sharp photo: a small one would look blurry
+                # zoomed in; then the same framing comes back with the opposite slow move
+                close = sharp_enough(item) and not (shots and shots[-1][0] is item and shots[-1][2])
+            elif clips:
+                # only a clip: a jump cut further into the same footage (with the punch-in)
+                item, close = clips[(k - len(pool)) % len(clips)], False
+            else:
+                break
+        shots.append([item, 0.0, close])
+    each = round(dur / len(shots), 2)
+    for s in shots:
+        s[1] = each
+    shots[-1][1] = round(dur - each * (len(shots) - 1), 2)
+    # a clip used again continues where its last shot ended (never the same frames twice)
+    played: dict[int, float] = {}
+    for s in shots:
+        if s[0]["kind"] == "video":
+            key = id(s[0])
+            if key in played:
+                s[0] = {**s[0], "start": float(s[0].get("start") or 0) + played[key]}
+            played[key] = played.get(key, 0.0) + s[1]
+    return [tuple(s) for s in shots]
+
+
 def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
            media: list | None = None, music: dict | None = None) -> list[str]:
     work.mkdir(parents=True, exist_ok=True)
@@ -305,13 +377,9 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
         dur = max(0.6, end - start)
         hook = (short.get("thumbnail_text") or short["hook"]["text"]) if i == 0 else ""
         main = media[i]
-        # a long beat is split into two shots (cut in the middle), like real Shorts editing
-        shots = [(main, dur)]
-        if main and main.get("alt") and dur > 4.0:
-            first = round(dur / 2, 2)
-            shots = [(main, first), (main["alt"], round(dur - first, 2))]
+        shots = plan_shots(main, dur)
         marks = []
-        for s_no, (item, sdur) in enumerate(shots):
+        for s_no, (item, sdur, close) in enumerate(shots):
             tag = f"{i}_{s_no}"
             layer = overlay(item, hook, accent)
             seg = work / f"seg_{tag}.mp4"
@@ -332,8 +400,9 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
                     item = None
                     layer = overlay(None, hook, accent)
             bg = photo_bg(ROOT / item["file"], item.get("focus")) if item else gradient(*colors)
-            marks.append("❌🎥→⬛" if failed else ("📷" if item else "⬛"))
-            still_segment(bg, layer, sdur, seg, work, tag, zoom_in=(i + s_no) % 2 == 0)
+            marks.append("❌🎥→⬛" if failed else (("🔍" if close else "📷") if item else "⬛"))
+            still_segment(bg, layer, sdur, seg, work, tag, zoom_in=(i + s_no) % 2 == 0,
+                          close=frame_focus(ROOT / item["file"], item.get("focus")) if (item and close) else None)
             if i == 0 and s_no == 0:
                 Image.alpha_composite(bg.convert("RGBA"), layer).convert("RGB").save(work / "thumb.png")
             segments.append(seg)

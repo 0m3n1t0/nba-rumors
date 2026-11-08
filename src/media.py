@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import os
 import re
 import shutil
@@ -686,7 +687,9 @@ def candidates(p: dict, work: Path, i: int, used: set, main_person: str = "",
     return cands
 
 
-LONG_BEAT = 4.0  # seconds: a beat longer than this gets two shots
+SHOT_MAX = 3.0   # seconds: Shorts best practice is a visual change every 2-3 s, so a beat
+                 # longer than this gets more shots (a photo every ~3 s, a clip every ~4 s)
+MAX_ALTS = 2     # extra pictures per beat (beyond them the renderer reframes the same picture)
 
 
 def beat_seconds(short: dict, i: int) -> float:
@@ -863,9 +866,11 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 chosen["match"] = (int(scores[idx]) if idx in scores
                                    else choice.get("score") if idx == (k or 0) - 1 else None)
                 break
-            # Shorts cut every 2-3 seconds: a long beat gets a SECOND shot - the next candidate
-            # Claude ranked as fitting (score 5+), a clip if possible, never a repeat
-            if chosen and beat_seconds(short, i) > LONG_BEAT:
+            # Shorts cut every 2-3 seconds: a long beat gets MORE shots - the next candidates
+            # Claude ranked as fitting (6+), in who-first order, never a repeat
+            need = min(MAX_ALTS, math.ceil(beat_seconds(short, i) / SHOT_MAX) - 1) if chosen else 0
+            chosen and chosen.setdefault("alts", [])
+            if need > 0:
                 # the second shot: the next most relevant (6+), a clip when equally relevant
                 fits = [j for j in ranked if scores.get(j, 0) >= ALT_MIN]   # already in who-first order
                 for j in fits:
@@ -874,18 +879,20 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                     if key in shown:
                         continue
                     ext = ".jpg" if c["kind"] == "photo" else ".mp4"
-                    path = folder / f"beat{i}_alt_{c['kind']}{ext}"
+                    path = folder / f"beat{i}_alt{len(chosen['alts'])}_{c['kind']}{ext}"
                     ok = shutil.copy(c["thumb"], path) if c["kind"] == "photo" else download(c["url"], path, 180)
                     if not ok:
                         continue
                     alt = {k2: v for k2, v in c.items() if k2 not in ("score", "thumb", "frames", "preview")}
                     alt["file"] = str(path.relative_to(ROOT))
                     alt["match"] = int(scores[j]) if j in scores else None
-                    chosen["alt"] = alt
+                    chosen["alts"].append(alt)
+                    chosen["alt"] = chosen["alts"][0]
                     shown.add(key)
                     if c["kind"] == "video":
                         used.add(c["id"])
-                    break
+                    if len(chosen["alts"]) >= need:
+                        break
             BEAT_DIAG.append(f"{short.get('_name', '')} beat {i}: {n_ph} photos (best {bp if n_ph else '-'}), "
                              f"{len(cands) - n_ph} clips (best {bc if len(cands) > n_ph else '-'}) -> "
                              f"{chosen['kind'] + ' (' + chosen.get('who', '') + ') ' + str(chosen.get('match')) if chosen else 'empty'}")
@@ -1027,7 +1034,8 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
     """Never a blank beat: first a photo of the story's people, only then general basketball footage."""
     items = list(items) + [None] * max(0, n_beats - len(items))
     folder.mkdir(parents=True, exist_ok=True)
-    shown = {it.get("page") for it in items if it} | {it["alt"].get("page") for it in items if it and it.get("alt")}
+    shown = {it.get("page") for it in items if it} | {a.get("page") for it in items if it
+                                                      for a in (it.get("alts") or [it.get("alt")]) if a}
     faces = [c for person in (who or []) for c in photos(person)[:8] if c["page"] not in shown]
     for i, it in enumerate(items):
         while not items[i] and faces:   # a failed download tries the next photo for the SAME beat
@@ -1056,7 +1064,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
     faces_shown = [it for it in items if it and it["kind"] == "photo"]
     for i, it in enumerate(items):
         if not it and faces_shown:
-            items[i] = {**faces_shown[i % len(faces_shown)], "beat": i, "alt": None}
+            items[i] = {**faces_shown[i % len(faces_shown)], "beat": i, "alt": None, "alts": []}
     return items
 
 
@@ -1105,7 +1113,7 @@ def main() -> None:
         music = pick_music(MOOD[0], MEDIA / name, used)
         (MEDIA / f"{name}_music.json").write_text(json.dumps(music, indent=2, ensure_ascii=False), encoding="utf-8")
         desc = short.get("description", "").split("\n\n" + CREDIT_MARK)[0]
-        shots = [x for it in items if it for x in (it, it.get("alt")) if x]
+        shots = [x for it in items if it for x in [it] + (it.get("alts") or [it.get("alt")]) if x]
         if shots or music:
             desc += "\n\n" + credits(shots + [music])
         short["description"] = desc

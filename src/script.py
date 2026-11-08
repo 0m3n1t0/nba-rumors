@@ -323,6 +323,34 @@ DISCLAIMER = ("Unofficial fan channel. Not affiliated with, endorsed by, or conn
 QSTOP = set("the a an of to in on for with and or is are was his her vs".split())
 
 
+# Subscribe call to action. Best practice for Shorts: short, value-specific (what the viewer
+# gets), at the END (an early CTA makes people swipe), and the final question still closes the
+# video so the loop back to the hook works. The line rotates so videos do not sound templated.
+CHANNEL_URL = "https://www.youtube.com/@NBARumorsDaily"
+CTA_LINES = [
+    "Subscribe for daily NBA drama.",
+    "Subscribe, we track every NBA rumor daily.",
+    "Hit subscribe for tomorrow's NBA rumors.",
+    "Subscribe so you catch the next twist.",
+    "Subscribe for the NBA stories behind the headlines.",
+    "Subscribe, NBA drama drops here every day.",
+]
+
+
+def add_cta(beats: list[dict], seed: str) -> None:
+    """Put one subscribe line into the last beat, right before its closing question."""
+    if not beats or "subscribe" in " ".join(b.get("say", "") for b in beats).lower():
+        return
+    line = CTA_LINES[sum(map(ord, seed)) % len(CTA_LINES)]
+    last = beats[-1]
+    parts = re.split(r"(?<=[.!?])\s+", last.get("say", "").strip())
+    if parts and parts[-1].endswith("?"):
+        parts.insert(len(parts) - 1, line)
+    else:
+        parts.append(line)
+    last["say"] = " ".join(p for p in parts if p)
+
+
 def query_test(title: str, description: str, queries: list[str]) -> list[dict]:
     """yt-seo's query test: the title + first two description lines must carry each query's words."""
     head = (title + " " + " ".join(description.splitlines()[:2])).lower()
@@ -454,6 +482,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     titles.sort(key=lambda r: -r["score"])
 
     beats = draft.get("beats", [])
+    add_cta(beats, topic["headline"])
     spoken = " ".join([hooks[0]["text"]] + [b.get("say", "") for b in beats]) if hooks else ""
     on_screen = " ".join(b.get("on_screen", "") for b in beats)
     unsupported = fact_check(f"{spoken} {on_screen}", sources)
@@ -465,7 +494,9 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
 
     # yt-seo: description = Claude's text + sources + disclaimer; then the query test
     best_title = titles[0]["title"] if titles else topic["headline"]
-    description = (draft.get("description", "").strip() + "\n\nSources:\n"
+    description = (draft.get("description", "").strip()
+                   + f"\n\n🔔 Subscribe for daily NBA rumors, trades and drama: {CHANNEL_URL}?sub_confirmation=1"
+                   + "\n\nSources:\n"
                    + "\n".join(f"- {s['publisher']}: {s['link']}" for s in used) + f"\n\n{DISCLAIMER}")
     tags = [t for t in draft.get("tags", []) if isinstance(t, str)][:15]
     seo = query_test(best_title, description, draft.get("queries", [])[:3])

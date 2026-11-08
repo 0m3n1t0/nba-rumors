@@ -92,6 +92,21 @@ def wrap_px(d: ImageDraw.ImageDraw, text: str, f: ImageFont.FreeTypeFont, max_w:
     return lines + ([line] if line else [])
 
 
+def cta_card(accent: str) -> Image.Image:
+    """Subscribe prompt for the end of every Short: a red pill with the value line, above the
+    captions and inside the Shorts safe zone."""
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    big, small = font(76), font(44)
+    t1, t2 = "SUBSCRIBE", "DAILY NBA DRAMA & RUMORS"
+    w = max(d.textlength(t1, font=big), d.textlength(t2, font=small)) + 120
+    x0, y0 = (W - w) / 2, 860
+    d.rounded_rectangle((x0, y0, x0 + w, y0 + 190), radius=40, fill="#E62117", outline="#FFFFFF", width=6)
+    d.text(((W - d.textlength(t1, font=big)) / 2, y0 + 22), t1, font=big, fill="#FFFFFF")
+    d.text(((W - d.textlength(t2, font=small)) / 2, y0 + 118), t2, font=small, fill=accent if accent != "#E62117" else "#FFFFFF")
+    return img
+
+
 def overlay(item: dict | None, hook_text: str, accent: str) -> Image.Image:
     """Transparent layer over the footage: small brand tag, credit, and (beat 0 only) the hook
     words. Shade at top and bottom keeps text readable on any picture."""
@@ -302,7 +317,14 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     total = timing["duration"] + 0.4
     bar = f"drawbox=x=0:y=0:w='iw*t/{total:.2f}':h=14:color={accent.replace('#', '0x')}@1:t=fill"
     fonts = f":fontsdir={FONT_DIR}" if FONT_DIR.exists() else ""
-    vf = f"[0:v]{bar},ass={ass}{fonts}[v]"
+    # end card: the last 3 s (after the 85% mark, so nobody swipes early) show a subscribe
+    # prompt above the captions
+    cta_png = work / "cta.png"
+    cta_card(accent).save(cta_png)
+    cta_at = max(total - 3.0, total * 0.85)
+    vf = (f"[0:v]{bar},ass={ass}{fonts}[base];"
+          f"[CTA:v]format=rgba,fade=t=in:st={cta_at:.2f}:d=0.25:alpha=1[cta];"
+          f"[base][cta]overlay=0:0:enable='gte(t,{cta_at:.2f})'[v]")
     if music and (ROOT / music["file"]).exists():
         # music: start a bit in (skip intros), quiet, ducks under the voice, fades in and out
         offset = min(15.0, max(0.0, music.get("duration", 0) - total - 1))
@@ -324,6 +346,8 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
         af = "[1:a]anull[a]"
         inputs = ["-i", str(work / "visuals.mp4"), "-i", str(mp3)]
         log.append("music: none")
+    vf = vf.replace("[CTA:v]", f"[{inputs.count('-i')}:v]")
+    inputs += ["-loop", "1", "-t", f"{total:.2f}", "-i", str(cta_png)]
     run(["ffmpeg", "-y", *inputs, "-filter_complex", f"{vf};{af}", "-map", "[v]", "-map", "[a]",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-b:a", "192k", "-t", f"{total:.2f}", "-movflags", "+faststart", str(out)])

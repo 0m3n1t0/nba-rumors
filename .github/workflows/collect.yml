@@ -77,6 +77,12 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q espeak-ng ffmpeg
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-voice.txt
+          # the voice engine's English model comes from GitHub releases, which sometimes time out
+          # (HTTP 504): install it here with retries instead of letting tts.py fetch it once
+          for i in 1 2 3 4 5; do
+            pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl && break
+            echo "retry $i in 20s"; sleep 20
+          done
 
       - name: "Stage 4: voice (Kokoro, chosen voice #11)"
         if: hashFiles('data/skip_reason.txt') == ''

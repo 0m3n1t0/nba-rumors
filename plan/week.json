@@ -1,35 +1,35 @@
 {
-  "focus": "Drama and feud-driven week: lead with the biggest viral names (Wembanyama's huge Wednesday vs. Dallas, Luka's third straight 40-point game, the Embiid shoving match) and the trade-rumor storylines (Warriors/Draymond/Porzingis/Markkanen, Jokic/Nuggets, Norman Powell/Bulls). Every rumor is framed as a rumor and attributed to the outlet or reporter that broke it. Stories and exact facts come from each day's news; nothing is invented.",
+  "focus": "Drama and intrigue first: the Luka Doncic ejected-fan story and the fan backlash, the Knicks-Karl-Anthony Towns extension and trade talk, Kings-Sabonis rift, and Nuggets-Jamal Murray trade debate. Biggest viral stories still get in: Steph Curry and the Warriors' win streak, and the Giannis vs Nick Young and Doc Rivers criticism. Every rumor is attributed and framed as a rumor. News decides exact stories each day, and no numbers or quotes are used unless they are in the sources.",
   "long_videos": [
     {
       "day": "Tue",
-      "title_idea": "The Trade Rumor Board: Warriors, Nuggets, Bulls and Who Might Actually Move",
-      "angle": "Anchor video for the week, 8-10 min with chapters and a recap. 3-5 connected rumor stories drawn from the current headlines: Warriors and Draymond Green / Porzingis-for-Markkanen (include that one insider doubts it), Jokic and Denver trade chatter (note outlets that disagree), Norman Powell and the Bulls, and the 'most likely to be traded' lists. Every item is attributed ('per...', 'reportedly'), clearly labeled as rumor, and ends with a stakes line (standings, contract, deadline). Faceless: headline, quote and stat cards with the source on screen, no logos or player photos. Closes with a recap and a comment-bait question on which rumor is real."
+      "title_idea": "The Trade Rumors Shaking Up the NBA Right Now",
+      "angle": "Rumor shape with a clue chain. Cover Knicks and Karl-Anthony Towns extension talks, Sabonis and the Kings rift, Jamal Murray and the Nuggets, and the Clippers as possible sellers. Each story is attributed and framed as a rumor. Open with the biggest clash, give two or three real facts per story, and end with a recap and a pick-a-side question."
     },
     {
       "day": "Fri",
-      "title_idea": "Drama of the Week: Feuds, Flashpoints and Hot Takes Around the NBA",
-      "angle": "Weekend-facing recap of the week's biggest conflicts and viral moments, 8-10 min with chapters: Embiid's technical after the shoving match, the Bronny James diss and fan backlash, Charles Barkley's Halloween rant, Rich Paul vs. Max Kellerman, and Wembanyama/Luka standout performances. Pick the 3-5 with the most heat by Friday, give each a scene-first open, the detail most people missed, the stakes, and her one clear opinion. Only sourced facts and quotes. End with a recap and a vote-style question."
+      "title_idea": "Luka, the Ejected Fan, and the Week's Biggest Beefs",
+      "angle": "Beef shape. Lead with the Luka Doncic and ejected Kings fan incident and his wife's side of the story, then Giannis vs Nick Young and Doc Rivers, the announcer vs Ayesha Curry backlash, and the Porzingis locker cleanout reaction. Show where the outlets disagree, and give her take on each. Close with Steph Curry and the Warriors' win streak as the viral payoff."
     }
   ],
   "shorts_themes": [
-    "Viral performance of the day: the biggest stat-line story (Wembanyama, Luka's 40-point streak) told as a scene with the specific detail people missed",
-    "Trade rumor of the day: one attributed rumor, what it would change for the standings or contract, her take, and a 'real or fake?' question",
-    "Feud or drama of the day: Embiid, Bronny/LeBron discourse, Barkley, Rich Paul vs. Kellerman, told as a story with a clear opinion",
-    "Injury or lineup news that changes a race: only confirmed reports, framed with stakes",
-    "Team under pressure: one-line diagnosis from sourced reporting (e.g., Cavs' reliance on Harden after the loss to the Thunder)",
-    "Rookie or new-arrival watch: debut and breakout moments (e.g., Knecht's Knicks debut), what it means for the rotation"
+    "Beef and call-outs: Luka and the ejected fan, Giannis vs Nick Young, the announcer vs Ayesha Curry backlash",
+    "Trade rumor clue chains: Towns and the Knicks, Sabonis and the Kings, Jamal Murray and the Nuggets, Clippers as possible sellers",
+    "Viral performances: Steph Curry and the Warriors' win streak and clutch overtime history",
+    "Injury and roster news told as stakes: Anthony Davis and the Lakers reunion gossip, Ja Morant, Porzingis and the Warriors locker, Jalen Johnson's return",
+    "Offbeat off-court stories: LeBron stalking arrest report, Tyler Kolek and the Taylor Swift comment, Robert Williams and the Lakers official",
+    "Fan-reaction takes: where the fans picked a side, ending on a pick-a-side question"
   ],
   "series": [
-    "Rumor or Reality: one trade rumor per Short, attributed source, her verdict",
-    "The Detail You Missed: a film-room style single-detail breakdown",
-    "Hot Take Court: one polarizing story, her ruling, viewers argue in comments"
+    "Rumor Clue Chain: 2 to 3 real facts, then 'Now why would they do that?'",
+    "Pick a Side: one beef, two sides, one question for the comments",
+    "Receipts: the exact attributed report behind a rumor, and what it changes"
   ],
   "experiments": [
-    "Test question-style hooks vs. number-first hooks in the first sentence across Shorts and compare retention at the 2-second and 10-second marks",
-    "Test whether 'Rumor or Reality' titled Shorts get more comments than standard news Shorts",
-    "Test a Tuesday vs. Thursday upload slot for the anchor long video, then check the channel's own analytics before locking the day",
-    "Test a feud-led vs. trade-led opening chapter in the long videos and compare early drop-off"
+    "Test clash-first hooks naming both people against single-name hooks on beef Shorts",
+    "Test ending on a pick-a-side question against ending on her take, and compare comment counts",
+    "Test a Tuesday rumor roundup against a Friday beef roundup to see which long video day performs better",
+    "Test a top-and-tail structure (open and close on the same moment) against a straight chronological order on the Luka story"
   ],
-  "week_of": "2026-11-05"
+  "week_of": "2026-11-08"
 }

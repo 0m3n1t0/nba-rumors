@@ -232,6 +232,20 @@ def log_claude_usage(stdout: str, where: str) -> None:
     except Exception:
         pass
 
+def decode_google(links: list[str]) -> dict:
+    """Google News redirect link -> the publisher's real article link (empty on any failure)."""
+    if not links:
+        return {}
+    try:
+        from googlenewsdecoder import gnewsdecoder
+        res = gnewsdecoder(links, timeout=15)
+        res = res if isinstance(res, list) else [res]
+        return {a: r["decoded_url"] for a, r in zip(links, res) if r.get("success") and r.get("decoded_url")}
+    except Exception as exc:
+        print(f"[!] Google News links could not be decoded: {exc}")
+        return {}
+
+
 def gather_sources(topic: dict, editor: dict, topic_id: int) -> list[dict]:
     """The pick's own headlines plus those of topics the editor marked as the same story."""
     ranked = {r["id"]: r for r in editor["ranked"]}
@@ -247,14 +261,16 @@ def gather_sources(topic: dict, editor: dict, topic_id: int) -> list[dict]:
         seen.add(it["link"])
         out.append(dict(it))
 
+    # Google News links are redirects: decode them to the real article (googlenewsdecoder, MIT)
+    real = decode_google([it["link"] for it in out if "news.google.com" in it["link"]][:8])
     fetched = 0
     for it in out:
         it["text"] = ""
-        # Google News links are JavaScript redirects; the headline + summary is all we get.
-        if fetched >= MAX_ARTICLES or "news.google.com" in it["link"]:
+        url = real.get(it["link"], it["link"])
+        if fetched >= MAX_ARTICLES or "news.google.com" in url:
             continue
         try:
-            html = trafilatura.fetch_url(it["link"])
+            html = trafilatura.fetch_url(url)
             text = trafilatura.extract(html) if html else None
         except Exception as exc:  # one bad site must not stop the video
             print(f"[!] could not read {it['link']}: {exc}")
@@ -624,8 +640,13 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     }
 
 
+SKIPPED: list[str] = []
+
+
 def write_summary(shorts: list[dict]) -> None:
     lines = ["## ✍️ Scripts", ""]
+    if SKIPPED:
+        lines += ["**Stories skipped (why):**", ""] + [f"- {x}" for x in SKIPPED] + [""]
     for s in shorts:
         status = "✅ ready" if s["ready"] else "⚠️ needs review"
         lines += [f"### Short {s['n']}: {s['headline']}", "",
@@ -708,7 +729,9 @@ def main() -> None:
     score = {r["id"]: short_score(r) for r in editor["ranked"]}
     strong = [i for i in editor["shorts"] if score.get(i, 1) > 0]
     weak = [i for i in editor["shorts"] if score.get(i, 1) <= 0]   # a weak pick only if nothing better works
-    for topic_id in strong + backups + weak:
+    # one queue in drama/audience order; the editor's own picks get a small bonus
+    queue = sorted(strong + backups, key=lambda i: -(score.get(i, 0) + (3 if i in picked else 0)))
+    for topic_id in queue + weak:
         if len(shorts) == SHORTS_PER_RUN:
             break
         if topic_id in dupes:
@@ -716,6 +739,7 @@ def main() -> None:
         judged0 = next((r for r in editor["ranked"] if r["id"] == topic_id), {})
         if judged0.get("repeat"):
             print(f"[i] skipped topic {topic_id}: already made, no new development")
+            SKIPPED.append(f"{editor['topics'][topic_id]['headline'][:90]}: already made")
             continue
         n = len(shorts) + 1
         try:
@@ -726,6 +750,7 @@ def main() -> None:
             break
         except Exception as exc:
             print(f"[!] skipped topic {topic_id}: {exc}")
+            SKIPPED.append(f"{editor['topics'][topic_id]['headline'][:90]}: {str(exc)[:140]}")
             continue
         judged = next((r for r in editor["ranked"] if r["id"] == topic_id), {})
         dupes.update(judged.get("same_as", []))

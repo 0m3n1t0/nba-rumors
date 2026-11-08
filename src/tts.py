@@ -35,12 +35,12 @@ RATE = 24000
 # Each sentence is spoken on its own, so Kokoro gives it its own full intonation curve instead of
 # one flat run, and its pace, pause and loudness follow what kind of line it is:
 # questions slow down and hang, exclamations speed up and hit harder, short punches land slowly.
-PROSODY = {
-    "question": {"speed": 0.94, "pause": 0.34, "gain_db": 0.5},
-    "exclaim":  {"speed": 1.07, "pause": 0.24, "gain_db": 1.8},
-    "punch":    {"speed": 0.90, "pause": 0.28, "gain_db": 1.0},   # 1-4 words: "Live on TV."
-    "long":     {"speed": 1.05, "pause": 0.14, "gain_db": 0.0},   # 15+ words: keep it moving
-    "normal":   {"speed": 1.00, "pause": 0.16, "gain_db": 0.0},
+PROSODY = {   # pauses kept tiny: long silences between sentences drain the energy
+    "question": {"speed": 0.96, "pause": 0.10, "gain_db": 0.5},
+    "exclaim":  {"speed": 1.08, "pause": 0.06, "gain_db": 1.8},
+    "punch":    {"speed": 0.94, "pause": 0.08, "gain_db": 1.0},   # 1-4 words: "Live on TV."
+    "long":     {"speed": 1.06, "pause": 0.04, "gain_db": 0.0},   # 15+ words: keep it moving
+    "normal":   {"speed": 1.02, "pause": 0.05, "gain_db": 0.0},
 }
 ACRONYMS = {"NBA", "ESPN", "MVP", "TNT", "ABC", "NBC", "CBS", "WNBA", "USA", "GOAT", "OKC", "LA"}
 BRIGHT = "equalizer=f=3500:t=q:w=1.2:g=2.5,acompressor=threshold=-18dB:ratio=2.5:attack=5:release=60"

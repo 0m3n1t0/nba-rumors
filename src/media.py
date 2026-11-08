@@ -284,19 +284,25 @@ _photo_cache: dict[str, list[dict]] = {}
 def commons_photos(person: str) -> list[dict]:
     if person in _photo_cache:
         return _photo_cache[person]
-    params = {
-        "action": "query", "format": "json", "generator": "search", "gsrnamespace": "6",
-        "gsrsearch": f'"{person}" filetype:bitmap', "gsrlimit": "30",
-        "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata", "iiurlwidth": "1600",
-    }
+    # A common name ("Robert Williams") finds many other people: search with basketball context
+    # first, then the plain name, and keep the basketball photos of the person on top.
+    pages: dict = {}
+    for query in (f'"{person}" basketball filetype:bitmap', f'"{person}" filetype:bitmap'):
+        params = {
+            "action": "query", "format": "json", "generator": "search", "gsrnamespace": "6",
+            "gsrsearch": query, "gsrlimit": "30",
+            "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata", "iiurlwidth": "1600",
+        }
+        try:
+            data = json.loads(get(COMMONS + "?" + urllib.parse.urlencode(params)))
+        except Exception as exc:
+            print(f"[!] Commons search failed for {person}: {exc}")
+            data = {}
+        for page in (data.get("query", {}).get("pages") or {}).values():
+            pages.setdefault(page.get("title"), page)
     found = []
-    try:
-        data = json.loads(get(COMMONS + "?" + urllib.parse.urlencode(params)))
-    except Exception as exc:
-        print(f"[!] Commons search failed for {person}: {exc}")
-        data = {}
     first, last = (person.lower().split() + ["", ""])[:2]
-    for page in (data.get("query", {}).get("pages") or {}).values():
+    for page in pages.values():
         info = (page.get("imageinfo") or [{}])[0]
         meta = {k: v.get("value", "") for k, v in (info.get("extmetadata") or {}).items()}
         title = page.get("title", "")
@@ -312,8 +318,12 @@ def commons_photos(person: str) -> list[dict]:
             "kind": "photo", "url": info.get("thumburl"), "title": re.sub(r"^File:", "", title),
             "page": info.get("descriptionurl", ""), "author": clean(meta.get("Artist", "")) or "unknown author",
             "license": lic, "license_url": meta.get("LicenseUrl", ""), "source": "Wikimedia Commons",
-            "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4),
+            "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4)
+                     + (1000 if BASKETBALL.search(text) else 0),
+            "hoops": bool(BASKETBALL.search(text)),
         })
+    if sum(f["hoops"] for f in found) >= 2:   # enough real basketball photos: drop the namesakes
+        found = [f for f in found if f["hoops"]]
     _photo_cache[person] = sorted(found, key=lambda f: -f["score"])
     return _photo_cache[person]
 
@@ -757,6 +767,9 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             # the video should be mostly moving footage: a clip wins when it is nearly as
             # relevant as the best photo (within 2 points and at least 6), and after 2 photos
             # any fitting clip (5+) wins
+            bp = max([scores.get(j, 0) for j in range(len(cands)) if cands[j]["kind"] == "photo"] or [None], key=lambda x: x or 0)
+            bc = max([scores.get(j, 0) for j in range(len(cands)) if cands[j]["kind"] == "video"] or [None], key=lambda x: x or 0)
+            n_ph = sum(c["kind"] == "photo" for c in cands)
             # videos first: a fitting clip (5+) wins unless the photo is MUCH more relevant
             # (3+ points better). No limit on photos: a generic or unrelated clip never beats a
             # photo that clearly matches the line.
@@ -821,6 +834,9 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                     if c["kind"] == "video":
                         used.add(c["id"])
                     break
+            BEAT_DIAG.append(f"{short.get('_name', '')} beat {i}: {n_ph} photos (best {bp if n_ph else '-'}), "
+                             f"{len(cands) - n_ph} clips (best {bc if len(cands) > n_ph else '-'}) -> "
+                             f"{chosen['kind'] + ' ' + str(chosen.get('match')) if chosen else 'empty'}")
             result.append(chosen)
         return result
     finally:
@@ -828,6 +844,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
         shutil.rmtree(sheets, ignore_errors=True)
 
 
+BEAT_DIAG: list[str] = []
 _music_cache: dict[str, list[dict]] = {}
 
 
@@ -1035,9 +1052,14 @@ def main() -> None:
     if any(errors_by_short.values()):
         report += ["", "**Visual search problems** (those beats got general basketball footage):", ""]
         report += [f"- {n}: {e}" for n, errs in errors_by_short.items() for e in errs]
+    if BEAT_DIAG:
+        report += ["", "**Why each picture won** (scores 0-10 for how well it matches the words):", ""]
+        report += [f"- {d}" for d in BEAT_DIAG]
     if MUSIC_LOG:
         report += ["", "**Music search:**", ""] + [f"- {m}" for m in MUSIC_LOG]
-    if LIBRARY_SCORES:
+    if LIBRARY_SCORES and all(v.get("bed", 0) >= 5 for v in LIBRARY_SCORES.values()):
+        report += ["", f"**Music library check:** all {len(LIBRARY_SCORES)} tracks pass ✅"]
+    elif LIBRARY_SCORES:
         report += ["", "**Music library check** (bed score 0-10, 5+ is used; replace the ❌ tracks):", "",
                    "| track | bpm | beat | steady | bed |", "|---|---|---|---|---|"]
         for k, v in sorted(LIBRARY_SCORES.items()):

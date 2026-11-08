@@ -74,9 +74,10 @@ Judge every topic:
   ("filler" = betting previews, odds, generic stat recaps, routine injury reports, and ANY
   opinion, analysis or listicle piece: "Why X should trade Y", "5 takeaways", "power rankings",
   "grades", "predictions". A writer's opinion is not news: only a real event is a story.)
-- "conflict": true if two named sides clash in public: a player calls someone out, a fight,
-  a shove, an ejection, a trade request, a player vs his coach or team, a front office
-  feud, a fine or suspension for something said or done to someone. False otherwise.
+- "conflict": true if two sides clash in public: a player calls someone out, a fight, a shove,
+  an ejection, a trade request, a player vs his coach or team, a front office feud, a coach
+  answering another coach, a star vs a fan, a referee, an announcer or the media, a fine or
+  suspension for something said or done to someone. False otherwise.
 - "virality": 1-10. 10 = everyone in NBA Twitter is talking about it. Big names,
   real conflict, surprise and stakes raise it. Routine news lowers it.
 - "drama": 1-10. How much scandal, conflict and intrigue it carries: feuds, players vs
@@ -236,11 +237,15 @@ OPINION = re.compile(r"^(why|how|what|should|could|would|ranking|grading|grades|
 def short_score(r: dict) -> float:
     """Code-side order of Shorts: conflict and drama first, a positive story only when it is huge."""
     drama, viral = r.get("drama", 0) or 0, r.get("virality", 0) or 0
+    hits, heat = r.get("search_hits", 0) or 0, r.get("youtube_heat", 0) or 0
     score = drama * 2 + viral
     if r.get("conflict"):
         score += 6
-    if drama < 6 and viral < 9:
-        score -= 20      # weak on both: only if nothing better exists
+    # what the audience is searching and watching right now (measured, not guessed)
+    score += min(hits, 20) * 0.5 + heat * 0.5
+    hot = hits >= 8 or heat >= 7
+    if drama < 6 and viral < 9 and not hot:
+        score -= 20      # weak on both and nobody is searching for it: only if nothing better exists
     return score
 
 
@@ -256,6 +261,8 @@ def parse(text: str, n_topics: int, topics: list[dict] | None = None) -> dict:
     for r in data["ranked"]:
         if topics and r["id"] < len(topics):
             r["headline"] = topics[r["id"]]["headline"]
+            r["search_hits"] = topics[r["id"]].get("search_hits", 0)
+            r["youtube_heat"] = topics[r["id"]].get("youtube_heat", 0)
         if OPINION.search(r.get("headline", "")):
             r["kind"] = "filler"          # an opinion piece is never a Short
     repeats = {r["id"] for r in data["ranked"] if r.get("repeat")}
@@ -271,7 +278,10 @@ def parse(text: str, n_topics: int, topics: list[dict] | None = None) -> dict:
 
 def write_summary(data: dict, topics: list[dict]) -> None:
     by_id = {r["id"]: r for r in data["ranked"]}
-    lines = ["## 🧠 AI editor picks", "", "### 🎬 Shorts today", ""]
+    scan = niche_data()
+    lines = ["## 🧠 AI editor picks", "",
+             (f"Competitor scan used: {scan['date']} ({len(scan['outliers'])} outlier Shorts)" if scan
+              else "Competitor scan: none yet (runs with Weekly skills)"), "", "### 🎬 Shorts today", ""]
     for n, i in enumerate(data["shorts"], 1):
         r = by_id.get(i, {})
         lines.append(f"**{n}. {topics[i]['headline']}**  ")

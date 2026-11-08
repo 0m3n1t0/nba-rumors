@@ -20,6 +20,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import trafilatura
@@ -290,16 +291,42 @@ def format_sources(sources: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
+CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff]")
+
+
+def safe_text(text: str) -> str:
+    """Web article text can carry null bytes, control characters or broken unicode, which make
+    the request fail: keep only clean, printable text."""
+    return CONTROL.sub(" ", text.encode("utf-8", "replace").decode("utf-8", "replace"))
+
+
+def claude_error(result) -> str:
+    """The CLI reports most errors on stdout (as JSON), not stderr: show both."""
+    out = (result.stdout or "").strip()
+    try:
+        env = json.loads(out)
+        out = str(env.get("result") or env.get("error") or env.get("subtype") or out)
+    except ValueError:
+        pass
+    return f"exit {result.returncode}: {(out or '')[-400:]} {(result.stderr or '').strip()[-400:]}".strip()
+
+
 def ask_claude(prompt: str, model: str = "") -> dict:
-    with tempfile.TemporaryDirectory() as empty:
-        result = subprocess.run(
-            ["claude", "-p", "--model", model or CLAUDE_MODEL, "--output-format", "json",
-             "--disallowedTools", NO_TOOLS],
-            input=prompt, capture_output=True, text=True, cwd=empty, timeout=TIMEOUT,
-        )
-    check_limit(result.stdout, result.stderr)
-    if result.returncode != 0:
-        raise RuntimeError(f"Claude failed: {result.stderr[-1500:]}")
+    prompt = safe_text(prompt)
+    for attempt in (1, 2):
+        with tempfile.TemporaryDirectory() as empty:
+            result = subprocess.run(
+                ["claude", "-p", "--model", model or CLAUDE_MODEL, "--output-format", "json",
+                 "--disallowedTools", NO_TOOLS],
+                input=prompt, capture_output=True, text=True, cwd=empty, timeout=TIMEOUT,
+            )
+        check_limit(result.stdout, result.stderr)
+        if result.returncode == 0:
+            break
+        print(f"[!] Claude call failed (attempt {attempt}): {claude_error(result)}")
+        if attempt == 2:
+            raise RuntimeError(f"Claude failed: {claude_error(result)}")
+        time.sleep(10)
     log_claude_usage(result.stdout, "script")
     text = json.loads(result.stdout).get("result", "")
     start, end = text.find("{"), text.rfind("}")

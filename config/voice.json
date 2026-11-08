@@ -1,10 +1,17 @@
 {
-  "_chosen": "Voice audition round 3, sample 11_B45_flirty_speed115. Do not change: every video uses this voice.",
-  "engine": "kokoro",
+  "_chosen": "Voice audition round 3, sample 11_B45_flirty_speed115 (the timbre), performed by Chatterbox as in audition round 5, sample 3_chatterbox_exag08 (the delivery). Do not change: every video uses this voice.",
+  "engine": "chatterbox",
   "lang_code": "a",
   "blend": {"af_bella": 0.45, "af_nicole": 0.55},
   "speed": 1.15,
   "pitch": 1.0,
   "bright_eq": true,
-  "gap_seconds": 0.18
+  "gap_seconds": 0.18,
+  "chatterbox": {
+    "exaggeration": 0.8,
+    "cfg_weight": 0.3,
+    "temperature": 0.8,
+    "tempo": 1.08,
+    "seed": 7
+  }
 }

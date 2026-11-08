@@ -457,6 +457,58 @@ def add_cta(beats: list[dict], seed: str) -> None:
     last["say"] = " ".join(p for p in parts if p)
 
 
+# ---------- Content differentiation (YouTube's "inauthentic content" rule) ----------
+# A new Short must not be an old script with the names swapped. Names and numbers are blanked
+# out, then the word patterns (3-word runs) are compared with the last ~30 Shorts. Code only,
+# no Claude call.
+HOOK_SAME = 0.45     # a hook this close to a recent hook is a recycled template
+SCRIPT_SAME = 0.30   # a script this close to a recent one is too similar to publish as is
+RECENT: list[dict] = []
+
+
+def skeleton(text: str) -> set[tuple]:
+    """3-word runs of the text with every name and number blanked out."""
+    for cta in CTA_LINES:
+        text = text.replace(cta, " ")
+    words, prev_end = [], True
+    for tok in re.findall(r"[A-Za-z\u00c0-\u024f][\w'\u2019\u00c0-\u024f-]*|\d[\d,.]*|[.!?]", text):
+        if tok in ".!?":
+            prev_end = True
+            continue
+        if tok[0].isdigit():
+            w = "#"
+        elif tok[0].isupper() and not prev_end:
+            w = "@"                      # a name (capitalized mid-sentence)
+        else:
+            w = tok.lower().replace("\u2019", "'")
+        prev_end = False
+        if not (w == "@" and words and words[-1] == "@"):
+            words.append(w)
+    return {tuple(words[i:i + 3]) for i in range(len(words) - 2)}
+
+
+def similarity(a: set, b: set) -> float:
+    return len(a & b) / len(a | b) if a and b else 0.0
+
+
+def load_recent() -> None:
+    if RECENT:
+        return
+    try:
+        made = json.loads(HISTORY.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        made = []
+    RECENT.extend(m for m in made[-30:] if m.get("spoken"))
+
+
+def closest(text: str, field: str) -> tuple[float, str]:
+    load_recent()
+    sk = skeleton(text)
+    best = max(((similarity(sk, skeleton(m[field])), m["headline"]) for m in RECENT if m.get(field)),
+               default=(0.0, ""))
+    return round(best[0], 2), best[1]
+
+
 def query_test(title: str, description: str, queries: list[str]) -> list[dict]:
     """yt-seo's query test: the title + first two description lines must carry each query's words."""
     head = (title + " " + " ".join(description.splitlines()[:2])).lower()
@@ -644,6 +696,11 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         hooks = hooks[:5]
 
     hooks = intrigue_pick(hooks, topic["headline"])
+    # a hook built on the same template as a recent one goes to the back (stable: order kept otherwise)
+    for h in hooks:
+        h["recycled"], h["recycled_from"] = closest(h["text"], "hook")
+        h["recycled"] = h["recycled"] >= HOOK_SAME and h["recycled"]
+    hooks.sort(key=lambda h: bool(h.get("recycled")))
 
     thumb = draft.get("thumbnail_text", "")
     titles = [niche_adjust(titlecheck.check(t, thumb)) for t in draft.get("titles", [])[:10]]
@@ -657,6 +714,8 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     bad_quotes = quote_check(spoken, sources)
     banned = banned_check(f"{spoken} {on_screen} {' '.join(draft.get('titles', []))} {thumb}")
     words = len(spoken.split())
+    same, same_as = closest(" ".join(b.get("say", "") for b in beats), "spoken")
+    too_similar = same_as if same >= SCRIPT_SAME else ""
 
     used = [sources[i - 1] for i in draft.get("sources_used", []) if 1 <= i <= len(sources)]
 
@@ -688,7 +747,10 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         "unsupported_numbers": unsupported,
         "unsupported_quotes": bad_quotes,
         "banned_phrases": banned,
-        "ready": bool(hooks) and not unsupported and not bad_quotes and not banned and 18 <= round(words / WPM * 60) <= 42,
+        "similarity": same,
+        "too_similar_to": too_similar,
+        "ready": bool(hooks) and not unsupported and not bad_quotes and not banned and not too_similar
+                 and 18 <= round(words / WPM * 60) <= 42,
     }
 
 
@@ -713,6 +775,9 @@ def write_summary(shorts: list[dict]) -> None:
         if s["banned_phrases"]:
             lines.append(f"**Banned phrases:** {', '.join(s['banned_phrases'])}")
             lines.append("")
+        if s.get("too_similar_to"):
+            lines.append(f"**Too similar ({s['similarity']:.0%}) to a recent Short:** {s['too_similar_to']}")
+            lines.append("")
         if s["unsupported_quotes"]:
             lines.append("**Quote check:** not found word for word in sources: "
                          + " | ".join(f'"{q}"' for q in s["unsupported_quotes"]))
@@ -720,6 +785,7 @@ def write_summary(shorts: list[dict]) -> None:
         lines.append("**Hooks (hookscore.py):**")
         for h in s["hooks"]:
             lines.append(f"- {h['score']} {h['band']} {'❓one-question' if h.get('question') else '(not one question)'}{' 🎯 fan pick' if h.get('intrigue_pick') else ''}"
+                         f"{' ♻️ recycled template (' + format(h['recycled'], '.0%') + ')' if h.get('recycled') else ''}"
                          f" · {h['formula']} · {h['text']}")
         lines += ["", "**Script:**", ""]
         lines.append(f"> 🎙️ {s['hook']['text'] if s['hook'] else ''}")
@@ -764,7 +830,9 @@ def remember(shorts: list[dict]) -> None:
     now = dt.datetime.now(dt.timezone.utc)
     keep = [h for h in old if (now - dt.datetime.fromisoformat(h["time"])).days < 7]
     keep += [{"time": now.isoformat(timespec="minutes"), "headline": s.get("headline", ""),
-              "title": (s.get("titles") or [{}])[0].get("title", "")} for s in shorts]
+              "title": (s.get("titles") or [{}])[0].get("title", ""),
+              "hook": (s.get("hook") or {}).get("text", ""),
+              "spoken": " ".join(b.get("say", "") for b in s.get("beats", []))} for s in shorts]
     HISTORY.write_text(json.dumps(keep, indent=1), encoding="utf-8")
 
 
@@ -798,6 +866,7 @@ def main() -> None:
     QUEUE.extend(f"{score.get(r['id'], 0):.1f}{' ⭐' if r['id'] in picked else ''}"
                  f"{' 🔁 already made' if r.get('repeat') else ''}"
                  f"{' 📈 Google trend ' + str(r['google_trend']) if r.get('google_trend') else ''}"
+                 f"{' 🚀 rising +' + str(r['momentum']) + ' outlets' if r.get('momentum') else ''}"
                  f"{' 🎯 wins in niche: ' + ', '.join(r['niche_match']) if r.get('niche_match') else ''}"
                  f" · {editor['topics'][r['id']]['headline'][:80]}"
                  for r in top)
@@ -826,6 +895,8 @@ def main() -> None:
         dupes.update(judged.get("same_as", []))
         (OUT / f"short_{n}.json").write_text(json.dumps(short, indent=2), encoding="utf-8")
         shorts.append(short)
+        RECENT.append({"headline": short["headline"], "hook": (short.get("hook") or {}).get("text", ""),
+                       "spoken": " ".join(b.get("say", "") for b in short["beats"])})   # same run counts too
     write_summary(shorts)
     remember(shorts)
     if not shorts and limit_hit:

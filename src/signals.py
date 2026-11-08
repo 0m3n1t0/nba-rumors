@@ -122,6 +122,38 @@ STORY_WORDS = re.compile(
 NOISE = re.compile(r"youngboy|2k\d*|\bpicks\b|\bodds\b|\blive\b|type beat|\bmeme", re.I)
 
 
+MOMENTUM = DATA / "history" / "momentum.json"   # kept between runs by the GitHub cache
+
+
+def momentum(topics: list[dict]) -> None:
+    """Story velocity: how many MORE outlets cover a story than at the previous run (0-5).
+    A story that jumps from 1 to 5 outlets in a few hours is breaking; one stuck at 5 for a
+    day is old news. Matched by the people in it (2 shared surnames, or 1 if it has only 1)."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    try:
+        prev = json.loads(MOMENTUM.read_text(encoding="utf-8"))
+        age = (now - datetime.fromisoformat(prev["time"])).total_seconds() / 3600
+        prev = prev["topics"] if age <= 30 else None      # a snapshot older than ~a day says nothing
+    except (OSError, ValueError, KeyError):
+        prev = None
+    snap = []
+    for t in topics[:TOP_TOPICS]:
+        keys = topic_keys(t)
+        outlets = t.get("outlets", 0) or 0
+        if prev is not None and keys:
+            need = 1 if len(keys) == 1 else 2
+            before = max((p["outlets"] for p in prev if len(keys & set(p["keys"])) >= need), default=0)
+            t["momentum"] = max(0, min(5, outlets - before))
+            t["outlets_before"] = before
+        else:
+            t["momentum"] = 0
+        snap.append({"keys": sorted(keys), "outlets": outlets})
+    MOMENTUM.parent.mkdir(parents=True, exist_ok=True)
+    MOMENTUM.write_text(json.dumps({"time": now.isoformat(timespec="minutes"), "topics": snap}),
+                        encoding="utf-8")
+
+
 GOOGLE_TRENDS_RSS = "https://trends.google.com/trending/rss?geo=US"   # public, free, hourly
 
 
@@ -213,6 +245,11 @@ def main() -> None:
         # one monster video still does not flatten everything else)
         t["youtube_heat"] = round(10 * math.sqrt(raw[i] / top), 1) if raw[i] else 0
 
+    try:
+        momentum(topics)
+    except Exception as exc:
+        signals["errors"].append(f"momentum: {exc}")
+        print(f"[!] momentum skipped: {exc}")
     (DATA / "topics.json").write_text(json.dumps(topics, indent=2), encoding="utf-8")
     (DATA / "signals.json").write_text(json.dumps(signals, indent=2), encoding="utf-8")
 
@@ -223,12 +260,13 @@ def main() -> None:
     for v in signals["videos"][:10]:
         lines.append(f"- {v['views_per_hour']:,}/h · {v['title']} ({v['channel']})")
     lines += ["", "**Topics people are watching and searching:**", "",
-              "| YouTube heat | search hits | Google trend | topic |", "|---|---|---|---|"]
+              "| YouTube heat | search hits | Google trend | rising (new outlets) | topic |", "|---|---|---|---|---|"]
     hot = sorted(topics[:TOP_TOPICS], key=lambda t: -(t.get("youtube_heat", 0) + t.get("search_hits", 0)
                                                      + t.get("google_trend", 0)))
     for t in hot[:12]:
         gq = f" ({', '.join(t['google_queries'])})" if t.get("google_queries") else ""
-        lines.append(f"| {t.get('youtube_heat', 0)} | {t.get('search_hits', 0)} | {t.get('google_trend', 0)}{gq} | {t['headline']} |")
+        rise = f"+{t['momentum']}" if t.get("momentum") else "0"
+        lines.append(f"| {t.get('youtube_heat', 0)} | {t.get('search_hits', 0)} | {t.get('google_trend', 0)}{gq} | {rise} | {t['headline']} |")
     nba_trends = [g for g in signals.get("google_trends", [])
                   if re.search(r"nba|lakers|celtics|warriors|knicks|bucks|heat|nuggets|suns|mavericks|"
                                r"76ers|sixers|nets|bulls|cavaliers|thunder|spurs|rockets|clippers|kings|"

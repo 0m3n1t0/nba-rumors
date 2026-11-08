@@ -71,18 +71,21 @@ jobs:
           path: ~/.cache/huggingface
           key: voice-models-v1
 
+      - name: Cache the voice engine's English model (so it is downloaded only once)
+        if: hashFiles('data/skip_reason.txt') == ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/voice-wheels
+          key: voice-wheels-en-core-web-sm-v1
+
       - name: Install voice engine
         if: hashFiles('data/skip_reason.txt') == ''
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q espeak-ng ffmpeg
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-voice.txt
-          # the voice engine's English model comes from GitHub releases, which sometimes time out
-          # (HTTP 504): install it here with retries instead of letting tts.py fetch it once
-          for i in 1 2 3 4 5; do
-            pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl && break
-            echo "retry $i in 20s"; sleep 20
-          done
+          # English model for the voice engine: from the cache, else Hugging Face, else GitHub
+          python src/install_voice_model.py
 
       - name: "Stage 4: voice (Kokoro, chosen voice #11)"
         if: hashFiles('data/skip_reason.txt') == ''

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # to save plan/week.json, which the daily editor reads
+  contents: write   # to save plan/week.json and plan/niche.json, which the daily editor reads
   issues: write     # to open the weekly report as an Issue
 
 jobs:
@@ -32,6 +32,13 @@ jobs:
           python src/collect.py
           python src/signals.py
 
+      - name: Competitor scan (benchmark + yt-viral), for the daily editor and script
+        continue-on-error: true
+        env:
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: python src/benchmark.py
+
       - name: Install Claude Code
         run: |
           curl -fsSL https://claude.ai/install.sh | bash
@@ -45,10 +52,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python src/weekly.py
 
-      - name: Save the plan for the daily editor
+      - name: Save the plan and the competitor scan for the daily editor
         run: |
           git config user.name "nba-rumors-bot"
           git config user.email "nba-rumors-bot@users.noreply.github.com"
           git add plan/week.json
-          git diff --cached --quiet || git commit -m "Weekly plan $(date +%F)"
+          [ -f plan/niche.json ] && git add plan/niche.json
+          git diff --cached --quiet || git commit -m "Weekly plan and competitor scan $(date +%F)"
           git push

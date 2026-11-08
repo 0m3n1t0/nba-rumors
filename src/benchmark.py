@@ -47,6 +47,27 @@ def pct(n: int, items: list) -> int:
     return round(100 * n / max(len(items), 1))
 
 
+NICHE = ROOT / "plan" / "niche.json"
+
+
+def save_niche(videos: list[dict], viral: dict) -> None:
+    """What wins in the niche right now, for the daily editor and script writer (plan/niche.json).
+    Titles are other channels' text: kept short and used only as patterns, never copied."""
+    outliers = viral.get("outliers", [])[:15]
+    lens = [v["seconds"] for v in videos[:50]]
+    data = {
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "median_seconds": round(statistics.median(lens)) if lens else None,
+        "outliers": [{"title": r["title"][:100], "multiple": r["multiple"], "views": r["views"],
+                      "formula": r.get("formula", "")} for r in outliers],
+        "top_viewed": [{"title": v["title"][:100], "views": v["views"], "seconds": v["seconds"]}
+                       for v in videos[:15]],
+        "formulas": [f for f, _ in Counter(r.get("formula", "") for r in viral.get("outliers", [])).most_common(6) if f],
+    }
+    NICHE.parent.mkdir(parents=True, exist_ok=True)
+    NICHE.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+
+
 def main() -> None:
     DATA.mkdir(exist_ok=True)
     yt = youtube()
@@ -127,6 +148,8 @@ def main() -> None:
         w = csv.DictWriter(fh, fieldnames=list(videos[0].keys()) if videos else ["title"])
         w.writeheader()
         w.writerows(videos)
+
+    save_niche(videos, viral)
 
     top = videos[:50]
     lines = [f"## 🔍 Benchmark: NBA drama / rumors Shorts, last {DAYS} days", "",

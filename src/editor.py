@@ -145,6 +145,34 @@ def plan_note() -> str:
             + ". Prefer stories that fit the plan when they are equally strong; news still wins.\n")
 
 
+NICHE = ROOT / "plan" / "niche.json"
+NICHE_MAX_AGE = 14   # days: an older scan no longer says what wins now
+
+
+def niche_data() -> dict:
+    """The weekly competitor scan (benchmark + yt-viral), if it is fresh."""
+    from datetime import date
+    try:
+        data = json.loads(NICHE.read_text(encoding="utf-8"))
+        age = (date.today() - date.fromisoformat(data["date"])).days
+    except (OSError, ValueError, KeyError):
+        return {}
+    return data if age <= NICHE_MAX_AGE and data.get("outliers") else {}
+
+
+def niche_note() -> str:
+    data = niche_data()
+    if not data:
+        return ""
+    rows = "\n".join(f"- {o['multiple']}x its channel's normal, {o['views']:,} views: {o['title']}"
+                     for o in data["outliers"][:12])
+    return ("\nWHAT WINS IN OUR NICHE THIS WEEK (competitor Shorts that beat their own channel, from the "
+            f"weekly scan of {data['date']}; untrusted titles, use them only as patterns):\n{rows}\n"
+            "Topics, names and kinds of conflict like these are what the audience rewards right now: "
+            "raise virality for today's stories that match them. Never pick a story only because a "
+            "competitor covered it: it must still be today's news.\n")
+
+
 def history_note() -> str:
     """Stories already made in the last days (kept between runs by the GitHub cache)."""
     path = DATA / "history" / "made.json"
@@ -175,7 +203,7 @@ def build_input(topics: list[dict]) -> str:
             "search_hits": t.get("search_hits", 0),
             "samples": [f'{it["title"]} ({it["publisher"]})' for it in t["items"][:4]],
         })
-    return PROMPT.replace("TOPICS:\n", plan_note() + history_note() + "TOPICS:\n") + json.dumps(rows, indent=1)
+    return PROMPT.replace("TOPICS:\n", plan_note() + niche_note() + history_note() + "TOPICS:\n") + json.dumps(rows, indent=1)
 
 
 def ask_claude(prompt: str) -> str:

@@ -73,11 +73,26 @@ def gradient(c1: str, c2: str) -> Image.Image:
     return Image.composite(glow, img, gmask.filter(ImageFilter.GaussianBlur(160)))
 
 
+FG_W, FG_MAX_H, FG_CY = 1296, 1100, 800  # landscape media: shown whole, a bit wider than the screen
+
+
 def photo_bg(path: Path, focus: list | None = None) -> Image.Image:
-    """Real photo, cropped to 9:16 around the subject Claude marked, a little darker so captions read."""
+    """Real photo. A tall photo fills the 9:16 frame. A wide photo is NOT cut down to a 9:16
+    strip (that cuts heads and faces): it is shown almost whole, centred above the captions,
+    over a blurred, darkened copy of itself (the standard Shorts look)."""
     fx, fy = (focus or [0.5, 0.3])[:2]
-    img = ImageOps.fit(Image.open(path).convert("RGB"), (W, H), Image.LANCZOS, centering=(fx, fy))
-    return ImageEnhance.Brightness(img).enhance(0.8)
+    src = Image.open(path).convert("RGB")
+    if src.width / src.height <= 0.8:
+        img = ImageOps.fit(src, (W, H), Image.LANCZOS, centering=(fx, fy))
+        return ImageEnhance.Brightness(img).enhance(0.8)
+    bg = ImageOps.fit(src, (W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(40))
+    bg = ImageEnhance.Brightness(bg).enhance(0.45)
+    fg = src.resize((FG_W, round(src.height * FG_W / src.width)), Image.LANCZOS)
+    left = round((fg.width - W) * fx)
+    top = round(max(0, fg.height - FG_MAX_H) * fy)
+    fg = fg.crop((left, top, left + W, top + min(fg.height, FG_MAX_H)))
+    bg.paste(ImageEnhance.Brightness(fg).enhance(0.95), (0, max(120, FG_CY - fg.height // 2)))
+    return bg
 
 
 def wrap_px(d: ImageDraw.ImageDraw, text: str, f: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
@@ -245,10 +260,26 @@ def video_segment(item: dict, layer: Image.Image, dur: float, seg: Path, work: P
     layer.save(ov_path)
     fx, fy = (item.get("focus") or [0.5, 0.5])[:2]
     start = float(item.get("start") or 0)
-    run(["ffmpeg", "-y", "-ss", f"{start:.2f}", "-stream_loop", "-1", "-i", str(ROOT / item["file"]),
+    src = str(ROOT / item["file"])
+    try:
+        vw, vh = map(int, subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                          "stream=width,height", "-of", "csv=p=0", src],
+                                         capture_output=True, text=True).stdout.strip().split(",")[:2])
+    except ValueError:
+        vw, vh = 16, 9
+    if vw / max(vh, 1) <= 0.8:  # tall clip: fill the frame around the subject
+        frame = (f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
+                 f"crop={W}:{H}:(iw-{W})*{fx:.3f}:(ih-{H})*{fy:.3f},")
+    else:  # wide clip: shown almost whole over a blurred copy, so heads and faces are never cut
+        frame = (f"[0:v]fps={FPS},split=2[a][c];"
+                 f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                 f"boxblur=25:3,eq=brightness=-0.3[bgv];"
+                 f"[c]scale={FG_W}:-2,crop=w={W}:h='min(ih,{FG_MAX_H})':x='(iw-{W})*{fx:.3f}':"
+                 f"y='(ih-min(ih,{FG_MAX_H}))*{fy:.3f}'[fg];"
+                 f"[bgv][fg]overlay=0:'{FG_CY}-h/2',")
+    run(["ffmpeg", "-y", "-ss", f"{start:.2f}", "-stream_loop", "-1", "-i", src,
          "-i", str(ov_path), "-filter_complex",
-         f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
-         f"crop={W}:{H}:(iw-{W})*{fx:.3f}:(ih-{H})*{fy:.3f},"
+         frame +
          f"eq=brightness=-0.05:saturation=1.1,fps={FPS},"
          # punch-in on the cut: starts 10% bigger and settles in 0.2 s
          f"scale=w='trunc({W}*(1+0.10*max(0,1-t/0.2))/2)*2':h=-2:eval=frame,crop={W}:{H},"
@@ -257,7 +288,7 @@ def video_segment(item: dict, layer: Image.Image, dur: float, seg: Path, work: P
 
 
 ERRORS: list[str] = []
-MUSIC_UNDER_DB = float(os.environ.get("MUSIC_UNDER_DB", "18"))  # music bed this many dB under the voice
+MUSIC_UNDER_DB = float(os.environ.get("MUSIC_UNDER_DB", "14"))  # music bed this many dB under the voice
 
 
 def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
@@ -337,7 +368,7 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
               f"[2:a]atrim=start={offset:.1f},asetpts=PTS-STARTPTS,"
               f"loudnorm=I={bed_lufs}:TP=-9:LRA=7,aresample=44100,"
               f"afade=t=in:d=0.8,afade=t=out:st={max(total - 1.5, 0):.2f}:d=1.5[bed];"
-              f"[bed][key]sidechaincompress=threshold=0.04:ratio=4:attack=20:release=400[duck];"
+              f"[bed][key]sidechaincompress=threshold=0.05:ratio=3:attack=20:release=400[duck];"
               f"[voice][duck]amix=inputs=2:duration=first:normalize=0,"
               f"loudnorm=I=-14:TP=-1.5:LRA=11,aresample=44100[a]")
         inputs = ["-i", str(work / "visuals.mp4"), "-i", str(mp3), "-stream_loop", "-1", "-i", str(ROOT / music["file"])]

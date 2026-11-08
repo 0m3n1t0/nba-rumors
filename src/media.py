@@ -143,6 +143,13 @@ a photo (the video should be mostly moving footage). A wrong person always score
 may repeat: never pick a candidate already picked for an earlier beat. Unrelated everyday
 scenes (hospitals, families, nature, office life) score 0 even if a word matches.
 
+FRAMING RULE (as important as the match): when the line is about a person, the person's FACE
+must be clearly visible - front or three-quarter view, eyes visible, not cut off by the frame,
+not tiny, not blurred, not turned away. Score 0-2 for: half a head, a face cut by the edge,
+only a torso or legs, the back of someone, a crowd where nobody is clear, other people's legs
+or bodies filling the frame, empty or dark frames. A crowd or arena shot is fine only when the
+line itself is about the crowd, the arena or the fans.
+
 For every beat return:
   "ranking": candidate numbers from best to worst (only those scoring 4 or more),
   "scores": {"candidate number": score} for every candidate in the ranking,
@@ -530,6 +537,17 @@ def frames_of(clip: Path, duration: float, out_dir: Path, tag: str) -> list[Path
     return paths
 
 
+def image_ok(path: Path) -> bool:
+    """A real, readable picture of usable size (some sources return a web page, not an image)."""
+    try:
+        with Image.open(path) as im:
+            im.verify()
+        with Image.open(path) as im:
+            return min(im.size) >= 500
+    except Exception:
+        return False
+
+
 def contact_sheet(cands: list[dict], path: Path, title: str) -> None:
     """Numbered tiles; a clip gets 3 frames in one wide tile."""
     try:
@@ -592,7 +610,7 @@ def candidates(p: dict, work: Path, i: int, used: set, main_person: str = "") ->
     if p.get("person"):
         for c in photos(p["person"])[:MAX_PHOTOS]:
             thumb = work / f"b{i}_p{len(cands)}.jpg"
-            if download(c["url"], thumb, 60):
+            if download(c["url"], thumb, 60) and image_ok(thumb):
                 cands.append({**c, "thumb": str(thumb)})
     seen_ids = set()
     clips: list[dict] = []
@@ -642,11 +660,17 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
     try:
         per_beat = []
         for i, p in enumerate(plans):
-            cands = candidates(p, work, i, used, (people(short) or [""])[0])
+            try:
+                cands = candidates(p, work, i, used, (people(short) or [""])[0])
+                if cands:
+                    contact_sheet(cands, sheets / f"beat_{i}.jpg",
+                                  f"BEAT {i}: {beats[i].get('say', '')[:90]}" if i < len(beats) else f"BEAT {i}")
+            except UsageLimit:
+                raise
+            except Exception as exc:
+                MEDIA_ERRORS.append(f"beat {i}: {type(exc).__name__}: {str(exc)[:120]}")
+                cands = []
             per_beat.append(cands)
-            if cands:
-                contact_sheet(cands, sheets / f"beat_{i}.jpg",
-                              f"BEAT {i}: {beats[i].get('say', '')[:90]}" if i < len(beats) else f"BEAT {i}")
         picks = {}
         rows = [{"beat": i, "say": b.get("say", ""), "person": plans[i].get("person", ""),
                  "prefer": plans[i].get("prefer", "footage"), "candidates": len(per_beat[i])}
@@ -831,6 +855,7 @@ MUSIC_LOG: list[str] = []
 
 
 LIBRARY_SCORES: dict = {}
+MEDIA_ERRORS: list[str] = []
 LIBRARY = ROOT / "music_library"            # private repo of YouTube Audio Library tracks (optional)
 MUSIC_USED = DATA / "history" / "music_used.json"  # rotation, kept between runs by the cache
 AUDIO_EXT = (".mp3", ".wav", ".m4a", ".ogg")
@@ -899,6 +924,26 @@ def pick_music(mood: str, folder: Path, used: set) -> dict | None:
     return None
 
 
+def fill_empty(items: list, n_beats: int, folder: Path, used: set) -> list:
+    """Never a blank beat: any beat left without a picture gets real basketball footage."""
+    items = list(items) + [None] * max(0, n_beats - len(items))
+    folder.mkdir(parents=True, exist_ok=True)
+    pool = [c for q in FALLBACK_BROLL for c in pixabay_videos(q)]
+    for i, it in enumerate(items):
+        if it:
+            continue
+        for c in pool:
+            if c["id"] in used:
+                continue
+            path = folder / f"beat{i}_fill.mp4"
+            if download(c["url"], path, 180):
+                used.add(c["id"])
+                items[i] = {**{k: v for k, v in c.items() if k not in ("score", "preview")},
+                            "file": str(path.relative_to(ROOT)), "beat": i, "match": None}
+                break
+    return items
+
+
 def credits(items: list[dict]) -> str:
     lines, seen = [CREDIT_MARK], set()
     for it in items:
@@ -921,18 +966,25 @@ def main() -> None:
     report = ["## 🎞️ Visuals", "", "| Short | photos | footage | empty beats | match to the words (0-10, per beat) | music |",
               "|---|---|---|---|---|---|"]
     used: set = set()
+    errors_by_short: dict[str, list[str]] = {}
     for script_path in sorted(SCRIPTS.glob("short_*.json")):
         short = json.loads(script_path.read_text(encoding="utf-8"))
         name = script_path.stem
         MOOD[0] = "tense"
         short["_name"] = name
+        MEDIA_ERRORS.clear()
         try:
             items = collect_for(short, MEDIA / name, used)
+        except UsageLimit:
+            items = []
+            MEDIA_ERRORS.append("Claude usage limit reached: general footage used")
         except Exception as exc:  # one broken Short must never stop the others
             import traceback
             traceback.print_exc()
-            print(f"[!] {name}: visuals failed ({exc}); this Short gets colour backgrounds")
+            MEDIA_ERRORS.append(f"{type(exc).__name__}: {str(exc)[:160]}")
             items = []
+        items = fill_empty(items, len(spoken(short)), MEDIA / name, used)
+        errors_by_short[name] = list(MEDIA_ERRORS)
         (MEDIA / f"{name}.json").write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
         music = pick_music(MOOD[0], MEDIA / name, used)
         (MEDIA / f"{name}_music.json").write_text(json.dumps(music, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -950,6 +1002,9 @@ def main() -> None:
         match = " ".join(str(i.get("match")) if i and i.get("match") is not None else "-" for i in items)
         report.append(f"| {name} | {photos} | {clips} ({real} real) | {sum(1 for i in items if not i)} | {match} | {tune} |")
         print(f"[+] {name}: {photos} photos, {clips} clips")
+    if any(errors_by_short.values()):
+        report += ["", "**Visual search problems** (those beats got general basketball footage):", ""]
+        report += [f"- {n}: {e}" for n, errs in errors_by_short.items() for e in errs]
     if MUSIC_LOG:
         report += ["", "**Music search:**", ""] + [f"- {m}" for m in MUSIC_LOG]
     if LIBRARY_SCORES:

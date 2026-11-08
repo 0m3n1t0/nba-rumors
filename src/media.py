@@ -830,6 +830,7 @@ def music_tracks(mood: str) -> list[dict]:
 MUSIC_LOG: list[str] = []
 
 
+LIBRARY_SCORES: dict = {}
 LIBRARY = ROOT / "music_library"            # private repo of YouTube Audio Library tracks (optional)
 MUSIC_USED = DATA / "history" / "music_used.json"  # rotation, kept between runs by the cache
 AUDIO_EXT = (".mp3", ".wav", ".m4a", ".ogg")
@@ -845,11 +846,16 @@ def library_track(mood: str, folder: Path, used: set) -> dict | None:
         history = json.loads(MUSIC_USED.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         history = {}
+    from music_check import MIN_BED, measure_library
+    if not LIBRARY_SCORES:
+        LIBRARY_SCORES.update(measure_library(LIBRARY, DATA / "history" / "music_features.json"))
     moods = [mood] + [m for m in MUSIC_QUERIES if m != mood]
     for m in moods:
         files = sorted(f for f in (LIBRARY / m).glob("*") if f.suffix.lower() in AUDIO_EXT) \
             if (LIBRARY / m).is_dir() else []
-        files = [f for f in files if f.name not in used]
+        # only tracks that measured as a good bed under a voice (clear, steady beat)
+        files = [f for f in files if f.name not in used
+                 and LIBRARY_SCORES.get(f"{m}/{f.name}", {}).get("bed", 0) >= MIN_BED]
         if not files:
             continue
         pick = min(files, key=lambda f: history.get(f"{m}/{f.name}", ""))
@@ -946,6 +952,12 @@ def main() -> None:
         print(f"[+] {name}: {photos} photos, {clips} clips")
     if MUSIC_LOG:
         report += ["", "**Music search:**", ""] + [f"- {m}" for m in MUSIC_LOG]
+    if LIBRARY_SCORES:
+        report += ["", "**Music library check** (bed score 0-10, 5+ is used; replace the ❌ tracks):", "",
+                   "| track | bpm | beat | steady | bed |", "|---|---|---|---|---|"]
+        for k, v in sorted(LIBRARY_SCORES.items()):
+            ok = "✅" if v.get("bed", 0) >= 5 else "❌"
+            report.append(f"| {k} | {v.get('bpm', '-')} | {v.get('beat', '-')} | {v.get('steady', '-')} | {ok} {v.get('bed', 0)} |")
     text = "\n".join(report)
     print(text)
     if os.environ.get("GITHUB_STEP_SUMMARY"):

@@ -15,11 +15,11 @@ env:
   SHORTS_PER_RUN: "2"          # Shorts made per run
   CLAUDE_MODEL: sonnet         # writing, judging, choosing pictures (Opus would use the plan 5x faster)
   CLAUDE_MODEL_LIGHT: haiku    # simple steps (trimming, search words)
-  MUSIC_UNDER_DB: "18"         # background music this many dB under the voice
+  MUSIC_UNDER_DB: "14"         # background music this many dB under the voice (14 = clearly audible, voice stays on top)
 
 jobs:
   pipeline:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04      # pinned: "ubuntu-latest" is moving to Ubuntu 26, which could change ffmpeg/espeak
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

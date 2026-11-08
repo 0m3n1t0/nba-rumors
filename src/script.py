@@ -87,6 +87,7 @@ HOOK RULES:
 
 THE STORY: {headline}
 Editor note: {why}
+STORY TYPE: {story_type}
 
 WHAT PEOPLE ARE TYPING INTO YOUTUBE SEARCH ABOUT IT RIGHT NOW (work the best phrase's
 key words naturally into 2-3 titles, so the video is found. Never paste a phrase as a
@@ -129,8 +130,10 @@ TASK
 4. The last beat ends with ONE question to the viewer. Shorts replay in a loop, so word the
    question so it runs straight back into the hook: it names the same person or stake the hook
    opens with, and the hook's first words make sense as the answer's next line.
-   Follow the voice profile's 5-part STORY shape (action, missed detail, why it matters,
-   her take, question). It must sound like a real person talking, not a template.
+   Follow the voice profile's shape for this STORY TYPE: the BEEF shape for a conflict, the
+   RUMOR shape for trade talk or unrest, otherwise the 5-part STORY shape. Join every beat to
+   the last with "but" or "so" logic, never "and then". It must sound like a real person
+   talking, not a template.
    NO flirty, teasing or intimate wording of any kind and NO pet names: the voice alone
    carries that. The words are a sharp NBA fan's.
 5. Write 10 title options in THIS NICHE'S winning style (from our benchmark of the top NBA
@@ -170,11 +173,14 @@ Here is a draft Short (JSON). Read every line out loud in your head as the narra
 25-year-old woman obsessed with the NBA telling a friend what just happened.
 
 Rewrite anything that sounds like AI, a press release, a template or a stock phrase.
+Check the craft list in the voice profile line by line: the scoop line, BUT/SO between beats
+(no "and then"), one cutting detail with a physical verb instead of adjectives, the loop
+opened in the hook and closed in the last line, a re-hook in the middle.
 Add her real reactions and one clear opinion. Vary sentence length.
 WRITE FOR THE EAR, so the voice sounds alive and not monotone (the narrator reads exactly
 what you write, and punctuation drives her tone):
 - Short punchy sentences mixed with one longer one. Fragments are fine: "Live on TV."
-- At least two exclamations of real emotion: "And it got worse!", "That's insane!"
+- At least two exclamations of real emotion: "And it got worse!", "On live TV!"
 - Contrast turns: "But here's the thing.", "Then it flipped.", "Wait. It gets better."
 - Questions inside the story, not only at the end: "Why does that matter?"
 - No long lists, no parentheses, no semicolons, no abbreviations she cannot say.
@@ -436,6 +442,17 @@ No pet names, no flirty phrases, no "hey guys".
 Return ONLY JSON: {{"hooks": [{{"text": "...", "formula": "..."}}]}}"""
 
 
+RUMOR_KINDS = {"trade_rumor", "free_agency", "coach_or_front_office"}
+
+
+def story_type(judged: dict) -> str:
+    if judged.get("conflict") or judged.get("kind") in {"player_vs_player", "player_vs_team", "suspension_or_fine"}:
+        return "conflict (use the BEEF shape)"
+    if judged.get("kind") in RUMOR_KINDS:
+        return "rumor (use the RUMOR shape)"
+    return "news (use the 5-part STORY shape)"
+
+
 INTRIGUE = """You are a 22-year-old NBA fan scrolling Shorts at 1am. Which of these opening
 lines would make you stop and say "wait, WHAT?" and keep watching? Judge only the intrigue:
 a clash between named people beats a stat, a shock beats a summary, a sharp question beats
@@ -479,6 +496,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         rules="\n".join(f"- {r}" for r in formulas["rules"]),
         headline=topic["headline"],
         why=judged.get("why", ""),
+        story_type=story_type(judged),
         search="\n".join(f"- {p}" for p in topic.get("search_phrases", [])) or "- (no data today)",
         sources=format_sources(sources),
     )

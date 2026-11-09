@@ -6,23 +6,41 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # to save plan/week.json and plan/niche.json, which the daily editor reads
-  issues: write     # to open the weekly report as an Issue
+  contents: read   # nothing is written to this public repository any more (no commits, no Issues)
+
+# shares the Claude limit with the daily pipeline: never runs at the same time as it
+concurrency:
+  group: claude-pipeline
+  cancel-in-progress: false
+
+env:
+  CHANNEL: nba
 
 jobs:
   weekly:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
+      - name: Private state repository (plan, competitor scan and reports are kept there)
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: 0m3n1t0/nba-rumors-state
+          token: ${{ secrets.STATE_REPO_TOKEN }}
+          path: state
+
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
           cache: pip
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Restore the channel's history
+        run: python src/state.py restore
 
       - name: Today's stories and audience signals (for the plan)
         env:
@@ -49,14 +67,10 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python src/weekly.py
 
-      - name: Save the plan and the competitor scan for the daily editor
-        run: |
-          git config user.name "nba-rumors-bot"
-          git config user.email "nba-rumors-bot@users.noreply.github.com"
-          git add plan/week.json
-          [ -f plan/niche.json ] && git add plan/niche.json
-          git diff --cached --quiet || git commit -m "Weekly plan and competitor scan $(date +%F)"
-          git push
+      - name: Save the plan, the competitor scan and the report to the private repository
+        if: always()
+        env:
+          SAVE_PLAN: "1"
+        run: python src/state.py save

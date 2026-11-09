@@ -423,6 +423,48 @@ class Stage3(unittest.TestCase):
                  {"say": "So is it really no beef?"}]
         self.assertEqual(script.stock_tics(clean), [])
 
+    # 26. Faces never get lost: the second search keeps every photo of the story's people,
+    #     each beat sees different photos of the person, attribution words are not people,
+    #     a brief Openverse 504 is retried
+    def test_26_faces_kept(self):
+        import media
+        keep = [{"kind": "video", "id": "c1", "page": "c1"}]
+        faces = [{"kind": "photo", "page": "tatum1"}, {"kind": "photo", "page": "brown1"}]
+        more = [{"kind": "video", "id": "s1", "page": "s1"}]
+        pool = media.round2_pool(keep, faces, more)
+        self.assertEqual([c["page"] for c in pool], ["c1", "tatum1", "brown1", "s1"])
+        photos = [{"page": str(k)} for k in range(10)]
+        beat0 = media.photo_window(photos, 3, 0)
+        beat1 = media.photo_window(photos, 3, 1)
+        self.assertEqual([c["page"] for c in beat0], ["0", "1", "2"])   # beat 0 unchanged: the best
+        self.assertFalse({c["page"] for c in beat0} & {c["page"] for c in beat1})
+        self.assertEqual(len(media.photo_window(photos[:2], 3, 4)), 2)
+        self.assertTrue(media.not_a_person("Per Yahoo"))
+        self.assertTrue(media.not_a_person("Yahoo Sports"))
+        self.assertFalse(media.not_a_person("De'Aaron Fox"))
+        self.assertFalse(media.not_a_person("Jayson Tatum"))
+        import io, json as js, urllib.error
+        calls = []
+
+        def fake(req, timeout=30):
+            calls.append(1)
+            if len(calls) == 1:
+                raise urllib.error.HTTPError("u", 504, "Gateway Timeout", {}, None)
+            return io.BytesIO(js.dumps({"results": [{"title": "Jayson Tatum dunk", "width": 1200, "height": 1600,
+                                                     "license": "by", "license_version": "2.0", "url": "x",
+                                                     "foreign_landing_url": "https://flickr.com/p/9"}]}).encode())
+        orig_open, orig_sleep, budget = media.urllib.request.urlopen, __import__("time").sleep, media.OPENVERSE_BUDGET[0]
+        media.urllib.request.urlopen = fake
+        __import__("time").sleep = lambda s: None
+        media.OPENVERSE_BUDGET[0] = 50
+        try:
+            found = media.openverse_photos("Jayson Tatum")
+        finally:
+            media.urllib.request.urlopen, media.OPENVERSE_BUDGET[0] = orig_open, budget
+            __import__("time").sleep = orig_sleep
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(found), 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

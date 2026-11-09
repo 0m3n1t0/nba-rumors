@@ -557,13 +557,37 @@ def closest(text: str, field: str) -> tuple[float, str]:
 
 def query_test(title: str, description: str, queries: list[str]) -> list[dict]:
     """yt-seo's query test: the title + first two description lines must carry each query's words."""
-    head = (title + " " + " ".join(description.splitlines()[:2])).lower()
+    # accents folded on both sides: YouTube search matches "porzingis" to "Porziņģis"
+    head = compliance.fold(title + " " + " ".join(description.splitlines()[:2]))
     out = []
     for q in queries:
-        words = [w for w in re.findall(r"[a-z0-9']+", q.lower()) if w not in QSTOP]
+        words = [w for w in re.findall(r"[a-z0-9']+", compliance.fold(q)) if w not in QSTOP]
         missing = [w for w in words if w not in head]
         out.append({"query": q, "pass": not missing, "missing": missing})
     return out
+
+
+CLASH_WORDS = re.compile(r"\b(vs\.?|versus|calls? out|called out|fires? back|fired back|beef|feud|rift|"
+                         r"clash|shot at|slams?|blasts?|rips?|trade|traded|demand|ejected|fined|suspended|"
+                         r"benched|fight|shove|heckler|answer(ed)?|respond(ed|s)?|disagree|wrong|warns?)\b", re.I)
+
+
+def nba_hook_score(text: str) -> tuple[dict, int, str]:
+    """hookscore.py (yt-script) is used as it is; one adjustment for this niche, the way
+    niche_adjust does for title.py. Its ADDRESS part only counts the word "you", which a
+    third-person NBA hook never has ("Did Jaylen Brown just...?"), so every hook lost ~15
+    points and triggered rewrites. In this niche the hook's grip comes from WHO and the CLASH
+    instead: named people or teams plus a conflict or stakes word. ADDRESS becomes the higher of
+    the two; the other four parts and the skill's own formula stay exactly as they are."""
+    parts, verdict, formula, _ = hookscore.score(text)
+    named = len({w for w in re.findall(r"\b[A-Z][\w'\u00c0-\u024f-]+", text)[1:]})
+    clash = len(CLASH_WORDS.findall(text))
+    nba_address = min(100, 26 + 8 * min(named, 4) + 18 * min(clash, 2))
+    if nba_address > parts["ADDRESS"]:
+        parts = {**parts, "ADDRESS": nba_address}
+        vals = list(parts.values())
+        verdict = round(0.6 * (sum(vals) / len(vals)) + 0.4 * min(vals))
+    return parts, verdict, formula
 
 
 def niche_adjust(result: dict) -> dict:
@@ -713,7 +737,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     # youtube-agent-skill tools: rank hooks and titles
     hooks = []
     for h in draft.get("hooks", [])[:5]:
-        parts, verdict, formula, _ = hookscore.score(h["text"])
+        parts, verdict, formula = nba_hook_score(h["text"])
         hooks.append({"text": h["text"], "formula": h.get("formula") or formula, "question": one_question(h["text"]),
                       "score": verdict, "band": hookscore.band(verdict), "properties": parts})
     hooks.sort(key=lambda h: (not h["question"], -h["score"]))
@@ -741,7 +765,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         for h in more.get("hooks", [])[:5]:
             if banned_check(h.get("text", "")):
                 continue
-            parts, verdict, formula, _ = hookscore.score(h["text"])
+            parts, verdict, formula = nba_hook_score(h["text"])
             hooks.append({"text": h["text"], "formula": h.get("formula") or formula, "question": one_question(h["text"]),
                           "score": verdict, "band": hookscore.band(verdict), "properties": parts})
         hooks.sort(key=lambda h: (not h["question"], -h["score"]))
@@ -781,6 +805,12 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
                    + "\n\nSources:\n"
                    + "\n".join(f"- {s['publisher']}: {s['link']}" for s in used) + f"\n\n{DISCLAIMER}")
     tags = [t for t in draft.get("tags", []) if isinstance(t, str)][:15]
+    # yt-seo: tags are for spellings. A name with accents also gets its plain spelling
+    # ("Porziņģis" + "Porzingis"), the way American fans type it; no other keywords are added.
+    for t in list(tags):
+        plain = compliance.fold(t)
+        if plain != t.lower() and plain not in {compliance.fold(x) for x in tags if x != t} and len(tags) < 15:
+            tags.append(" ".join(w.capitalize() for w in plain.split()))
     seo = query_test(best_title, description, draft.get("queries", [])[:3])
     short = {
         "n": n,

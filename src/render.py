@@ -77,22 +77,40 @@ def gradient(c1: str, c2: str) -> Image.Image:
 FG_W, FG_MAX_H, FG_CY = 1296, 1100, 800  # landscape media: shown whole, a bit wider than the screen
 
 
-def photo_bg(path: Path, focus: list | None = None) -> Image.Image:
+FACE_UNDER_HOOK = 860   # y of the face in the hook shot: below the hook words, above the captions
+
+
+def photo_bg(path: Path, focus: list | None = None, hook: bool = False) -> Image.Image:
     """Real photo. A tall photo fills the 9:16 frame. A wide photo is NOT cut down to a 9:16
     strip (that cuts heads and faces): it is shown almost whole, centred above the captions,
-    over a blurred, darkened copy of itself (the standard Shorts look)."""
+    over a blurred, darkened copy of itself (the standard Shorts look).
+    hook=True (the opening shot, with the big hook words at the top): the photo is placed so
+    the face sits BELOW the words, never hidden behind them - the face is what stops the scroll."""
     fx, fy = (focus or [0.5, 0.3])[:2]
     src = Image.open(path).convert("RGB")
     if src.width / src.height <= 0.8:
-        img = ImageOps.fit(src, (W, H), Image.LANCZOS, centering=(fx, fy))
-        return ImageEnhance.Brightness(img).enhance(0.8)
+        if not hook:
+            img = ImageOps.fit(src, (W, H), Image.LANCZOS, centering=(fx, fy))
+            return ImageEnhance.Brightness(img).enhance(0.8)
+        scale = max(W / src.width, H / src.height)
+        face = fy * src.height * scale
+        if face < FACE_UNDER_HOOK:            # face too high to crop down to: zoom in a little
+            scale *= min(1.35, FACE_UNDER_HOOK / max(face, 1))
+        sw, sh = round(src.width * scale), round(src.height * scale)
+        big = src.resize((sw, sh), Image.LANCZOS)
+        left = min(max(0, round(fx * sw - W / 2)), sw - W)
+        top = min(max(0, round(fy * sh - FACE_UNDER_HOOK)), sh - H)
+        return ImageEnhance.Brightness(big.crop((left, top, left + W, top + H))).enhance(0.8)
     bg = ImageOps.fit(src, (W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(40))
     bg = ImageEnhance.Brightness(bg).enhance(0.45)
     fg = src.resize((FG_W, round(src.height * FG_W / src.width)), Image.LANCZOS)
     left = round((fg.width - W) * fx)
     top = round(max(0, fg.height - FG_MAX_H) * fy)
     fg = fg.crop((left, top, left + W, top + min(fg.height, FG_MAX_H)))
-    bg.paste(ImageEnhance.Brightness(fg).enhance(0.95), (0, max(120, FG_CY - fg.height // 2)))
+    y = max(120, FG_CY - fg.height // 2)
+    if hook:   # the face (fy of the band) lands under the hook words
+        y = min(max(120, round(FACE_UNDER_HOOK - fy * fg.height)), H - fg.height - 200)
+    bg.paste(ImageEnhance.Brightness(fg).enhance(0.95), (0, y))
     return bg
 
 
@@ -391,7 +409,7 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
                     ERRORS.append(f"{out.stem} beat {i}: {err.splitlines()[-1] if err else 'ffmpeg error'}")
                     item = None
                     layer = overlay(None, hook, accent)
-            bg = photo_bg(ROOT / item["file"], item.get("focus")) if item else gradient(*colors)
+            bg = photo_bg(ROOT / item["file"], item.get("focus"), hook=bool(hook)) if item else gradient(*colors)
             marks.append("❌🎥→⬛" if failed else (("🔍" if close else "📷") if item else "⬛"))
             still_segment(bg, layer, sdur, seg, work, tag, zoom_in=(i + s_no) % 2 == 0,
                           close=frame_focus(ROOT / item["file"], item.get("focus")) if (item and close) else None)

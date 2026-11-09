@@ -160,7 +160,10 @@ TASK
    at most one emoji at the end, under 50 characters. Numbers are optional (only 2% of the
    niche's top titles use one). Examples of the style: "Ben Wallace was INSANE 💀",
    "Is the NBA RIGGED? 🤯", "Bronny James is FIGHTING for HIS SPOT 😤". The title must stay
-   true to the facts. Plus a thumbnail text of max 3 words that does NOT repeat the title.
+   true to the facts. Plus "thumbnail_text": the 2-4 words shown BIG on the first frame, the
+   only thing a scroller reads before deciding to stay. It must name the clash or the shock at
+   a glance, with names fans know: "KIDD vs RIVERS", "LUKA vs FAN", "TRADE DEMAND?". Never a
+   fragment that means nothing without the video ("TOP FIVE?", "HE SAID IT"), never the exact title.
 6. List which sources you used by their number.
 7. SEO (yt-seo): write the 3 search queries this Short should win (from the live search
    phrases when they fit), a description whose FIRST TWO LINES say what the viewer gets in

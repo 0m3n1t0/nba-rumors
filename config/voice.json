@@ -1,5 +1,5 @@
 {
-  "_chosen": "Voice audition round 3, sample 11_B45_flirty_speed115 (the timbre), performed by Chatterbox as in audition round 5, sample 3_chatterbox_exag08 (the delivery). Do not change: every video uses this voice. Each beat is performed in its own tone (the script's \"tone\" field): exaggeration and cfg_weight per tone below. Temperature 0.7 (was 0.8): steadier, less random intonation.",
+  "_chosen": "Timbre: voice audition round 3, sample 11_B45_flirty_speed115 (Kokoro Bella 45 / Nicole 55, speed 1.15). Delivery: Chatterbox (round 5) with the round 6 winner 3_natural_live_ref: the lively reference clip (tts.REFERENCE_TEXT) and the natural tone levels below. Each beat is performed in its own tone (the script's \"tone\" field): [exaggeration, cfg_weight]. Do not change: every video uses this voice.",
   "engine": "chatterbox",
   "lang_code": "a",
   "blend": {
@@ -11,8 +11,8 @@
   "bright_eq": true,
   "gap_seconds": 0.18,
   "chatterbox": {
-    "exaggeration": 0.8,
-    "cfg_weight": 0.3,
+    "exaggeration": 0.6,
+    "cfg_weight": 0.4,
     "temperature": 0.7,
     "tempo": 1.08,
     "seed": 7,
@@ -20,24 +20,24 @@
   },
   "tones": {
     "calm": [
-      0.55,
-      0.35
+      0.45,
+      0.5
     ],
     "serious": [
-      0.5,
-      0.4
+      0.45,
+      0.5
     ],
     "tense": [
-      0.8,
-      0.3
+      0.6,
+      0.4
     ],
     "shocked": [
-      1.0,
-      0.3
+      0.75,
+      0.35
     ],
     "amused": [
-      0.75,
-      0.3
+      0.6,
+      0.4
     ]
   }
 }

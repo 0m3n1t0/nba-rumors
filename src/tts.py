@@ -2,7 +2,7 @@
 
 Uses the voice chosen in the audition (config/voice.json), so every video sounds the same:
 voice #11 (Kokoro, Bella 45 / Nicole 55) performed by Chatterbox with more emotion
-(audition round 5, sample 3_chatterbox_exag08). Kokoro makes a short reference clip of
+(audition round 5, sample 3_chatterbox_exag08; tones and reference from round 6, 3_natural_live_ref). Kokoro makes a short reference clip of
 voice #11, Chatterbox copies that timbre and reads the script with real intonation.
 If Chatterbox fails or garbles the text (checked by Whisper), the Short falls back to the
 Kokoro voice, so a run never ends without narration.
@@ -55,12 +55,14 @@ def lower_caps(text: str) -> str:
     return re.sub(r"\b[A-Z]{3,}\b", lambda m: m.group(0) if m.group(0) in ACRONYMS else m.group(0).lower(), text)
 
 
-# Reference clip for the voice copy (the same one the audition used): voice #11, lively.
+# Reference clip Chatterbox copies the DELIVERY from (voice #11 timbre, made by Kokoro). Chosen in
+# audition round 6 (3_natural_live_ref): a reference that itself goes up and down (a question,
+# a calm line, a surprised line, a dry aside) gives a livelier, more human melody.
 REFERENCE_TEXT = (
-    "Okay, so here's the thing about this league. Everybody wants to talk about the big names, "
-    "but the stories that really matter? They're hiding in the details. And honestly, that's my "
-    "favorite part. Let me show you what I mean!"
+    "Wait, did he really just say that? Okay. So here's what happened. He walked up to the mic, "
+    "totally calm, and then, boom! Nobody saw that coming. Honestly? I kind of love it."
 )
+REFERENCE_EXAGGERATION = 0.5   # as in the audition; each beat then sets its own tone
 CHUNK_WORDS = 90      # longer scripts are read in two or more parts (Chatterbox reads ~40 s at most)
 MIN_COVERAGE = 0.85   # Whisper must hear at least this share of the script's words
 
@@ -126,7 +128,7 @@ class Performer:
         self.rate = self.model.sr
         # read the reference voice ONCE (not again for every beat): saves time per Short
         try:
-            self.model.prepare_conditionals(str(self.reference), exaggeration=cb["exaggeration"])
+            self.model.prepare_conditionals(str(self.reference), exaggeration=REFERENCE_EXAGGERATION)
             self.prompt = None
         except Exception as exc:
             print(f"[i] reference prepared per call: {exc}")

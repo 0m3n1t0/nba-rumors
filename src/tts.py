@@ -329,7 +329,8 @@ def main() -> None:
 
         duration = duration_of(mp3)
         beats = beat_times(parts, words, duration)
-        timing = {"duration": duration, "beats": beats, "words": words, "engine": engine}
+        timing = {"duration": duration, "beats": beats, "words": words, "engine": engine,
+                  "heard": round(heard, 3)}
         (AUDIO / f"{name}.timing.json").write_text(json.dumps(timing, indent=2), encoding="utf-8")
         ready = "✅" if short.get("ready") else "⚠️"
         engine_note = "Chatterbox (voice #11)" if engine == "chatterbox" else ("Kokoro (fallback)" if performer else "Kokoro")

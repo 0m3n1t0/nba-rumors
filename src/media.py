@@ -1211,6 +1211,7 @@ def main() -> None:
             items = collect_for(short, MEDIA / name, used)
         except UsageLimit:
             items = []
+            (MEDIA / f"{name}_flags.json").write_text(json.dumps({"unjudged": True}), encoding="utf-8")
             MEDIA_ERRORS.append("Claude Pro 5-hour limit reached: pictures NOT judged (only photos of the "
                                 "story's people) - needs review before publishing")
         except Exception as exc:  # one broken Short must never stop the others

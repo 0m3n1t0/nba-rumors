@@ -410,6 +410,19 @@ class Stage3(unittest.TestCase):
         self.assertFalse(media.unjudged_ok({"kind": "photo", "title": "File:Taj Gibson media day.jpg"}, who))
         self.assertFalse(media.unjudged_ok({"kind": "video", "title": "Porzingis dunk"}, who))
 
+    # 25. The closing question is always the last sentence; stock catchphrases are flagged
+    def test_25_question_last_and_tics(self):
+        import script
+        beats = [{"say": "Rivers went 97 and 103 in Milwaukee."},
+                 {"say": "So who's right, Doc or Giannis? Tell me I'm wrong. Subscribe, NBA drama drops here every day."}]
+        script.add_cta(beats, "seed")
+        self.assertTrue(beats[-1]["say"].endswith("Doc or Giannis?"), beats[-1]["say"])
+        self.assertEqual(script.retention_check(beats)["hard"], [])
+        self.assertIn("tell me i'm wrong", script.stock_tics(beats))
+        clean = [{"say": "Brown got traded to Philly this summer, and Tuesday he faces Tatum."},
+                 {"say": "So is it really no beef?"}]
+        self.assertEqual(script.stock_tics(clean), [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -198,5 +198,89 @@ class Story(unittest.TestCase):
         self.assertEqual(result["verdict"], C.PASS, failing)
 
 
+class Stage2(unittest.TestCase):
+
+    # 9b. Openverse says CC BY, but the Flickr page now says non-commercial: the photo is dropped
+    def test_09b_openverse_relabelled_on_flickr(self):
+        import media
+        old = media.flickr_licence
+        try:
+            pages = {"https://flickr.com/p/1": "by-nc", "https://flickr.com/p/2": "by-sa", "https://flickr.com/p/3": None}
+            media.flickr_licence = lambda page: pages[page]
+            mk = lambda n: {"kind": "photo", "source": "Flickr via Openverse", "page": f"https://flickr.com/p/{n}",
+                            "license": "CC BY 2.0", "file": f"{n}.jpg"}
+            out = media.verify_openverse([{**mk(1), "alts": [mk(2)]}, mk(3)])
+            self.assertEqual(out[0]["page"], "https://flickr.com/p/2")      # NC dropped, the next one leads
+            self.assertTrue(out[0]["license_verified"])
+            self.assertFalse(out[1]["license_verified"])                    # unreadable page: kept, marked
+        finally:
+            media.flickr_licence = old
+
+    # Commons: a "CC BY" TV clip, an unflagged own-work clip, a photo Commons flags
+    def test_14_commons_provenance(self):
+        import media
+        tv = {"Credit": "YouTube", "ImageDescription": "ESPN broadcast, full game", "Categories": ""}
+        fan = {"Credit": "Own work", "ImageDescription": "Warm-ups before the game", "Categories": "Basketball"}
+        flagged = {"Categories": "Deletion requests November 2026|Lakers"}
+        self.assertFalse(media.commons_trusted(tv, "File:Lakers highlights.webm", video=True))
+        self.assertTrue(media.commons_trusted(fan, "File:Warmups.webm", video=True))
+        self.assertFalse(media.commons_trusted(flagged, "File:Player.jpg"))
+
+    # Music: a new library track is recorded but NOT usable until the owner confirms it
+    def test_15_music_ledger(self):
+        import media
+        tmp = Path(tempfile.mkdtemp())
+        old = (media.LIBRARY, media.MUSIC_LICENSES)
+        try:
+            (tmp / "lib" / "tense").mkdir(parents=True)
+            (tmp / "lib" / "tense" / "song.mp3").write_bytes(b"x")
+            (tmp / "lib" / "tense" / "credit_song.mp3").write_bytes(b"x")
+            (tmp / "lib" / "tense" / "credit_song.txt").write_text("Song by Artist, CC BY 4.0")
+            media.LIBRARY, media.MUSIC_LICENSES = tmp / "lib", tmp / "music_licenses.json"
+            tracks = media.music_ledger()
+            self.assertFalse(tracks["tense/song.mp3"]["confirmed"])
+            self.assertTrue(tracks["tense/credit_song.mp3"]["attribution_required"])
+            v, _ = gate.check_music({"library": True, "library_key": "tense/song.mp3", "file": "x"})
+            self.assertNotEqual(v, C.PASS)
+            import json as _j
+            led = _j.loads(media.MUSIC_LICENSES.read_text())
+            led["confirm_all_current"] = True
+            media.MUSIC_LICENSES.write_text(_j.dumps(led))
+            tracks = media.music_ledger()
+            self.assertTrue(all(t["confirmed"] for t in tracks.values()))
+        finally:
+            media.LIBRARY, media.MUSIC_LICENSES = old
+            shutil.rmtree(tmp)
+
+    # History survives a deleted cache: saved to the private repository, restored from it
+    def test_16_history_backup_and_restore(self):
+        import subprocess
+        import state
+        tmp = Path(tempfile.mkdtemp())
+        old = (state.ROOT, state.DATA, state.STATE, state.HOME)
+        try:
+            remote = tmp / "remote.git"
+            subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+            work = tmp / "repo"
+            subprocess.run(["git", "clone", "-q", str(remote), str(work / "state")], check=True,
+                           capture_output=True)
+            state.ROOT, state.DATA = work, work / "data"
+            state.STATE, state.HOME = work / "state", work / "state" / "nba"
+            (state.DATA / "history").mkdir(parents=True)
+            (state.DATA / "history" / "made.json").write_text('[{"headline": "Brown vs Tatum"}]')
+            state.save("test")
+            shutil.rmtree(state.DATA)                                  # the cache is gone
+            fresh = tmp / "fresh"                                     # a new runner
+            subprocess.run(["git", "clone", "-q", str(remote), str(fresh / "state")], check=True,
+                           capture_output=True)
+            state.ROOT, state.DATA = fresh, fresh / "data"
+            state.STATE, state.HOME = fresh / "state", fresh / "state" / "nba"
+            state.restore()
+            self.assertIn("Brown vs Tatum", (fresh / "data" / "history" / "made.json").read_text())
+        finally:
+            state.ROOT, state.DATA, state.STATE, state.HOME = old
+            shutil.rmtree(tmp)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

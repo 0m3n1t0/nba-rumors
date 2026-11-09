@@ -320,34 +320,20 @@ def sharp_enough(item: dict) -> bool:
 
 
 def plan_shots(main: dict | None, dur: float) -> list[tuple]:
-    """Split a beat into shots: a photo at most ~3 s, a clip at most ~4 s (motion holds the eye
-    longer). Extra shots use the beat's other pictures first; when a photo runs out of
-    pictures, the same photo comes back as a tight face shot (punch-in), never a repeat of
-    the same framing. A clip with no other picture stays one shot."""
+    """Split a beat into shots, each a DIFFERENT picture: a photo at most ~3 s, a clip ~4 s
+    (motion holds the eye longer). The beat's other pictures are used in order; the same photo
+    is never shown twice. When the pictures run out, the last one simply stays on screen
+    longer (with its slow move), and a clip continues further into its own footage."""
     if not main:
         return [(None, dur, False)]
     pool = [main] + [a for a in (main.get("alts") or [main.get("alt")]) if a]
     limit = CLIP_SHOT if main["kind"] == "video" else PHOTO_SHOT
     n = max(1, min(math.ceil(dur / limit), int(dur // MIN_SHOT) or 1))
-    shots = []
-    for k in range(n):
-        if k < len(pool):
-            item, close = pool[k], False
-        else:
-            # out of pictures: reframe a photo of this beat (alternating wide / close)
-            photos = [p for p in pool if p["kind"] == "photo"]
-            clips = [p for p in pool if p["kind"] == "video"]
-            if photos:
-                item = photos[(k - len(pool)) % len(photos)]
-                # a face close-up only from a sharp photo: a small one would look blurry
-                # zoomed in; then the same framing comes back with the opposite slow move
-                close = sharp_enough(item) and not (shots and shots[-1][0] is item and shots[-1][2])
-            elif clips:
-                # only a clip: a jump cut further into the same footage (with the punch-in)
-                item, close = clips[(k - len(pool)) % len(clips)], False
-            else:
-                break
-        shots.append([item, 0.0, close])
+    shots = [[pool[k], 0.0, False] for k in range(min(n, len(pool)))]
+    clips = [p for p in pool if p["kind"] == "video"]
+    while len(shots) < n and clips:
+        # out of pictures: a jump cut further into the same footage (new frames, not a repeat)
+        shots.append([clips[(len(shots) - len(pool)) % len(clips)], 0.0, False])
     each = round(dur / len(shots), 2)
     for s in shots:
         s[1] = each
@@ -370,13 +356,19 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     accent = colors[1] if colors[1] not in ("#000000", "#FFFFFF") else "#FACC15"
     beats = timing["beats"]
     media = list(media or []) + [None] * len(beats)
-    segments, log = [], []
+    # a beat with no picture of its own continues the previous beat's picture (one longer
+    # shot): never a repeated picture, never a plain colour card
+    runs = []
     for i, b in enumerate(beats):
         start = 0.0 if i == 0 else b["start"]
         end = beats[i + 1]["start"] if i + 1 < len(beats) else timing["duration"] + 0.4
-        dur = max(0.6, end - start)
+        if media[i] is None and runs and runs[-1][1] is not None:
+            runs[-1][2] += max(0.6, end - start)
+        else:
+            runs.append([i, media[i], max(0.6, end - start)])
+    segments, log = [], []
+    for i, main, dur in runs:
         hook = (short.get("thumbnail_text") or short["hook"]["text"]) if i == 0 else ""
-        main = media[i]
         shots = plan_shots(main, dur)
         marks = []
         for s_no, (item, sdur, close) in enumerate(shots):

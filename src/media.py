@@ -1030,23 +1030,59 @@ def pick_music(mood: str, folder: Path, used: set) -> dict | None:
     return None
 
 
-def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str] | None = None) -> list:
-    """Never a blank beat: first a photo of the story's people, only then general basketball footage."""
+SHOT_EVERY = 3.0   # seconds: one DIFFERENT picture about every 3 s (Shorts pacing)
+
+
+def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str] | None = None,
+               short: dict | None = None) -> list:
+    """Never a blank beat, and never the same picture twice in a Short:
+    1. an empty beat gets a photo of the person the line is about (else the story's main person),
+    2. a long beat gets MORE different photos of its people, so the picture changes about every
+       3 seconds without repeating anything,
+    3. only then general pro basketball footage,
+    4. a beat with still nothing continues the previous picture (no cut, no repeat)."""
     items = list(items) + [None] * max(0, n_beats - len(items))
     folder.mkdir(parents=True, exist_ok=True)
     shown = {it.get("page") for it in items if it} | {a.get("page") for it in items if it
                                                       for a in (it.get("alts") or [it.get("alt")]) if a}
-    faces = [c for person in (who or []) for c in photos(person)[:8] if c["page"] not in shown]
-    for i, it in enumerate(items):
-        while not items[i] and faces:   # a failed download tries the next photo for the SAME beat
-            c = faces.pop(0)
-            path = folder / f"beat{i}_fill.jpg"
-            try:
-                if download(c["url"], path, 60) and image_ok(path):
-                    items[i] = {**{k: v for k, v in c.items() if k not in ("score", "hoops")},
+    faces = {person: [c for c in photos(person)[:10] if c["page"] not in shown] for person in (who or [])}
+    lines = [b.get("say", "") for b in spoken(short)] if short else [""] * n_beats
+
+    def next_face(i: int, tag: str) -> dict | None:
+        """A new, never shown photo of the person beat i talks about (else anyone in the story)."""
+        said = [p for p in (who or []) if fold(p.split()[-1]) in fold(lines[i] if i < len(lines) else "")]
+        for person in said + [p for p in (who or []) if p not in said]:
+            while faces.get(person):
+                c = faces[person].pop(0)
+                if c["page"] in shown:
+                    continue
+                path = folder / f"beat{i}_{tag}.jpg"
+                try:
+                    if download(c["url"], path, 60) and image_ok(path):
+                        shown.add(c["page"])
+                        return {**{k: v for k, v in c.items() if k not in ("score", "hoops")},
                                 "file": str(path.relative_to(ROOT)), "beat": i, "match": None}
-            except Exception:
-                pass
+                except Exception:
+                    pass
+        return None
+
+    for i in range(len(items)):
+        if not items[i]:
+            items[i] = next_face(i, "fill")
+    # top up long beats with more DIFFERENT photos (a clip holds the eye longer: every ~4 s)
+    for i, it in enumerate(items):
+        if not it or not short:
+            continue
+        every = SHOT_EVERY + (1.0 if it["kind"] == "video" else 0.0)
+        need = math.ceil(beat_seconds(short, i) / every) - 1 - len(it.get("alts") or [])
+        it.setdefault("alts", [])
+        for k in range(max(0, need)):
+            extra = next_face(i, f"more{k}")
+            if not extra:
+                break
+            it["alts"].append(extra)
+        if it["alts"]:
+            it["alt"] = it["alts"][0]
     pool = [c for q in FALLBACK_BROLL for c in pixabay_videos(q)]
     for i, it in enumerate(items):
         if it:
@@ -1060,11 +1096,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                 items[i] = {**{k: v for k, v in c.items() if k not in ("score", "preview")},
                             "file": str(path.relative_to(ROOT)), "beat": i, "match": None}
                 break
-    # last resort, never a plain colour card: show again a photo of the story's people from this Short
-    faces_shown = [it for it in items if it and it["kind"] == "photo"]
-    for i, it in enumerate(items):
-        if not it and faces_shown:
-            items[i] = {**faces_shown[i % len(faces_shown)], "beat": i, "alt": None, "alts": []}
+    # still nothing: the renderer continues the previous beat's picture (no repeat, no colour card)
     return items
 
 
@@ -1107,7 +1139,7 @@ def main() -> None:
             traceback.print_exc()
             MEDIA_ERRORS.append(f"{type(exc).__name__}: {str(exc)[:160]}")
             items = []
-        items = fill_empty(items, len(spoken(short)), MEDIA / name, used, people(short)[:3])
+        items = fill_empty(items, len(spoken(short)), MEDIA / name, used, people(short)[:3], short)
         errors_by_short[name] = list(MEDIA_ERRORS)
         (MEDIA / f"{name}.json").write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
         music = pick_music(MOOD[0], MEDIA / name, used)

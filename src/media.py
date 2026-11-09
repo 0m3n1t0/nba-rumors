@@ -36,6 +36,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -234,8 +235,19 @@ def clean(s: str) -> str:
 
 def people(short: dict) -> list[str]:
     text = short.get("headline", "") + ". " + ". ".join(b.get("say", "") for b in short.get("beats", []))
-    counts = {n: text.count(n) + (5 if n in short.get("headline", "") else 0) for n in names(text)}
+    counts = {n: text.count(n) + (5 if n in short.get("headline", "") else 0) for n in names(text)
+              if not not_a_person(n)}
     return sorted(counts, key=lambda n: -counts[n])[:4]
+
+
+NOT_PERSON_FIRST = {"per", "via", "says", "said", "told", "reportedly", "according", "sources"}
+OUTLET_WORDS = {"yahoo", "espn", "cbs", "athletic", "clutchpoints", "hoopshype", "bleacher"}
+
+
+def not_a_person(name: str) -> bool:
+    """"Per Yahoo" or "Per CBS" from a spoken attribution is not a person to search photos of."""
+    words = fold(name).split()
+    return not words or words[0] in NOT_PERSON_FIRST or bool(set(words) & OUTLET_WORDS)
 
 
 def ask_claude(prompt: str, folder: str | None = None, timeout: int = 240, model: str = "") -> dict:
@@ -376,6 +388,7 @@ def commons_photos(person: str) -> list[dict]:
         })
     if sum(f["hoops"] for f in found) >= 2:   # enough real basketball photos: drop the namesakes
         found = [f for f in found if f["hoops"]]
+    PHOTO_STATS.setdefault(person, {})["commons"] = len(found)
     _photo_cache[person] = sorted(found, key=lambda f: -f["score"])
     return _photo_cache[person]
 
@@ -406,10 +419,24 @@ def openverse_photos(person: str) -> list[dict]:
         token = openverse_token()
         req = urllib.request.Request(OPENVERSE + "images/?" + urllib.parse.urlencode(params),
                                      headers={"User-Agent": UA, **({"Authorization": f"Bearer {token}"} if token else {})})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.loads(r.read())
+        data = None
+        for wait in (0, 5, 15):          # Openverse often answers 504 for a moment: try again
+            if wait:
+                import time
+                time.sleep(wait)
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read())
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code < 500 or wait == 15:
+                    raise
+            except (urllib.error.URLError, TimeoutError):
+                if wait == 15:
+                    raise
     except Exception as exc:
         print(f"[!] Openverse search failed for {person}: {exc}")
+        PHOTO_STATS.setdefault(person, {})["openverse"] = f"failed ({str(exc)[:40]})"
         return []
     first, last = (fold(person).split() + ["", ""])[:2]
     out = []
@@ -430,10 +457,12 @@ def openverse_photos(person: str) -> list[dict]:
             "score": (5 if h >= w else 0) + min(w * h / 4e6, 4),
             "hoops": bool(BASKETBALL.search(text)),
         })
+    PHOTO_STATS.setdefault(person, {})["openverse"] = len(out)
     return sorted(out, key=lambda f: -f["score"])
 
 
 _all_photos: dict[str, list[dict]] = {}
+PHOTO_STATS: dict[str, dict] = {}   # per person: how many usable photos each source gave
 
 
 def photos(person: str) -> list[dict]:
@@ -688,7 +717,7 @@ def candidates(p: dict, work: Path, i: int, used: set, main_person: str = "",
             if fr:
                 cands.append({**c, "frames": [str(x) for x in fr]})
     for n, who in enumerate(dict.fromkeys(x for x in [p.get("person"), main_person] + list(others) if x)):
-        for c in photos(who)[:MAX_PHOTOS if n < 2 else 2]:
+        for c in photo_window(photos(who), MAX_PHOTOS if n < 2 else 2, i % 100):
             thumb = work / f"b{i}_p{len(cands)}.jpg"
             if download(c["url"], thumb, 60) and image_ok(thumb):
                 cands.append({**c, "thumb": str(thumb)})
@@ -718,6 +747,18 @@ def candidates(p: dict, work: Path, i: int, used: set, main_person: str = "",
     # (relevance itself is decided by Claude's scores, never by the kind)
     cands.sort(key=lambda c: c["kind"] != "video")
     return cands
+
+
+def photo_window(pool: list[dict], take: int, beat: int) -> list[dict]:
+    """Which of a person's photos beat N shows to Claude. Every beat used to get the same top
+    three, so once beat 0 took the best one the later beats had nothing new (nothing may repeat
+    in a Short). Now each beat starts further down the person's best 12: all are the same
+    person, so relevance does not drop, and later beats get photos nobody used yet."""
+    top = pool[:12]
+    if len(top) <= take:
+        return top
+    start = (beat * take) % len(top)
+    return (top[start:] + top[:start])[:take]
 
 
 SHOT_MAX = 3.0   # seconds: Shorts best practice is a visual change every 2-3 s, so a beat
@@ -786,6 +827,12 @@ def rank_candidates(cands: list[dict], choice: dict) -> tuple:
     return ranked, claude_top, tier, scores, n_ph, bp, bc
 
 
+def round2_pool(keep: list[dict], faces: list[dict], more: list[dict]) -> list[dict]:
+    """The second search ADDS candidates: round 1's two best stay, every photo of the story's
+    people from round 1 stays too (relevance comes first), then the new finds."""
+    return keep + faces + more
+
+
 def retry_needed(cands: list, pick: dict | None) -> bool:
     """A second search only when the beat has nothing relevant enough (best score under 7)."""
     return not cands or ((pick or {}).get("score") or 0) < 7
@@ -847,7 +894,8 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                         if (c.get("id") or c["page"]) not in {x.get("id") or x["page"] for x in per_beat[i]}]
                 keep = [per_beat[i][k - 1] for k in (picks.get(i, {}).get("ranking") or [])[:2]
                         if isinstance(k, int) and 1 <= k <= len(per_beat[i])]
-                per_beat[i] = keep + more
+                faces = [c for c in per_beat[i] if c["kind"] == "photo" and c not in keep]
+                per_beat[i] = round2_pool(keep, faces, more)
                 if per_beat[i]:
                     contact_sheet(per_beat[i], sheets / f"beat_{i}.jpg", f"BEAT {i}: {beats[i].get('say', '')[:90]}")
             rows2 = [{**rows[i], "candidates": len(per_beat[i])} for i in weak]
@@ -1495,6 +1543,10 @@ def main() -> None:
     if BEAT_DIAG:
         report += ["", "**Why each picture won** (scores 0-10 for how well it matches the words):", ""]
         report += [f"- {d}" for d in BEAT_DIAG]
+    if PHOTO_STATS:
+        report += ["", "**Photos found per person** (usable, before AI judging):", ""] + [
+            f"- {who}: Commons {st.get('commons', '-')}, Openverse {st.get('openverse', '-')}"
+            for who, st in PHOTO_STATS.items()]
     if MUSIC_LOG:
         report += ["", "**Music search:**", ""] + [f"- {m}" for m in MUSIC_LOG]
     if LIBRARY_SCORES and all(v.get("bed", 0) >= 5 for v in LIBRARY_SCORES.values()):

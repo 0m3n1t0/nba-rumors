@@ -148,7 +148,8 @@ TASK
    tense (the clash, a threat, pressure building), shocked (the twist, something nobody
    expected), amused (something absurd or petty, a dry joke). Most beats are calm or tense;
    shocked is for the one twist, never for a routine fact.
-3. Attribute every rumor or report to its outlet in the spoken words ("per ESPN", "according to...").
+3. Attribute every rumor or report in the spoken words, the way people talk ("ESPN reported",
+   "Brown told reporters", "reportedly"): each outlet once, not "per X" before every line.
    Name ONLY [trusted] outlets out loud or on screen. [secondary] sources are background only:
    never build the story on them alone. Stay on ONE story: do not mix in a different
    story about the same player (for example an unrelated injury) unless a source links them.
@@ -233,26 +234,34 @@ Rewrite anything that sounds like AI, a press release, a template or a stock phr
 Check the craft list in the voice profile line by line: the scoop line, BUT/SO between beats
 (no "and then"), one cutting detail with a physical verb instead of adjectives, the loop
 opened in the hook and closed in the last line, a re-hook in the middle.
-Add her real reactions and one clear opinion. Vary sentence length.
+Add her real reaction to THIS story and one clear opinion. Vary sentence length.
 WRITE FOR THE EAR, so the voice sounds alive and not monotone (the narrator reads exactly
 what you write, and punctuation drives her tone):
-- Short punchy sentences mixed with one longer one. Fragments are fine: "Live on TV."
+- Tell it like a person talking: full sentences joined with "but", "so", "because", "and
+  then he" - never a string of note-like fragments ("Tatum, per CBS: 'Another game.' Sure.").
+  At most two short fragments in the whole Short, and only where they land a punch.
+- A cold viewer must follow it: the first beat after the hook gives ONE plain line of
+  context from the sources (who they are to each other, what happened before). Never a
+  quote or reference the viewer cannot decode: set it up or leave it out.
 - Emotion must FIT THE MEANING of each line, the way a person really reacts: surprise only
   at the real twist, a dry or skeptical tone at a weak excuse, a serious tone at an injury, a
   punishment or someone losing a job, amusement at something petty. An exclamation mark
   ("On live TV!") only where the fact itself is shocking, at most two in the whole Short.
   A plain fact ends with a plain full stop: an exclamation on a routine fact makes the voice
   shout for no reason.
-- Contrast turns: "But here's the thing.", "Then it flipped.", "Wait. It gets better."
+- Contrast turns in your own words for this story, never the same stock phrase as last time.
 - Questions inside the story, not only at the end: "Why does that matter?"
 - No long lists, no parentheses, no semicolons, no abbreviations she cannot say.
-THE GOLD STANDARD: the narrator's voice was chosen on the Wembanyama example at the end of
-"How the best write" in the voice profile. Every Short must sound like THAT one when read
-aloud: a real reaction ("I mean, come on."), a "..." beat right before the twist, an
-"Honestly?" opinion, a challenge to the viewer at the end. If it reads like a news report,
-it fails: rewrite it until it sounds like her telling a friend.
-Keep attribution light and spoken: "ESPN says", "per The Athletic", once or twice. Never stack
-an outlet and a reporter's full name ("Per ClutchPoints' Kenzo Fukuda"): nobody talks like that.
+THE GOLD STANDARD: the Wembanyama example at the end of "How the best write" in the voice
+profile. Every Short must have its QUALITIES when read aloud: context a stranger follows,
+connected sentences, one concrete detail, a "..." beat right before the twist, a real opinion
+in her own words, and the question at the very end. Never copy its words, and never use the
+stock catchphrases listed under "Words I never use". If it reads like a news report or like
+a list of notes, it fails: rewrite it until it sounds like her telling a friend.
+Keep attribution spoken and natural: "Tatum told reporters", "Brown said", "ESPN reported",
+"reportedly". Name each outlet once, not before every quote, and never "per X" in front of
+every line. Never stack an outlet and a reporter's full name ("Per ClutchPoints' Kenzo
+Fukuda"): nobody talks like that.
 Remove any flirty, teasing or intimate wording and any pet name: the words must be a sharp
 NBA fan's, never flirty (the voice does that). Keep it to 45-65 words after the hook
 (the Short must land at 25-35 seconds). Keep the hooks' strengths: the names and the
@@ -275,8 +284,8 @@ Return ONLY the revised JSON.
 
 
 TRIM = """This NBA Shorts script is too long. Cut the "beats" to 45-65 spoken words in total.
-Keep the story shape, the voice, her reactions ("I mean, come on.", "Honestly?"), every
-attribution, the opinion and the final question.
+Keep the story shape, the voice, the line of context, her reaction, every attribution, the
+opinion and the final question (it stays the very last sentence).
 Cut repetition and the weakest details first. Do not add anything. Keep "on_screen" notes
 matching what is said and keep each beat's "tone", "role" and "stage" (never cut the
 conflict, the payoff or the exit beat). Return ONLY JSON:
@@ -500,8 +509,31 @@ def one_question(text: str) -> bool:
     return t.endswith("?") and not re.search(r"[.!?]\s", inner) and 12 <= len(t.split()) <= 24
 
 
+def question_last(beat: dict) -> None:
+    """The closing question is always the very last sentence (that is what drives comments
+    and loops the Short). Anything written after it (a subscribe line, "tell me I'm wrong")
+    moves in front of it."""
+    parts = [x for x in re.split(r"(?<=[.!?])\s+", beat.get("say", "").strip()) if x]
+    asks = [k for k, x in enumerate(parts) if x.endswith("?")]
+    if asks and asks[-1] != len(parts) - 1:
+        q = parts.pop(asks[-1])
+        beat["say"] = " ".join(parts + [q])
+
+
+STOCK_TICS = ["honestly?", "i mean, come on", "tell me i'm wrong", "make it make sense",
+              "wait, it gets better", "wait. it gets better", "but here's the thing"]
+
+
+def stock_tics(beats: list[dict]) -> list[str]:
+    """Catchphrases that make every Short sound the same (shown in the summary)."""
+    text = " ".join(b.get("say", "") for b in beats).lower().replace("’", "'")
+    return [t for t in STOCK_TICS if t in text]
+
+
 def add_cta(beats: list[dict], seed: str) -> None:
     """Put one subscribe line into the last beat, right before its closing question."""
+    if beats:
+        question_last(beats[-1])
     if not beats or "subscribe" in " ".join(b.get("say", "") for b in beats).lower():
         return
     line = CTA_LINES[sum(map(ord, seed)) % len(CTA_LINES)]
@@ -865,6 +897,9 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         beats[-1]["stage"] = "exit"
     add_cta(beats, topic["headline"])
     retention = retention_check(beats)
+    tics = stock_tics(beats)
+    if tics:
+        retention["soft"].append("stock phrases: " + ", ".join(f'"{x}"' for x in tics))
     spoken = " ".join([hooks[0]["text"]] + [b.get("say", "") for b in beats]) if hooks else ""
     on_screen = " ".join(b.get("on_screen", "") for b in beats)
     unsupported = fact_check(f"{spoken} {on_screen}", sources)

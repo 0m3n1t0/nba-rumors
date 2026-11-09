@@ -452,8 +452,7 @@ def photos(person: str) -> list[dict]:
 # ---------- Wikimedia Commons VIDEO: real players and real games ----------
 
 _vid_cache: dict[str, list[dict]] = {}
-BASKETBALL = re.compile(r"basketball|nba|dunk|slam|layup|free throw|three-pointer|warm-?up|court|arena|"
-                        r"playoff|media day|jersey|game\b", re.I)
+BASKETBALL = re.compile(r"basketball|nba|dunk|slam|layup|free throw|three-pointer|warm-?up|court|arena", re.I)
 
 
 def commons_videos(search: str, person: str = "") -> list[dict]:

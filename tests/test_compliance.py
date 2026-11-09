@@ -282,5 +282,23 @@ class Stage2(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+class Stage3(unittest.TestCase):
+
+    # The hook score rewards named people + a clash in third-person NBA hooks, not vague ones
+    def test_17_hook_score_nba(self):
+        import script
+        import hookscore
+        clash = "Did Jason Kidd just fire back at Doc Rivers over Giannis Antetokounmpo's basketball IQ?"
+        vague = "What happened yesterday was surprising for many people around the league?"
+        self.assertGreater(script.nba_hook_score(clash)[1], hookscore.score(clash)[1])
+        self.assertEqual(script.nba_hook_score(vague)[1], hookscore.score(vague)[1])   # no free points
+
+    # SEO: an accented name matches its plain spelling, and the tags carry both
+    def test_18_seo_names(self):
+        import script
+        r = script.query_test("Warriors want Porziņģis GONE", "Kristaps Porziņģis trade talk.", ["porzingis trade warriors"])
+        self.assertTrue(r[0]["pass"], r)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

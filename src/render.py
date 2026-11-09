@@ -131,7 +131,7 @@ def no_repeats(items: list) -> list:
     return out
 
 
-FACE_UNDER_HOOK = 860   # y of the face in the hook shot: below the hook words, above the captions
+FACE_UNDER_HOOK = 720   # y of the face in the hook shot: below the hook words, above the captions
 
 
 def photo_bg(path: Path, focus: list | None = None, hook: bool = False) -> Image.Image:
@@ -209,7 +209,7 @@ def overlay(item: dict | None, hook_text: str, accent: str) -> Image.Image:
     """Transparent layer over the footage: small brand tag, credit, and (beat 0 only) the hook
     words. Shade at top and bottom keeps text readable on any picture."""
     ramp = np.linspace(0, 1, H)[:, None].repeat(W, axis=1)
-    top = np.clip((0.28 - ramp) / 0.28, 0, 1) * 170        # dark band behind the brand + hook
+    top = np.clip((0.24 - ramp) / 0.24, 0, 1) * 170        # dark band behind the brand + hook
     bottom = np.clip((ramp - 0.62) / 0.38, 0, 1) * 200     # dark band behind captions + credit
     alpha = np.maximum(top, bottom).astype("uint8")
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -217,18 +217,20 @@ def overlay(item: dict | None, hook_text: str, accent: str) -> Image.Image:
     d = ImageDraw.Draw(img)
     tag = font(40)
     tw = d.textlength(BRAND, font=tag)
-    d.rounded_rectangle(((W - tw) / 2 - 24, 170, (W + tw) / 2 + 24, 230), radius=14, fill=accent)
-    d.text(((W - tw) / 2, 176), BRAND, font=tag, fill="#000000" if accent != "#000000" else "#FFFFFF")
+    d.rounded_rectangle(((W - tw) / 2 - 24, 150, (W + tw) / 2 + 24, 210), radius=14, fill=accent)
+    d.text(((W - tw) / 2, 156), BRAND, font=tag, fill="#000000" if accent != "#000000" else "#FFFFFF")
     if hook_text:
-        size = 150
+        # high and compact: the words sit right under the brand tag and the face stays free
+        # below them (the face is what stops the scroll, the words say why)
+        size = 112
         while True:
             f = font(size)
             lines = wrap_px(d, hook_text.upper(), f, W - 140)
-            if len(lines) <= 3 or size <= 70:
+            if len(lines) <= 2 or size <= 64:
                 break
             size = int(size * 0.9)
-        y = 300
-        for line in lines[:3]:
+        y = 238
+        for line in lines[:2]:
             w = d.textlength(line, font=f)
             d.text(((W - w) / 2, y), line, font=f, fill="#FFFFFF", stroke_width=6, stroke_fill="#000000")
             y += int(size * 1.1)

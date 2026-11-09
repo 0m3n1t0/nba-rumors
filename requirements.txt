@@ -5,3 +5,4 @@ google-auth
 pillow
 numpy
 googlenewsdecoder==0.2.2
+opencv-python-headless==4.10.0.84

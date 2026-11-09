@@ -18,6 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  CHANNEL: nba                 # this channel's folder in the private state repository
   SHORTS_PER_RUN: "2"          # Shorts made per run
   CLAUDE_MODEL: sonnet         # writing, judging, choosing pictures (Opus would use the plan 5x faster)
   CLAUDE_MODEL_LIGHT: haiku    # simple steps (trimming, search words)
@@ -37,6 +38,14 @@ jobs:
           key: story-history-${{ github.run_id }}
           restore-keys: story-history-
 
+      - name: Private state repository (permanent history and licence records)
+        continue-on-error: true      # without it the run still works from the cache
+        uses: actions/checkout@v4
+        with:
+          repository: 0m3n1t0/nba-rumors-state
+          token: ${{ secrets.STATE_REPO_TOKEN }}
+          path: state
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"   # Chatterbox (the voice) needs 3.11
@@ -47,6 +56,9 @@ jobs:
 
       - name: Safety tests (monetization checks must work before anything is made)
         run: python -m unittest discover -s tests
+
+      - name: Restore the channel's history (private repository wins over the cache)
+        run: python src/state.py restore
 
       - name: "Stage 1: collect and rank headlines"
         run: python src/collect.py
@@ -142,6 +154,11 @@ jobs:
         if: always()
         run: python src/budget.py
 
+      - name: Save the channel's history to the private repository
+        if: always()
+        continue-on-error: true
+        run: python src/state.py save
+
       - name: "Download 1: finished Shorts only (small)"
         if: always()
         uses: actions/upload-artifact@v4
@@ -151,7 +168,7 @@ jobs:
             data/video/short_*.mp4
             data/video/short_*_thumb.png
           if-no-files-found: warn
-          retention-days: 3
+          retention-days: 1   # public repository: downloadable by GitHub users, so kept 1 day only
 
       - name: "Download 2: working data for checking problems (no big media files)"
         if: always()
@@ -161,8 +178,9 @@ jobs:
           path: |
             data/
             !data/video/
+            !data/history/
             !data/media/**/*.mp4
             !data/media/**/*.webm
             !data/media/**/*.jpg
             !data/media/**/*.mp3
-          retention-days: 3
+          retention-days: 1   # public repository: downloadable by GitHub users, so kept 1 day only

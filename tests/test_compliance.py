@@ -299,6 +299,73 @@ class Stage3(unittest.TestCase):
         r = script.query_test("Warriors want Porziņģis GONE", "Kristaps Porziņģis trade talk.", ["porzingis trade warriors"])
         self.assertTrue(r[0]["pass"], r)
 
+    # 19. Story flow: a beat that only repeats an earlier one, or no closing question -> not ready
+    def test_19_retention_check(self):
+        import script
+        good = [{"say": "Brown said there is nothing to talk about with Tatum.", "stage": "setup"},
+                {"say": "Then he answered a Tatum video with a cap emoji, per ESPN.", "stage": "conflict"},
+                {"say": "But Tatum says there is no beef at all.", "stage": "twist"},
+                {"say": "Off the court they are fine. On it, nobody gives an inch.", "stage": "payoff"},
+                {"say": "So who blinks first Tuesday, Brown or Tatum?", "stage": "exit"}]
+        r = script.retention_check(good)
+        self.assertEqual(r["hard"], [], r)
+        self.assertEqual(r["soft"], [], r)
+        repeat = good[:2] + [{"say": "Brown said there's nothing to talk about with Tatum.", "stage": "escalation"}] + good[3:]
+        self.assertTrue(any("repeats" in x for x in script.retention_check(repeat)["hard"]))
+        no_q = good[:-1] + [{"say": "We will see on Tuesday.", "stage": "exit"}]
+        self.assertTrue(script.retention_check(no_q)["hard"])
+        backwards = [good[2], good[0], good[3], good[4]]
+        self.assertTrue(any("backwards" in x for x in script.retention_check(backwards)["soft"]))
+
+    # 20. Captions: phrases of 3-4 words that end at punctuation; names and numbers marked
+    def test_20_phrase_captions(self):
+        import render
+        words = [{"word": w, "start": k * 0.3, "end": k * 0.3 + 0.25} for k, w in
+                 enumerate("Then it flipped. Rivers coached him for 3 years, honestly.".split())]
+        groups = [" ".join(x["word"] for x in g) for g in render.phrase_groups(words)]
+        self.assertEqual(groups[0], "Then it flipped.")
+        self.assertTrue(all(len(g.split()) <= 4 for g in groups), groups)
+        keys = render.key_words([{"say": "Then it flipped. Rivers coached Giannis for 3 years."}],
+                                "Jason Kidd fires back at Doc Rivers")
+        self.assertTrue({"rivers", "giannis", "3"} <= keys, keys)
+        self.assertNotIn("then", keys)
+
+    # 21. The edit follows the story: each stage gets its own move; the twist punches in
+    def test_21_stage_moves(self):
+        import render
+        short = {"beats": [{"say": "a", "stage": "setup"}, {"say": "b", "stage": "twist"},
+                           {"say": "c", "role": "analysis"}, {"say": "d?"}]}
+        stages = [render.stage_of(short, i) for i in range(5)]
+        self.assertEqual(stages, ["hook", "setup", "twist", "payoff", "exit"])
+        self.assertEqual(render.shot_move("twist", 0), "punch")
+        self.assertEqual(render.shot_move("escalation", 1), "pan")
+        self.assertNotEqual(render.shot_move("setup", 1), render.shot_move("setup", 2))
+
+    # 22. Unjudged photos must be OF the person: a team photo that only mentions him is refused;
+    #     the VS frame only for two PEOPLE in the thumbnail
+    def test_22_identity_and_vs(self):
+        import media
+        p = "Kristaps Porziņģis"
+        self.assertTrue(media.solo_title({"title": "File:Kristaps Porzingis Wizards 2023.jpg", "hoops": True}, p))
+        self.assertFalse(media.solo_title({"title": "File:Taj Gibson media day.jpg", "hoops": True}, p))
+        self.assertFalse(media.solo_title({"title": "File:Porzingis and Kuzma.jpg", "hoops": True}, p))
+        self.assertFalse(media.solo_title({"title": "File:Porziņģis Jāņi festival.jpg", "hoops": False}, p))
+        who = ["Jason Kidd", "Doc Rivers", "Giannis Antetokounmpo"]
+        self.assertEqual(media.vs_sides("KIDD vs RIVERS", who), ["Jason Kidd", "Doc Rivers"])
+        self.assertEqual(media.vs_sides("WARRIORS VS PORZINGIS", ["Kristaps Porziņģis"]), [])
+        self.assertEqual(media.vs_sides("TRADE DEMAND?", who), [])
+
+    # 23. Sound design is made in code and lands where the story turns
+    def test_23_sound_design(self):
+        import render
+        work = Path(tempfile.mkdtemp())
+        try:
+            out = render.sfx_track([(0.5, "whoosh"), (1.2, "impact"), (2.0, "logo")], 3.0, work)
+            self.assertTrue(out and out.exists() and out.stat().st_size > 1000)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        self.assertIn("between(t", render.swell([(1.0, 2.0)]))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -349,7 +349,20 @@ class Stage3(unittest.TestCase):
         self.assertTrue(media.solo_title({"title": "File:Kristaps Porzingis Wizards 2023.jpg", "hoops": True}, p))
         self.assertFalse(media.solo_title({"title": "File:Taj Gibson media day.jpg", "hoops": True}, p))
         self.assertFalse(media.solo_title({"title": "File:Porzingis and Kuzma.jpg", "hoops": True}, p))
-        self.assertFalse(media.solo_title({"title": "File:Porziņģis Jāņi festival.jpg", "hoops": False}, p))
+        # a portrait of the RIGHT person is fine even without a basketball word (it beats generic footage)
+        self.assertTrue(media.solo_title({"title": "File:Giannis Antetokounmpo (2019).jpg", "hoops": False},
+                                         "Giannis Antetokounmpo"))
+        self.assertTrue(media.solo_title({"title": "File:Doc Rivers 2.jpg"}, "Doc Rivers"))
+        self.assertFalse(media.solo_title({"title": "File:Erik Spoelstra with Doc Rivers.jpg"}, "Doc Rivers"))
+        # basketball photos of the person come first
+        orig = media.photos
+        media.photos = lambda person: [{"page": "1", "title": "Doc Rivers portrait.jpg", "hoops": False},
+                                       {"page": "2", "title": "Doc Rivers Bucks game.jpg", "hoops": True},
+                                       {"page": "3", "title": "Taj Gibson media day.jpg", "hoops": True}]
+        try:
+            self.assertEqual([c["page"] for c in media.person_photos("Doc Rivers", set())], ["2", "1"])
+        finally:
+            media.photos = orig
         who = ["Jason Kidd", "Doc Rivers", "Giannis Antetokounmpo"]
         self.assertEqual(media.vs_sides("KIDD vs RIVERS", who), ["Jason Kidd", "Doc Rivers"])
         self.assertEqual(media.vs_sides("WARRIORS VS PORZINGIS", ["Kristaps Porziņģis"]), [])

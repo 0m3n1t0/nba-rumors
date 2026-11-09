@@ -57,7 +57,12 @@ OV_ID, OV_SECRET = os.environ.get("OPENVERSE_CLIENT_ID", ""), os.environ.get("OP
 # anonymous Openverse allows ~5 calls/hour (runs are 6 h apart); a free registered key allows 100/min
 OPENVERSE_BUDGET = [80 if OV_ID else 6]
 _OV_TOKEN: list[str] = []
-ALLOW_SA = os.environ.get("MEDIA_ALLOW_SA") == "1"  # off: share-alike could bind our whole video
+# Share-alike photos (CC BY-SA) are allowed: far more photos of every player. A Short that
+# uses one is itself released under CC BY-SA 4.0 (said in its description, as the licence asks).
+# MEDIA_ALLOW_SA=0 switches them off.
+ALLOW_SA = os.environ.get("MEDIA_ALLOW_SA", "1") != "0"
+SA_NOTE = ("This video is licensed under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/) "
+           "because it adapts share-alike photos credited above.")
 CREDIT_MARK = "Photo and video credits:"
 NO_TOOLS = "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task"
 LOGO_WORDS = re.compile(r"\b(logo|brand|nike|adidas|jordan|nba|wnba|jersey number|trademark|text)\b", re.I)
@@ -1120,6 +1125,9 @@ def credits(items: list[dict]) -> str:
         seen.add(it["page"])
         what = {"photo": "Photo", "video": "Video", "music": "Music"}[it["kind"]]
         lines.append(f"- {what}: {it['author']}, {it['license']}, via {it['source']}: {it['page']}")
+    if any(it and not it.get("library") and re.search(r"\bsa\b|sharealike", str(it.get("license", "")).lower().replace("-", " "))
+           for it in items):
+        lines.append(SA_NOTE)
     return "\n".join(lines)
 
 

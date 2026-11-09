@@ -32,7 +32,8 @@ TIMEOUT = 300       # seconds
 # ---- Claude Pro budget: model choice + clean stop when the plan's usage limit is reached ----
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")             # writing, judging, looking at pictures
 CLAUDE_MODEL_LIGHT = os.environ.get("CLAUDE_MODEL_LIGHT", "haiku")  # simple, mechanical steps
-LIMIT_TEXT = re.compile(r"usage limit|rate.?limit|limit reached|limit will reset|resets at|out of extra usage", re.I)
+LIMIT_TEXT = re.compile(r"usage.?limit|rate.?limit|limit reached|limit will reset|resets at|"
+                        r"hit your .{0,20}limit|out of extra usage", re.I)   # e.g. "You've hit your 5-hour limit"
 
 
 class UsageLimit(RuntimeError):
@@ -45,7 +46,8 @@ def check_limit(stdout: str, stderr: str) -> None:
     except ValueError:
         env = None
     if isinstance(env, dict):
-        if env.get("is_error") and LIMIT_TEXT.search(str(env.get("result", ""))):
+        if env.get("is_error") and (env.get("api_error_status") == 429 or env.get("api_error") == "usage_limit_reached"
+                                    or LIMIT_TEXT.search(str(env.get("result", "")))):
             raise UsageLimit(str(env.get("result", ""))[:200])
         return
     if LIMIT_TEXT.search(f"{stdout[-3000:]} {stderr[-3000:]}"):

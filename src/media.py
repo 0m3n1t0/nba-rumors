@@ -92,7 +92,8 @@ SHEET_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 # ---- Claude Pro budget: model choice + clean stop when the plan's usage limit is reached ----
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")             # writing, judging, looking at pictures
 CLAUDE_MODEL_LIGHT = os.environ.get("CLAUDE_MODEL_LIGHT", "haiku")  # simple, mechanical steps
-LIMIT_TEXT = re.compile(r"usage limit|rate.?limit|limit reached|limit will reset|resets at|out of extra usage", re.I)
+LIMIT_TEXT = re.compile(r"usage.?limit|rate.?limit|limit reached|limit will reset|resets at|"
+                        r"hit your .{0,20}limit|out of extra usage", re.I)   # e.g. "You've hit your 5-hour limit"
 
 
 class UsageLimit(RuntimeError):
@@ -105,7 +106,8 @@ def check_limit(stdout: str, stderr: str) -> None:
     except ValueError:
         env = None
     if isinstance(env, dict):
-        if env.get("is_error") and LIMIT_TEXT.search(str(env.get("result", ""))):
+        if env.get("is_error") and (env.get("api_error_status") == 429 or env.get("api_error") == "usage_limit_reached"
+                                    or LIMIT_TEXT.search(str(env.get("result", "")))):
             raise UsageLimit(str(env.get("result", ""))[:200])
         return
     if LIMIT_TEXT.search(f"{stdout[-3000:]} {stderr[-3000:]}"):
@@ -276,6 +278,8 @@ def plan(short: dict) -> list[dict]:
         MOOD[0] = out.get("mood") if out.get("mood") in MUSIC_QUERIES else MOOD[0]
         if len(picks) >= len(beats):
             return [picks[i] for i in range(len(beats))]
+    except UsageLimit:
+        raise
     except Exception as exc:
         print(f"[!] Claude visual plan failed, using rules: {exc}")
     result = []
@@ -734,6 +738,8 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             out = ask_claude(PICK_PROMPT.replace("BEATS_JSON", json.dumps(rows, indent=1)).replace("STORY_LINE", story),
                              folder=str(sheets), timeout=600)
             picks = {x.get("beat"): x for x in out.get("beats", []) if isinstance(x, dict)}
+        except UsageLimit:
+            raise
         except Exception as exc:
             print(f"[!] Claude visual pick failed, taking the top candidate: {exc}")
         def clip_fits(i: int) -> bool:
@@ -772,6 +778,8 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 for x in out.get("beats", []):
                     if isinstance(x, dict) and x.get("beat") in weak:
                         picks[x["beat"]] = {**x, "_round": 2}
+            except UsageLimit:
+                raise
             except Exception as exc:
                 print(f"[!] Claude second pick failed: {exc}")
             for i in weak:   # no new judgment: back to round 1 (its numbers match only its own pool)
@@ -1133,7 +1141,8 @@ def main() -> None:
             items = collect_for(short, MEDIA / name, used)
         except UsageLimit:
             items = []
-            MEDIA_ERRORS.append("Claude usage limit reached: general footage used")
+            MEDIA_ERRORS.append("Claude Pro 5-hour limit reached: pictures NOT judged (only photos of the "
+                                "story's people) - needs review before publishing")
         except Exception as exc:  # one broken Short must never stop the others
             import traceback
             traceback.print_exc()

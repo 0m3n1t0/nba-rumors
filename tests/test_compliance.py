@@ -381,6 +381,35 @@ class Stage3(unittest.TestCase):
         finally:
             shutil.rmtree(work, ignore_errors=True)
 
+    # 24. The picture rule: relevance first. A relevant clip beats a relevant photo; a generic
+    #     clip (or one that only matches a phrase, not the person) never beats a relevant photo.
+    def test_24_clip_or_photo(self):
+        import media
+
+        def best(cands, scores, who):
+            choice = {"ranking": list(range(1, len(cands) + 1)), "scores": scores, "who": who}
+            return media.rank_candidates([{"kind": k} for k in cands], choice)[0][0]
+        # the person in a clip vs the person in a photo -> the clip
+        self.assertEqual(best(["photo", "video"], {"1": 9, "2": 8}, {"1": "P", "2": "P"}), 1)
+        # generic basketball clip vs a photo of the person -> the photo
+        self.assertEqual(best(["video", "photo"], {"1": 5, "2": 8}, {"1": "G", "2": "P"}), 1)
+        # a clip that matches the words with strangers (X) never goes on screen
+        ranked = media.rank_candidates([{"kind": "video"}, {"kind": "photo"}],
+                                       {"ranking": [1, 2], "scores": {"1": 9, "2": 6}, "who": {"1": "X", "2": "S"}})[0]
+        self.assertEqual(ranked, [1])
+        # both about the story's people, about as relevant -> the clip
+        self.assertEqual(best(["photo", "video"], {"1": 7, "2": 6}, {"1": "S", "2": "S"}), 1)
+        # both about the story's people, the photo clearly more relevant -> the photo
+        self.assertEqual(best(["video", "photo"], {"1": 5, "2": 8}, {"1": "S", "2": "S"}), 1)
+        # a beat with a relevant picture (7+) is not searched again; a weak one is
+        self.assertFalse(media.retry_needed([{}], {"score": 8}))
+        self.assertTrue(media.retry_needed([{}], {"score": 6}))
+        # a beat Claude did not judge: only a photo surely OF one of the story's people
+        who = ["Kristaps Porziņģis", "Steve Kerr"]
+        self.assertTrue(media.unjudged_ok({"kind": "photo", "title": "File:Kristaps Porzingis 2023.jpg"}, who))
+        self.assertFalse(media.unjudged_ok({"kind": "photo", "title": "File:Taj Gibson media day.jpg"}, who))
+        self.assertFalse(media.unjudged_ok({"kind": "video", "title": "Porzingis dunk"}, who))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

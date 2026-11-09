@@ -452,7 +452,8 @@ def photos(person: str) -> list[dict]:
 # ---------- Wikimedia Commons VIDEO: real players and real games ----------
 
 _vid_cache: dict[str, list[dict]] = {}
-BASKETBALL = re.compile(r"basketball|nba|dunk|slam|layup|free throw|three-pointer|warm-?up|court|arena", re.I)
+BASKETBALL = re.compile(r"basketball|nba|dunk|slam|layup|free throw|three-pointer|warm-?up|court|arena|"
+                        r"playoff|media day|jersey|game\b", re.I)
 
 
 def commons_videos(search: str, person: str = "") -> list[dict]:
@@ -1131,17 +1132,24 @@ SHOT_EVERY = 3.0   # seconds: one DIFFERENT picture about every 3 s (Shorts paci
 
 # A photo nobody judged by eye (the top-ups below, the VS pair) must be OF the person: the
 # description of a team photo often lists several players, so a media-day photo of a teammate
-# matched "Porzingis" and ended a Porzingis Short. The person's surname must be in the FILE
-# TITLE, the title must not name a group, and it must be a basketball photo (a festival or
-# family photo of the right person says nothing about an NBA story).
-GROUP_TITLE = re.compile(r"\b(and|with|vs|versus|team|teammates|group|family)\b|&", re.I)
+# matched "Porzingis" and ended a Porzingis Short. So the person's surname must be in the FILE
+# TITLE and the title must not name several people. Basketball photos of the person come
+# first; any other photo of the person still beats generic footage (the relevance order:
+# the person > the story > generic basketball).
+GROUP_TITLE = re.compile(r"\b(and|with|vs|versus|family)\b|&", re.I)
 
 
 def solo_title(c: dict, person: str) -> bool:
     title = fold(re.sub(r"\.[a-z0-9]{3,4}$", "", c.get("title", ""), flags=re.I))
     last = fold(person).split()[-1] if person.strip() else ""
     return bool(last) and re.search(rf"\b{re.escape(last)}\b", title) is not None \
-        and not GROUP_TITLE.search(title) and bool(c.get("hoops"))
+        and not GROUP_TITLE.search(title)
+
+
+def person_photos(person: str, shown: set) -> list[dict]:
+    """The person's photos that are safe to use unjudged: basketball photos first."""
+    ok = [c for c in photos(person)[:20] if c["page"] not in shown and solo_title(c, person)]
+    return sorted(ok, key=lambda c: not c.get("hoops"))
 
 
 def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str] | None = None,
@@ -1158,8 +1166,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
              if p.get("kind") == "photo" and (h := picture_hash(ROOT / p["file"])) is not None]
     shown = {it.get("page") for it in items if it} | {a.get("page") for it in items if it
                                                       for a in (it.get("alts") or [it.get("alt")]) if a}
-    faces = {person: [c for c in photos(person)[:14] if c["page"] not in shown and solo_title(c, person)]
-             for person in (who or [])}
+    faces = {person: person_photos(person, shown) for person in (who or [])}
     lines = [b.get("say", "") for b in spoken(short)] if short else [""] * n_beats
 
     def next_face(i: int, tag: str) -> dict | None:
@@ -1249,8 +1256,8 @@ def vs_pair(short: dict, items: list, folder: Path, who: list[str]) -> list[dict
              and (h := picture_hash(ROOT / x["file"])) is not None]
     pair = []
     for k, person in enumerate(sides):
-        for c in photos(person)[:14]:
-            if c["page"] in shown or not solo_title(c, person):
+        for c in person_photos(person, shown):
+            if c["page"] in shown:
                 continue
             path = folder / f"vs_{k}.jpg"
             try:

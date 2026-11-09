@@ -188,7 +188,7 @@ def main() -> None:
             except (OSError, ValueError):
                 return default
         short["_heard"] = load(AUDIO / f"{name}.timing.json", {}).get("heard")
-        result = decide(short, load(MEDIA / f"{name}.json", []), load(MEDIA / f"{name}_flags.json", {}),
+        result = decide(short, load(MEDIA / f"{name}_vs.json", []) + load(MEDIA / f"{name}.json", []), load(MEDIA / f"{name}_flags.json", {}),
                         load(MEDIA / f"{name}_music.json", None), VIDEO / f"{name}.mp4")
         (GATE / f"{name}.json").write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
         short.pop("_heard", None)

@@ -431,6 +431,7 @@ def openverse_photos(person: str) -> list[dict]:
             "license": lic, "license_url": r.get("license_url", ""),
             "source": f"{(r.get('source') or 'Openverse').title()} via Openverse",
             "score": (5 if h >= w else 0) + min(w * h / 4e6, 4),
+            "hoops": bool(BASKETBALL.search(text)),
         })
     return sorted(out, key=lambda f: -f["score"])
 
@@ -1128,6 +1129,21 @@ def no_repeats(items: list) -> list:
 SHOT_EVERY = 3.0   # seconds: one DIFFERENT picture about every 3 s (Shorts pacing)
 
 
+# A photo nobody judged by eye (the top-ups below, the VS pair) must be OF the person: the
+# description of a team photo often lists several players, so a media-day photo of a teammate
+# matched "Porzingis" and ended a Porzingis Short. The person's surname must be in the FILE
+# TITLE, the title must not name a group, and it must be a basketball photo (a festival or
+# family photo of the right person says nothing about an NBA story).
+GROUP_TITLE = re.compile(r"\b(and|with|vs|versus|team|teammates|group|family)\b|&", re.I)
+
+
+def solo_title(c: dict, person: str) -> bool:
+    title = fold(re.sub(r"\.[a-z0-9]{3,4}$", "", c.get("title", ""), flags=re.I))
+    last = fold(person).split()[-1] if person.strip() else ""
+    return bool(last) and re.search(rf"\b{re.escape(last)}\b", title) is not None \
+        and not GROUP_TITLE.search(title) and bool(c.get("hoops"))
+
+
 def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str] | None = None,
                short: dict | None = None) -> list:
     """Never a blank beat, and never the same picture twice in a Short:
@@ -1142,7 +1158,8 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
              if p.get("kind") == "photo" and (h := picture_hash(ROOT / p["file"])) is not None]
     shown = {it.get("page") for it in items if it} | {a.get("page") for it in items if it
                                                       for a in (it.get("alts") or [it.get("alt")]) if a}
-    faces = {person: [c for c in photos(person)[:10] if c["page"] not in shown] for person in (who or [])}
+    faces = {person: [c for c in photos(person)[:14] if c["page"] not in shown and solo_title(c, person)]
+             for person in (who or [])}
     lines = [b.get("say", "") for b in spoken(short)] if short else [""] * n_beats
 
     def next_face(i: int, tag: str) -> dict | None:
@@ -1201,6 +1218,68 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                 break
     # still nothing: the renderer continues the previous beat's picture (no repeat, no colour card)
     return items
+
+
+# ---------- "VS" opening frame (beef stories) ----------
+# "KIDD vs RIVERS" on the thumbnail -> the first shot shows a real photo of each, side by side.
+# Two NEW photos (never used anywhere else in the Short), each checked like the top-ups.
+
+def vs_sides(thumb: str, who: list[str]) -> list[str]:
+    """The two PEOPLE named in "A vs B" (teams or anything else -> no VS frame)."""
+    m = re.match(r"^\s*(.+?)\s+(?:vs\.?|v\.?|versus)\s+(.+?)[\s?!.]*$", thumb or "", re.I)
+    if not m:
+        return []
+    out = []
+    for side in m.groups():
+        words = fold(side).split()
+        hit = [p for p in who if words and fold(p).split()[-1] in words]
+        if len(hit) != 1:
+            return []
+        out.append(hit[0])
+    return out if out[0] != out[1] else []
+
+
+def vs_pair(short: dict, items: list, folder: Path, who: list[str]) -> list[dict]:
+    sides = vs_sides(short.get("thumbnail_text", ""), who)
+    if not sides:
+        return []
+    shots = [x for it in items if it for x in [it] + (it.get("alts") or []) if x]
+    shown = {x.get("page") for x in shots}
+    looks = [h for x in shots if x.get("kind") == "photo" and x.get("file")
+             and (h := picture_hash(ROOT / x["file"])) is not None]
+    pair = []
+    for k, person in enumerate(sides):
+        for c in photos(person)[:14]:
+            if c["page"] in shown or not solo_title(c, person):
+                continue
+            path = folder / f"vs_{k}.jpg"
+            try:
+                if not (download(c["url"], path, 60) and image_ok(path)):
+                    continue
+            except Exception:
+                continue
+            h = picture_hash(path)
+            if seen_before(h, looks):
+                path.unlink(missing_ok=True)
+                continue
+            shown.add(c["page"])
+            if h is not None:
+                looks.append(h)
+            pair.append({**{k2: v for k2, v in c.items() if k2 not in ("score", "hoops")},
+                         "file": str(path.relative_to(ROOT)), "beat": 0, "match": None, "person": person})
+            break
+    return pair if len(pair) == 2 else []
+
+
+def tag_people(items: list, who: list[str]) -> None:
+    """Name each picture's person when its title names exactly one of the story's people
+    (the renderer shows a small name label the first time that person appears)."""
+    for it in items:
+        for x in ([it] + (it.get("alts") or []) if it else []):
+            title = fold(x.get("title", ""))
+            hit = [p for p in who if re.search(rf"\b{re.escape(fold(p).split()[-1])}\b", title)]
+            if len(hit) == 1 and not x.get("person"):
+                x["person"] = hit[0]
 
 
 def credits(items: list[dict]) -> str:
@@ -1366,14 +1445,19 @@ def main() -> None:
             traceback.print_exc()
             MEDIA_ERRORS.append(f"{type(exc).__name__}: {str(exc)[:160]}")
             items = []
-        items = fill_empty(items, len(spoken(short)), MEDIA / name, used, people(short)[:3], short)
+        who = people(short)[:3]
+        items = fill_empty(items, len(spoken(short)), MEDIA / name, used, who, short)
         items = verify_openverse(items)
+        vs = verify_openverse(vs_pair(short, items, MEDIA / name, people(short)[:4]))
+        vs = vs if len(vs) == 2 and all(vs) else []
+        tag_people(items, people(short)[:4])
+        (MEDIA / f"{name}_vs.json").write_text(json.dumps(vs, indent=2, ensure_ascii=False), encoding="utf-8")
         errors_by_short[name] = list(MEDIA_ERRORS)
         (MEDIA / f"{name}.json").write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
         music = pick_music(MOOD[0], MEDIA / name, used)
         (MEDIA / f"{name}_music.json").write_text(json.dumps(music, indent=2, ensure_ascii=False), encoding="utf-8")
         desc = short.get("description", "").split("\n\n" + CREDIT_MARK)[0]
-        shots = [x for it in items if it for x in [it] + (it.get("alts") or [it.get("alt")]) if x]
+        shots = vs + [x for it in items if it for x in [it] + (it.get("alts") or [it.get("alt")]) if x]
         if shots or music:
             desc += "\n\n" + credits(shots + [music])
         short["description"] = desc

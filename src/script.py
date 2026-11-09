@@ -129,7 +129,12 @@ TASK
    names and the clash, never as the opener), STAKES (what is at risk: a season, a contract, a title, a job), CURIOSITY
    (open a question and do NOT answer it in the same sentence: avoid "because"), and
    BREVITY (12-24 words).
-2. Write the spoken script AFTER the hook: 3-5 beats, 45-65 words total. The whole Short
+2. ANGLE FIRST. Before writing, list 3 different angles this story could be told from
+   (for example: a clash, a betrayal, money at stake, a contradiction between words and
+   actions, a power struggle, pressure on someone, a reversal). Every angle must be supported
+   by the sources: never an angle the material does not show. Pick the ONE that makes the
+   strongest story and build every beat on it ("angles": the 3, "angle": the chosen one).
+   Write the spoken script AFTER the hook: 3-5 beats, 45-65 words total. The whole Short
    must land at 25-35 seconds read aloud: that is the length of the niche's top Shorts. Any of the five
    hooks may be chosen, so the beats must NOT repeat the numbers or facts the hooks state:
    start the beats with the next piece of the story. Each beat has
@@ -159,6 +164,15 @@ TASK
    between them, the timeline, what happened last time) or ANALYSIS (why it matters, what it
    costs, what could follow). Mark every beat's "role": "fact", "context", "analysis",
    "reaction" or "question".
+   STORY STAGES (this is what keeps people watching): mark every beat's "stage", in order:
+   "setup" (where we are, in one line), "conflict" (the clash itself), "escalation" (it gets
+   bigger or more personal), "twist" (the turn nobody expected; at most one, and only if the
+   material has one), "payoff" (the answer: what it really means or what happens next),
+   "exit" (the last beat, ending with the question). Stages only move forward, never back.
+   A Short has a conflict, a payoff and an exit; setup, escalation and twist when they help.
+   EVERY beat must add something NEW (a new fact, a new turn or a new meaning): a beat that
+   only repeats or re-words an earlier one is cut. The tension rises until the payoff, and
+   the payoff really answers the hook's question instead of just restating it.
    Follow the voice profile's shape for this STORY TYPE: the BEEF shape for a conflict, the
    RUMOR shape for trade talk or unrest, otherwise the 5-part STORY shape. Join every beat to
    the last with "but" or "so" logic, never "and then". It must sound like a real person
@@ -191,7 +205,9 @@ NEVER invent a fact, number, quote, date, or source. If the material does not sa
 
 Return ONLY valid JSON in exactly this shape:
 {{"hooks": [{{"text": "...", "formula": "..."}}],
-  "beats": [{{"say": "...", "on_screen": "...", "tone": "calm", "role": "fact"}}],
+  "angles": ["...", "...", "..."],
+  "angle": "...",
+  "beats": [{{"say": "...", "on_screen": "...", "tone": "calm", "role": "fact", "stage": "setup"}}],
   "titles": ["..."],
   "thumbnail_text": "...",
   "sources_used": [1, 2],
@@ -242,7 +258,8 @@ NBA fan's, never flirty (the voice does that). Keep it to 45-65 words after the 
 clash first, what is at stake, a question left open. Keep EVERY fact, number, name, quote and source attribution exactly true;
 do not add any new fact. Keep the same JSON shape and the same number of hooks. Re-judge
 every beat's "tone" (calm, serious, tense, shocked, amused) against what the rewritten line
-MEANS, and keep the punctuation consistent with it. Keep every beat's "role" and the "claims"
+MEANS, and keep the punctuation consistent with it. Keep the "angle", every beat's "stage"
+(setup, conflict, escalation, twist, payoff, exit) and its "role", and the "claims"
 list (update a claim's wording if you reworded it; never change its status or source). Keep at
 least one context or analysis beat. A rumor or report stays attributed in the spoken words.
 
@@ -260,8 +277,9 @@ TRIM = """This NBA Shorts script is too long. Cut the "beats" to 45-65 spoken wo
 Keep the story shape, the voice, her reactions ("I mean, come on.", "Honestly?"), every
 attribution, the opinion and the final question.
 Cut repetition and the weakest details first. Do not add anything. Keep "on_screen" notes
-matching what is said and keep each beat's "tone". Return ONLY JSON:
-{{"beats": [{{"say": "...", "on_screen": "...", "tone": "calm"}}]}}
+matching what is said and keep each beat's "tone", "role" and "stage" (never cut the
+conflict, the payoff or the exit beat). Return ONLY JSON:
+{{"beats": [{{"say": "...", "on_screen": "...", "tone": "calm", "role": "fact", "stage": "setup"}}]}}
 
 DRAFT:
 {draft}
@@ -691,6 +709,55 @@ def intrigue_pick(hooks: list[dict], headline: str) -> list[dict]:
     return [best] + [h for h in hooks if h is not best]
 
 
+# ---------- Retention structure (code only, no Claude call) ----------
+# A Short holds viewers when every beat moves the story: a clash, then it gets bigger, then a
+# real answer, then the question. Checked here so a flat "list of facts" never ships as ready.
+STAGES = ["setup", "conflict", "escalation", "twist", "payoff", "exit"]
+STAGE_OF_ROLE = {"fact": "setup", "context": "setup", "reaction": "escalation", "analysis": "payoff",
+                 "question": "exit"}
+FILLER = set("the a an of to in on for with and or is are was were be been it its it's this that "
+             "he she his her him they them their i you we so but just not no yes at by from as "
+             "what who did does do has have had about over up out all".split())
+SAME_BEAT = 0.6      # share of a beat's content words already said in an earlier beat
+
+
+def content_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9']+", compliance.fold(text)) if w not in FILLER and len(w) > 2}
+
+
+def stage_of(beat: dict) -> str:
+    st = str(beat.get("stage") or "").lower().strip()
+    return st if st in STAGES else STAGE_OF_ROLE.get(str(beat.get("role") or "").lower(), "")
+
+
+def retention_check(beats: list[dict]) -> dict:
+    """hard = not ready to publish (repeats itself, no closing question);
+    soft = weaker structure, shown in the summary."""
+    hard, soft = [], []
+    said: set[str] = set()
+    for k, b in enumerate(beats):
+        words = content_words(b.get("say", ""))
+        if k and words and len(words & said) / len(words) >= SAME_BEAT:
+            hard.append(f"beat {k + 1} repeats what was already said")
+        said |= words
+    if not beats or not beats[-1].get("say", "").strip().endswith("?"):
+        hard.append("the last beat does not end with the question")
+    stages = [stage_of(b) for b in beats]
+    if not all(stages):
+        soft.append("stages missing on some beats")
+    known = [s for s in stages if s]
+    if any(STAGES.index(b) < STAGES.index(a) for a, b in zip(known, known[1:])):
+        soft.append("stages go backwards: " + " > ".join(known))
+    if known.count("twist") > 1:
+        soft.append("more than one twist")
+    for need in ("conflict", "payoff"):
+        if known and need not in known:
+            soft.append(f"no {need} beat")
+    if known and known[-1] != "exit":
+        soft.append("the last beat is not the exit")
+    return {"stages": stages, "hard": hard, "soft": soft}
+
+
 def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict) -> dict:
     topic = editor["topics"][topic_id]
     judged = next((r for r in editor["ranked"] if r["id"] == topic_id), {})
@@ -728,6 +795,11 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         try:
             trimmed = ask_claude(TRIM.format(draft=json.dumps(draft, indent=1)), CLAUDE_MODEL_LIGHT)
             if trimmed.get("beats"):
+                old = draft.get("beats", [])
+                for k, b in enumerate(trimmed["beats"]):   # never lose a beat's stage or role
+                    for key in ("stage", "role"):
+                        if not b.get(key) and k < len(old) and old[k].get(key):
+                            b[key] = old[k][key]
                 draft["beats"] = trimmed["beats"]
         except UsageLimit:
             raise
@@ -786,7 +858,12 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     titles = compliance.pick_safe_title(titles, draft.get("claims") or [], sources, known)
 
     beats = draft.get("beats", [])
+    for b in beats:
+        b["stage"] = stage_of(b) or ""
+    if beats and not beats[-1]["stage"]:
+        beats[-1]["stage"] = "exit"
     add_cta(beats, topic["headline"])
+    retention = retention_check(beats)
     spoken = " ".join([hooks[0]["text"]] + [b.get("say", "") for b in beats]) if hooks else ""
     on_screen = " ".join(b.get("on_screen", "") for b in beats)
     unsupported = fact_check(f"{spoken} {on_screen}", sources)
@@ -835,7 +912,10 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         "similarity": same,
         "too_similar_to": too_similar,
         "ready": bool(hooks) and not unsupported and not bad_quotes and not banned and not too_similar
-                 and 18 <= round(words / WPM * 60) <= 42,
+                 and not retention["hard"] and 18 <= round(words / WPM * 60) <= 42,
+        "angle": draft.get("angle", ""),
+        "angles": draft.get("angles") or [],
+        "retention": retention,
         "claims": draft.get("claims") or [],
     }
     # monetization safety, enforced in code (the media, music and video checks follow in gate.py)
@@ -894,10 +974,19 @@ def write_summary(shorts: list[dict]) -> None:
             lines.append(f"- {h['score']} {h['band']} {'❓one-question' if h.get('question') else '(not one question)'}{' 🎯 fan pick' if h.get('intrigue_pick') else ''}"
                          f"{' ♻️ recycled template (' + format(h['recycled'], '.0%') + ')' if h.get('recycled') else ''}"
                          f" · {h['formula']} · {h['text']}")
+        ret = s.get("retention") or {}
+        if s.get("angle"):
+            lines += ["", f"**Angle:** {s['angle']}" + (f" (also considered: {'; '.join(a for a in s.get('angles', []) if a != s['angle'])})"
+                                                        if s.get("angles") else "")]
+        if ret:
+            flow = " > ".join(x or "?" for x in ret.get("stages", []))
+            problems = ret.get("hard", []) + ret.get("soft", [])
+            lines += ["", f"**Story flow:** {flow} " + ("✅" if not problems else
+                      ("⛔ " if ret.get("hard") else "🟡 ") + "; ".join(problems))]
         lines += ["", "**Script:**", ""]
         lines.append(f"> 🎙️ {s['hook']['text'] if s['hook'] else ''}")
         for b in s["beats"]:
-            lines.append(f"> 🎙️ ({b.get('tone', 'calm')}) {b.get('say', '')}  ")
+            lines.append(f"> 🎙️ ({b.get('stage') or '-'} · {b.get('tone', 'calm')}) {b.get('say', '')}  ")
             lines.append(f"> 📺 *{b.get('on_screen', '')}*")
         lines += ["", "**Titles (title.py, top 3):**"]
         for t in s["titles"][:3]:

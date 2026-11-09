@@ -77,6 +77,60 @@ def gradient(c1: str, c2: str) -> Image.Image:
 FG_W, FG_MAX_H, FG_CY = 1296, 1100, 800  # landscape media: shown whole, a bit wider than the screen
 
 
+# ---------- nothing ever repeats inside one Short ----------
+# The same photo can arrive twice under different addresses (Wikimedia Commons and Openverse
+# index the same Flickr picture; a cropped re-upload has a new page). So pictures are compared
+# by what they LOOK like (a 64-bit difference hash), not by their address.
+SAME_PICTURE = 12   # bits of 64 that may differ and still be the same photo (crop, resize, recompress)
+
+
+def picture_hash(path: Path) -> int | None:
+    try:
+        with Image.open(path) as im:
+            g = im.convert("L").resize((9, 8), Image.LANCZOS)
+        px = list(g.getdata())
+        return sum(1 << i for i in range(64) if px[(i // 8) * 9 + i % 8] > px[(i // 8) * 9 + i % 8 + 1])
+    except Exception:
+        return None
+
+
+def seen_before(h: int | None, hashes: list[int]) -> bool:
+    return h is not None and any(bin(h ^ x).count("1") <= SAME_PICTURE for x in hashes)
+
+
+def item_key(it: dict) -> str:
+    return str(it.get("id") or it.get("page") or it.get("url") or it.get("file"))
+
+
+def no_repeats(items: list) -> list:
+    """Every picture and every clip appears ONCE per Short. Later duplicates are dropped; a beat
+    left with nothing becomes empty (filled with a NEW picture later, never an old one)."""
+    hashes: list[int] = []
+    keys: set[str] = set()
+    out = []
+    for it in items:
+        if not it:
+            out.append(None)
+            continue
+        pool = [it] + [a for a in (it.get("alts") or ([it["alt"]] if it.get("alt") else [])) if a]
+        keep = []
+        for p in pool:
+            k = item_key(p)
+            h = picture_hash(ROOT / p["file"]) if p.get("kind") == "photo" and p.get("file") else None
+            if k in keys or seen_before(h, hashes):
+                continue
+            keys.add(k)
+            if h is not None:
+                hashes.append(h)
+            keep.append(p)
+        if not keep:
+            out.append(None)
+            continue
+        main = {**keep[0], "alts": keep[1:], "alt": keep[1] if len(keep) > 1 else None}
+        out.append(main)
+    return out
+
+
 FACE_UNDER_HOOK = 860   # y of the face in the hook shot: below the hook words, above the captions
 
 
@@ -129,7 +183,17 @@ def wrap_px(d: ImageDraw.ImageDraw, text: str, f: ImageFont.FreeTypeFont, max_w:
 def cta_card(accent: str) -> Image.Image:
     """Subscribe prompt for the end of every Short: a red pill with the value line, above the
     captions and inside the Shorts safe zone."""
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    # a plain, calm background instead of the last picture: the channel logo goes on it as soon
+    # as assets/logo.png exists in the repo (until then it stays blank)
+    img = Image.new("RGBA", (W, H), (11, 11, 14, 255))
+    logo_path = ROOT / "assets" / "logo.png"
+    if logo_path.exists():
+        try:
+            logo = Image.open(logo_path).convert("RGBA")
+            logo.thumbnail((520, 520), Image.LANCZOS)
+            img.alpha_composite(logo, ((W - logo.width) // 2, 820 - logo.height))
+        except OSError:
+            pass
     d = ImageDraw.Draw(img)
     big, small = font(76), font(44)
     t1, t2 = "SUBSCRIBE", "DAILY NBA DRAMA & RUMORS"
@@ -288,7 +352,8 @@ def still_segment(bg: Image.Image, layer: Image.Image, dur: float, seg: Path, wo
 
 
 def video_segment(item: dict, layer: Image.Image, dur: float, seg: Path, work: Path, i) -> None:
-    """Real footage, muted, filled to 9:16, looped if shorter than the beat."""
+    """Real footage, muted, filled to 9:16. Never looped (a loop would show the same frames
+    twice): a clip shorter than its shot holds its last frame for the rest."""
     ov_path = work / f"ov_{i}.png"
     layer.save(ov_path)
     fx, fy = (item.get("focus") or [0.5, 0.5])[:2]
@@ -310,10 +375,10 @@ def video_segment(item: dict, layer: Image.Image, dur: float, seg: Path, work: P
                  f"[c]scale={FG_W}:-2,crop=w={W}:h='min(ih,{FG_MAX_H})':x='(iw-{W})*{fx:.3f}':"
                  f"y='(ih-min(ih,{FG_MAX_H}))*{fy:.3f}'[fg];"
                  f"[bgv][fg]overlay=0:'{FG_CY}-h/2',")
-    run(["ffmpeg", "-y", "-ss", f"{start:.2f}", "-stream_loop", "-1", "-i", src,
+    run(["ffmpeg", "-y", "-ss", f"{start:.2f}", "-i", src,
          "-i", str(ov_path), "-filter_complex",
          frame +
-         f"eq=brightness=-0.05:saturation=1.1,fps={FPS},"
+         f"eq=brightness=-0.05:saturation=1.1,fps={FPS},tpad=stop_mode=clone:stop_duration={dur:.2f},"
          # punch-in on the cut: starts 10% bigger and settles in 0.2 s
          f"scale=w='trunc({W}*(1+0.10*max(0,1-t/0.2))/2)*2':h=-2:eval=frame,crop={W}:{H},"
          f"setsar=1[b];[b][1:v]overlay=0:0",
@@ -341,17 +406,13 @@ def plan_shots(main: dict | None, dur: float) -> list[tuple]:
     """Split a beat into shots, each a DIFFERENT picture: a photo at most ~3 s, a clip ~4 s
     (motion holds the eye longer). The beat's other pictures are used in order; the same photo
     is never shown twice. When the pictures run out, the last one simply stays on screen
-    longer (with its slow move), and a clip continues further into its own footage."""
+    longer (a photo with its slow move, a clip keeps playing): nothing ever repeats."""
     if not main:
         return [(None, dur, False)]
     pool = [main] + [a for a in (main.get("alts") or [main.get("alt")]) if a]
     limit = CLIP_SHOT if main["kind"] == "video" else PHOTO_SHOT
     n = max(1, min(math.ceil(dur / limit), int(dur // MIN_SHOT) or 1))
-    shots = [[pool[k], 0.0, False] for k in range(min(n, len(pool)))]
-    clips = [p for p in pool if p["kind"] == "video"]
-    while len(shots) < n and clips:
-        # out of pictures: a jump cut further into the same footage (new frames, not a repeat)
-        shots.append([clips[(len(shots) - len(pool)) % len(clips)], 0.0, False])
+    shots = [[pool[k], 0.0, False] for k in range(min(n, len(pool)))]   # each picture once
     each = round(dur / len(shots), 2)
     for s in shots:
         s[1] = each
@@ -373,7 +434,7 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     colors = team_colors(" ".join([short["headline"]] + [b.get("say", "") for b in short["beats"]]))
     accent = colors[1] if colors[1] not in ("#000000", "#FFFFFF") else "#FACC15"
     beats = timing["beats"]
-    media = list(media or []) + [None] * len(beats)
+    media = no_repeats(list(media or []) + [None] * len(beats))   # last safety net: nothing twice
     # a beat with no picture of its own continues the previous beat's picture (one longer
     # shot): never a repeated picture, never a plain colour card
     runs = []
@@ -432,9 +493,10 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     cta_png = work / "cta.png"
     cta_card(accent).save(cta_png)
     cta_at = max(total - 3.0, total * 0.85)
-    vf = (f"[0:v]{bar},ass={ass}{fonts}[base];"
-          f"[CTA:v]format=rgba,fade=t=in:st={cta_at:.2f}:d=0.25:alpha=1[cta];"
-          f"[base][cta]overlay=0:0:enable='gte(t,{cta_at:.2f})'[v]")
+    # the card covers the picture, never the captions or the progress bar (drawn on top of it)
+    vf = (f"[CTA:v]format=rgba,fade=t=in:st={cta_at:.2f}:d=0.25:alpha=1[cta];"
+          f"[0:v][cta]overlay=0:0:enable='gte(t,{cta_at:.2f})'[base];"
+          f"[base]{bar},ass={ass}{fonts}[v]")
     if music and (ROOT / music["file"]).exists():
         # music: start a bit in (skip intros), quiet, ducks under the voice, fades in and out
         offset = min(15.0, max(0.0, music.get("duration", 0) - total - 1))

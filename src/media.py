@@ -1043,6 +1043,60 @@ def pick_music(mood: str, folder: Path, used: set) -> dict | None:
     return None
 
 
+# ---------- nothing ever repeats inside one Short ----------
+# The same photo can arrive twice under different addresses (Wikimedia Commons and Openverse
+# index the same Flickr picture; a cropped re-upload has a new page). So pictures are compared
+# by what they LOOK like (a 64-bit difference hash), not by their address.
+SAME_PICTURE = 12   # bits of 64 that may differ and still be the same photo (crop, resize, recompress)
+
+
+def picture_hash(path: Path) -> int | None:
+    try:
+        with Image.open(path) as im:
+            g = im.convert("L").resize((9, 8), Image.LANCZOS)
+        px = list(g.getdata())
+        return sum(1 << i for i in range(64) if px[(i // 8) * 9 + i % 8] > px[(i // 8) * 9 + i % 8 + 1])
+    except Exception:
+        return None
+
+
+def seen_before(h: int | None, hashes: list[int]) -> bool:
+    return h is not None and any(bin(h ^ x).count("1") <= SAME_PICTURE for x in hashes)
+
+
+def item_key(it: dict) -> str:
+    return str(it.get("id") or it.get("page") or it.get("url") or it.get("file"))
+
+
+def no_repeats(items: list) -> list:
+    """Every picture and every clip appears ONCE per Short. Later duplicates are dropped; a beat
+    left with nothing becomes empty (filled with a NEW picture later, never an old one)."""
+    hashes: list[int] = []
+    keys: set[str] = set()
+    out = []
+    for it in items:
+        if not it:
+            out.append(None)
+            continue
+        pool = [it] + [a for a in (it.get("alts") or ([it["alt"]] if it.get("alt") else [])) if a]
+        keep = []
+        for p in pool:
+            k = item_key(p)
+            h = picture_hash(ROOT / p["file"]) if p.get("kind") == "photo" and p.get("file") else None
+            if k in keys or seen_before(h, hashes):
+                continue
+            keys.add(k)
+            if h is not None:
+                hashes.append(h)
+            keep.append(p)
+        if not keep:
+            out.append(None)
+            continue
+        main = {**keep[0], "alts": keep[1:], "alt": keep[1] if len(keep) > 1 else None}
+        out.append(main)
+    return out
+
+
 SHOT_EVERY = 3.0   # seconds: one DIFFERENT picture about every 3 s (Shorts pacing)
 
 
@@ -1054,8 +1108,10 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
        3 seconds without repeating anything,
     3. only then general pro basketball footage,
     4. a beat with still nothing continues the previous picture (no cut, no repeat)."""
-    items = list(items) + [None] * max(0, n_beats - len(items))
+    items = no_repeats(list(items) + [None] * max(0, n_beats - len(items)))
     folder.mkdir(parents=True, exist_ok=True)
+    looks = [h for it in items if it for p in [it] + (it.get("alts") or [])
+             if p.get("kind") == "photo" and (h := picture_hash(ROOT / p["file"])) is not None]
     shown = {it.get("page") for it in items if it} | {a.get("page") for it in items if it
                                                       for a in (it.get("alts") or [it.get("alt")]) if a}
     faces = {person: [c for c in photos(person)[:10] if c["page"] not in shown] for person in (who or [])}
@@ -1073,6 +1129,12 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                 try:
                     if download(c["url"], path, 60) and image_ok(path):
                         shown.add(c["page"])
+                        h = picture_hash(path)
+                        if seen_before(h, looks):      # the same photo under another address
+                            path.unlink(missing_ok=True)
+                            continue
+                        if h is not None:
+                            looks.append(h)
                         return {**{k: v for k, v in c.items() if k not in ("score", "hoops")},
                                 "file": str(path.relative_to(ROOT)), "beat": i, "match": None}
                 except Exception:

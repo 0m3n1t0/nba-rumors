@@ -311,6 +311,31 @@ def licence_ok(short_name: str) -> bool:
 _photo_cache: dict[str, list[dict]] = {}
 
 
+# A Commons licence label is only as good as the upload. Files flagged by Commons' own reviewers,
+# and clips that look like TV or NBA broadcasts, are refused whatever their label says.
+COMMONS_FLAGS = re.compile(r"copyright violation|copyvio|deletion request|possible copyright|no permission|"
+                           r"license review needed|unknown copyright|flickr review needed|"
+                           r"files with no machine-readable license", re.I)
+BROADCAST = re.compile(r"\b(espn|tnt|abc sports|nbc sports|nba ?tv|bally sports|fanduel sports|broadcast|"
+                       r"telecast|full game|game highlights|nba highlights|screen ?(recording|capture)|tv feed)\b", re.I)
+TRUSTED_VIDEO = re.compile(r"own work|white house|voice of america|\bvoa\b|dvids|u\.s\. (army|navy|air force|"
+                           r"marine|department)|department of defense|government|license review", re.I)
+
+
+def commons_trusted(meta: dict, title: str, video: bool = False) -> bool:
+    """False for files Commons itself flags, and for clips whose provenance is not an own-work
+    or government upload (a 'CC BY' label on a TV clip does not make it licensable)."""
+    if COMMONS_FLAGS.search(meta.get("Categories", "")):
+        return False
+    if not video:
+        return True
+    blob = " ".join([title, clean(meta.get("ImageDescription", "")), clean(meta.get("Credit", "")),
+                     clean(meta.get("Artist", ""))])
+    if BROADCAST.search(blob):
+        return False
+    return bool(TRUSTED_VIDEO.search(blob + " " + meta.get("Categories", "")))
+
+
 def commons_photos(person: str) -> list[dict]:
     if person in _photo_cache:
         return _photo_cache[person]
@@ -341,7 +366,7 @@ def commons_photos(person: str) -> list[dict]:
         w, h = info.get("width", 0), info.get("height", 0)
         if first not in text or last not in text or not licence_ok(lic) or min(w, h) < 700:
             continue
-        if "trademark" in meta.get("Restrictions", "").lower():
+        if "trademark" in meta.get("Restrictions", "").lower() or not commons_trusted(meta, title):
             continue
         year = max([int(y) for y in re.findall(r"\b(20[12]\d)\b", title)] or [2000])
         found.append({
@@ -458,7 +483,7 @@ def commons_videos(search: str, person: str = "") -> list[dict]:
         if not person and not BASKETBALL.search(text):
             continue
         lic = clean(meta.get("LicenseShortName", ""))
-        if not licence_ok(lic):
+        if not licence_ok(lic) or not commons_trusted(meta, title, video=True):
             continue
         ders = [d for d in info.get("derivatives") or [] if "webm" in d.get("type", "") or "mp4" in d.get("type", "")]
         ders.sort(key=lambda d: int(d.get("height") or 0))
@@ -974,6 +999,7 @@ MUSIC_LOG: list[str] = []
 
 
 LIBRARY_SCORES: dict = {}
+LICENSED: set = set()   # library tracks whose licence the owner confirmed (music_ledger)
 MEDIA_ERRORS: list[str] = []
 LIBRARY = ROOT / "music_library"            # private repo of YouTube Audio Library tracks (optional)
 MUSIC_USED = DATA / "history" / "music_used.json"  # rotation, kept between runs by the cache
@@ -999,7 +1025,8 @@ def library_track(mood: str, folder: Path, used: set) -> dict | None:
             if (LIBRARY / m).is_dir() else []
         # only tracks that measured as a good bed under a voice (clear, steady beat)
         files = [f for f in files if f.name not in used
-                 and LIBRARY_SCORES.get(f"{m}/{f.name}", {}).get("bed", 0) >= MIN_BED]
+                 and LIBRARY_SCORES.get(f"{m}/{f.name}", {}).get("bed", 0) >= MIN_BED
+                 and f"{m}/{f.name}" in LICENSED]       # a track with an unconfirmed licence is never used
         if not files:
             continue
         pick = min(files, key=lambda f: history.get(f"{m}/{f.name}", ""))
@@ -1017,7 +1044,8 @@ def library_track(mood: str, folder: Path, used: set) -> dict | None:
         except ValueError:
             pass
         return {"kind": "music", "title": pick.stem, "mood": m, "duration": dur,
-                "file": str(dest.relative_to(ROOT)), "library": True,
+                "file": str(dest.relative_to(ROOT)), "library": True, "library_key": f"{m}/{pick.name}",
+                "license": "YouTube Audio Library terms", "source": "YouTube Audio Library",
                 "credit": credit.read_text(encoding="utf-8").strip() if credit.exists() else ""}
     return None
 
@@ -1193,8 +1221,127 @@ def credits(items: list[dict]) -> str:
     return "\n".join(lines)
 
 
+# ---------- licence records that outlive the run (synced to the private state repository) ----------
+
+LEDGER = DATA / "history" / "ledger"
+MUSIC_LICENSES = DATA / "history" / "music_licenses.json"
+FLICKR_LICENCE = re.compile(r"creativecommons\.org/(licenses|publicdomain)/([a-z-]+)/", re.I)
+
+
+def flickr_licence(page: str) -> str | None:
+    """The licence the Flickr photo page shows NOW ("by", "by-sa", "by-nc"...; "arr" = all rights
+    reserved), or None when the page cannot be read. Openverse's index can be out of date: a
+    photographer may have changed the licence since."""
+    try:
+        html = get(page, 20).decode("utf-8", "replace")
+    except Exception:
+        return None
+    m = FLICKR_LICENCE.search(html)
+    if m:
+        return "cc0" if m.group(1).lower() == "publicdomain" else m.group(2).lower()
+    if re.search(r"all rights reserved", html, re.I):
+        return "arr"
+    return None
+
+
+def verify_openverse(items: list) -> list:
+    """Openverse photos from Flickr are checked against the Flickr page itself. A licence that
+    no longer allows our use (all rights reserved, NC, ND) removes the photo; a page that cannot
+    be read keeps it, marked as not re-verified (the owner's choice: Openverse is trusted then)."""
+    def ok(x: dict) -> bool:
+        if "openverse" not in (x.get("source") or "").lower() or "flickr" not in (x.get("page") or ""):
+            return True
+        live = flickr_licence(x["page"])
+        x["license_verified"] = live is not None
+        if live is None:
+            return True
+        if live == "arr" or "nc" in live.split("-") or "nd" in live.split("-"):
+            print(f"[!] dropped: Flickr now shows '{live}' for {x['page']}")
+            return False
+        return True
+    out = []
+    for it in items:
+        if not it:
+            out.append(it)
+            continue
+        pool = [x for x in [it] + (it.get("alts") or []) if x and ok(x)]
+        if not pool:
+            out.append(None)
+            continue
+        main, rest = pool[0], pool[1:]
+        out.append({**main, "alts": rest, "alt": rest[0] if rest else None})
+    return out
+
+
+def file_hash(path: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return ""
+
+
+def record_assets(name: str, short: dict, shots: list, music: dict | None) -> None:
+    """Permanent licence record of every picture, clip and track used (proof if a claim comes)."""
+    import datetime as dt
+    LEDGER.mkdir(parents=True, exist_ok=True)
+    now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    run = os.environ.get("GITHUB_RUN_ID", "local")
+    with open(LEDGER / "assets.jsonl", "a", encoding="utf-8") as f:
+        for x in shots + ([music] if music else []):
+            rec = {"time": now, "run": run, "short": name, "headline": short.get("headline", ""),
+                   "kind": x.get("kind"), "title": x.get("title", ""), "asset_url": x.get("url", ""),
+                   "source_page": x.get("page", ""), "source": x.get("source", ""),
+                   "creator": x.get("author", ""), "license": x.get("license", ""),
+                   "license_url": x.get("license_url", ""), "license_verified": x.get("license_verified"),
+                   "attribution": x.get("credit") or (f"{x.get('author', '')}, {x.get('license', '')}"
+                                                      if x.get("kind") != "music" else ""),
+                   "sha256": file_hash(ROOT / x["file"]) if x.get("file") else ""}
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def music_ledger() -> dict:
+    """The licence record of every library track (YouTube Audio Library). New tracks are added
+    as NOT confirmed and are not used until the owner confirms them in the private repository:
+    set "confirm_all_current": true once (all tracks listed then become confirmed)."""
+    try:
+        led = json.loads(MUSIC_LICENSES.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        led = {}
+    led.setdefault("_how_to", "Tracks from the YouTube Audio Library. Check in YouTube Studio > Audio "
+                              "Library that each track is there and whether it needs attribution, then set "
+                              "confirm_all_current to true (or one track's confirmed to true).")
+    led.setdefault("confirm_all_current", False)
+    tracks = led.setdefault("tracks", {})
+    if LIBRARY.exists():
+        for mood_dir in sorted(p for p in LIBRARY.iterdir() if p.is_dir()):
+            for f in sorted(mood_dir.glob("*")):
+                if f.suffix.lower() not in AUDIO_EXT:
+                    continue
+                key = f"{mood_dir.name}/{f.name}"
+                credit = f.with_suffix(".txt")
+                if key not in tracks:
+                    tracks[key] = {"source": "YouTube Audio Library",
+                                   "license": "YouTube Audio Library terms",
+                                   "attribution_required": credit.exists(),
+                                   "attribution": credit.read_text(encoding="utf-8").strip() if credit.exists() else "",
+                                   "confirmed": False}
+    if led.get("confirm_all_current"):
+        for rec in tracks.values():
+            rec["confirmed"] = True
+        led["confirm_all_current"] = False
+    MUSIC_LICENSES.parent.mkdir(parents=True, exist_ok=True)
+    MUSIC_LICENSES.write_text(json.dumps(led, indent=2, ensure_ascii=False), encoding="utf-8")
+    return tracks
+
+
 def main() -> None:
     MEDIA.mkdir(parents=True, exist_ok=True)
+    LICENSED.update(k for k, v in music_ledger().items() if v.get("confirmed"))
     if not PIXABAY_KEY:
         print("[!] PIXABAY_API_KEY is not set: no b-roll footage this run")
     report = ["## 🎞️ Visuals", "", "| Short | photos | footage | empty beats | match to the words (0-10, per beat) | music |",
@@ -1220,6 +1367,7 @@ def main() -> None:
             MEDIA_ERRORS.append(f"{type(exc).__name__}: {str(exc)[:160]}")
             items = []
         items = fill_empty(items, len(spoken(short)), MEDIA / name, used, people(short)[:3], short)
+        items = verify_openverse(items)
         errors_by_short[name] = list(MEDIA_ERRORS)
         (MEDIA / f"{name}.json").write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
         music = pick_music(MOOD[0], MEDIA / name, used)
@@ -1231,6 +1379,7 @@ def main() -> None:
         short["description"] = desc
         short.pop("_name", None)
         script_path.write_text(json.dumps(short, indent=2, ensure_ascii=False), encoding="utf-8")
+        record_assets(name, short, shots, music)
         photos = sum(1 for i in shots if i["kind"] == "photo")
         clips = sum(1 for i in shots if i["kind"] == "video")
         real = sum(1 for i in shots if i.get("real"))

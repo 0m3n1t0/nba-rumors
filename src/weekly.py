@@ -13,7 +13,8 @@ Runs every Monday. Each skill checks for its own material and sleeps until it ex
   yt-comment    switched OFF (owner's choice). It stays installed and can be turned on later
                 with the repository variable COMMENTS=on; nothing is ever posted automatically.
 
-The report is opened as a GitHub Issue, so it lands in your email and the GitHub app.
+The report is saved to the PRIVATE state repository (reports/), never a public GitHub Issue
+or the public run summary (this repository is public).
 """
 
 from __future__ import annotations
@@ -124,17 +125,6 @@ def comments(yt, channel_id: str) -> list[dict]:
 
 # ---------- report ----------
 
-def open_issue(title: str, body: str) -> None:
-    repo, token = os.environ.get("GITHUB_REPOSITORY"), os.environ.get("GITHUB_TOKEN")
-    if not repo or not token:
-        return
-    req = urllib.request.Request(f"https://api.github.com/repos/{repo}/issues", method="POST",
-                                 data=json.dumps({"title": title, "body": body[:60000]}).encode(),
-                                 headers={"Authorization": f"Bearer {token}",
-                                          "Accept": "application/vnd.github+json"})
-    urllib.request.urlopen(req, timeout=20)
-
-
 def main() -> None:
     DATA.mkdir(exist_ok=True)
     yt = service("youtube", "v3", ["https://www.googleapis.com/auth/youtube.readonly"])
@@ -209,11 +199,12 @@ def main() -> None:
                "**Experiments:** " + ", ".join(plan.get("experiments", []))]
 
     text = "\n".join(report)
-    summary(text)
-    try:
-        open_issue(f"Weekly report {date.today().isoformat()}", text)
-    except Exception as exc:
-        print(f"[!] could not open the issue: {exc}")
+    summary(f"Weekly report {date.today().isoformat()} saved to the private state repository "
+            f"(nba/history/reports/). Not shown here: this repository is public.")
+    # private: saved to the private state repository (state.py save), never a public GitHub Issue
+    reports = DATA / "history" / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / f"weekly_{date.today().isoformat()}.md").write_text(text, encoding="utf-8")
 
 
 if __name__ == "__main__":

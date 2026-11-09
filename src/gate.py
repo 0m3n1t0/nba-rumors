@@ -10,8 +10,9 @@ The 11 checks:
              accuracy, advertiser suitability
   6  visual asset licensing  every photo and clip: an accepted licence, an author, a source page;
                              no TV broadcast or NBA game footage
-  7  music licensing         the track has a recorded licence (YouTube Audio Library tracks:
-                             config/music_licenses.json) or an accepted open licence
+  7  music licensing         the track has a confirmed licence record (YouTube Audio Library
+                             tracks: music_licenses.json in the private state repository) or an
+                             accepted open licence
   11 technical quality       1080x1920, 10-60 s, a video and an audio stream, the voice passed
                              its own check
 
@@ -36,7 +37,8 @@ DATA = ROOT / "data"
 SCRIPTS, MEDIA, VIDEO, GATE = DATA / "scripts", DATA / "media", DATA / "video", DATA / "gate"
 AUDIO = DATA / "audio"
 MIN_HEARD = 0.85   # same bar as tts.py: Whisper must hear this share of the words
-MUSIC_LICENSES = ROOT / "config" / "music_licenses.json"
+MUSIC_LICENSES = DATA / "history" / "music_licenses.json"   # kept in the private state repository
+LEDGER = DATA / "history" / "ledger"
 
 ACCEPTED = re.compile(r"^(cc0|public domain|pd|cc by|cc-by|attribution|pixabay content license|"
                       r"public domain mark)", re.I)
@@ -82,12 +84,7 @@ def music_record(music: dict) -> dict | None:
         ledger = json.loads(MUSIC_LICENSES.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    key = music.get("library_key") or music.get("file", "").split("/", 2)[-1]
-    name = Path(music.get("file", "")).name
-    for k, rec in ledger.get("tracks", {}).items():
-        if k in (key, name) or Path(k).name == name:
-            return rec
-    return None
+    return ledger.get("tracks", {}).get(music.get("library_key", ""))
 
 
 def check_music(music: dict | None) -> tuple[str, list[str]]:
@@ -97,7 +94,7 @@ def check_music(music: dict | None) -> tuple[str, list[str]]:
         rec = music_record(music)
         if not rec:
             return C.REVIEW, [f"no licence record for library track {Path(music.get('file', '')).name}"]
-        if not rec.get("verified"):
+        if not rec.get("confirmed"):
             return C.REVIEW, ["library track licence not yet confirmed"]
         if rec.get("attribution_required") and not music.get("credit"):
             return C.REJECT, ["track needs an attribution line, none in the description"]
@@ -158,6 +155,25 @@ def decide(short: dict, items: list, flags: dict, music: dict | None, video: Pat
     return {"verdict": C.worst(*(c["verdict"] for c in checks.values())), "checks": checks}
 
 
+def record_video(name: str, short: dict, result: dict) -> None:
+    """Permanent record of every video made and its gate decision (the upload stage will add
+    the YouTube id). Kept in the private state repository."""
+    import datetime as dt
+    LEDGER.mkdir(parents=True, exist_ok=True)
+    rec = {"time": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+           "run": os.environ.get("GITHUB_RUN_ID", "local"), "short": name,
+           "headline": short.get("headline", ""),
+           "title": (short.get("titles") or [{}])[0].get("title", ""),
+           "thumbnail_text": short.get("thumbnail_text", ""),
+           "gate": result["verdict"],
+           "problems": {k: c.get("notes") for k, c in result["checks"].items() if c["verdict"] != C.PASS},
+           "claims": short.get("claims", []),
+           "sources": [s.get("link") for s in short.get("sources", [])],
+           "youtube_id": None}
+    with open(LEDGER / "videos.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
 def main() -> None:
     GATE.mkdir(parents=True, exist_ok=True)
     icon = {C.PASS: "✅", C.REVIEW: "🟡", C.REJECT: "⛔"}
@@ -177,6 +193,7 @@ def main() -> None:
         (GATE / f"{name}.json").write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
         short.pop("_heard", None)
         short["gate"] = result["verdict"]
+        record_video(name, short, result)
         script_path.write_text(json.dumps(short, indent=2, ensure_ascii=False), encoding="utf-8")
         lines += [f"### {name}: {icon[result['verdict']]} {result['verdict']}", "",
                   "| check | verdict | why |", "|---|---|---|"]

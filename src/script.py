@@ -532,11 +532,19 @@ def similarity(a: set, b: set) -> float:
 def load_recent() -> None:
     if RECENT:
         return
+    # the permanent script record first (survives a lost cache); the 7-day cache file otherwise
+    made = []
     try:
-        made = json.loads(HISTORY.read_text(encoding="utf-8"))
+        lines = SCRIPT_LEDGER.read_text(encoding="utf-8").splitlines()
+        made = [json.loads(l) for l in lines[-60:] if l.strip()]
     except (OSError, ValueError):
-        made = []
-    RECENT.extend(m for m in made[-30:] if m.get("spoken"))
+        pass
+    if not made:
+        try:
+            made = json.loads(HISTORY.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            made = []
+    RECENT.extend(m for m in made[-60:] if m.get("spoken"))
 
 
 def closest(text: str, field: str) -> tuple[float, str]:
@@ -884,6 +892,7 @@ def write_summary(shorts: list[dict]) -> None:
 
 
 HISTORY = DATA / "history" / "made.json"
+SCRIPT_LEDGER = DATA / "history" / "ledger" / "scripts.jsonl"
 # 2 runs a day x 2 Shorts = 4 a day (collect.yml): fits the YouTube upload quota and Claude Pro's limits
 SHORTS_PER_RUN = int(os.environ.get("SHORTS_PER_RUN", "2"))
 
@@ -903,6 +912,18 @@ def remember(shorts: list[dict]) -> None:
               "hook": (s.get("hook") or {}).get("text", ""),
               "spoken": " ".join(b.get("say", "") for b in s.get("beats", []))} for s in shorts]
     HISTORY.write_text(json.dumps(keep, indent=1), encoding="utf-8")
+    # permanent record (private state repository): every script ever made, for repetition checks
+    # that survive a lost cache and for the channel's own archive
+    SCRIPT_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    with open(SCRIPT_LEDGER, "a", encoding="utf-8") as f:
+        for s in shorts:
+            f.write(json.dumps({"time": now.isoformat(timespec="minutes"), "headline": s.get("headline", ""),
+                                "title": (s.get("titles") or [{}])[0].get("title", ""),
+                                "hook": (s.get("hook") or {}).get("text", ""),
+                                "spoken": " ".join(b.get("say", "") for b in s.get("beats", [])),
+                                "claims": s.get("claims", []),
+                                "verdict": (s.get("compliance") or {}).get("verdict")},
+                               ensure_ascii=False) + "\n")
 
 
 def main() -> None:

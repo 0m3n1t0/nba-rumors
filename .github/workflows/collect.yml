@@ -94,6 +94,7 @@ jobs:
         if: hashFiles('data/skip_reason.txt') == ''
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          BALLDONTLIE_API_KEY: ${{ secrets.BALLDONTLIE_API_KEY }}   # official NBA results (only confirms claims)
         run: |
           python src/script.py || status=$?
           mkdir -p data && cat "$GITHUB_STEP_SUMMARY" >> data/summary.md 2>/dev/null || true

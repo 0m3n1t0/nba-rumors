@@ -971,5 +971,33 @@ class Stage3(unittest.TestCase):
         self.assertEqual(tts.speakable("52-24-8 shooting"), "52, 24, 8 shooting")
 
 
+    # 45. Weekly: when YouTube or Claude fails, the report is still written and last week's
+    #     plan is never overwritten with an empty one; a plan older than 2 weeks stops steering
+    def test_45_weekly_survives(self):
+        import json, tempfile, weekly, editor
+        from pathlib import Path
+        old = (weekly.DATA, weekly.PLAN, weekly.service, weekly.claude, editor.PLAN)
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                weekly.DATA, weekly.PLAN = Path(tmp) / "data", Path(tmp) / "plan" / "week.json"
+                weekly.PLAN.parent.mkdir(parents=True)
+                from datetime import date
+                weekly.PLAN.write_text(json.dumps({"focus": "old", "week_of": date.today().isoformat()}))
+
+                def boom(*a, **k):
+                    raise RuntimeError("limit")
+                weekly.service, weekly.claude = boom, boom
+                weekly.main()
+                self.assertEqual(json.loads(weekly.PLAN.read_text())["focus"], "old")
+                report = next((weekly.DATA / "history" / "reports").glob("*.md")).read_text()
+                self.assertIn("last week's plan stays", report)
+                editor.PLAN = weekly.PLAN
+                self.assertIn("old", editor.plan_note())
+                weekly.PLAN.write_text('{"focus": "stale", "week_of": "2020-01-06"}')
+                self.assertEqual(editor.plan_note(), "")
+            finally:
+                weekly.DATA, weekly.PLAN, weekly.service, weekly.claude, editor.PLAN = old
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

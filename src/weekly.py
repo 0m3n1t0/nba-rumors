@@ -34,6 +34,18 @@ DATA = ROOT / "data"
 PLAN = ROOT / "plan" / "week.json"
 AUDIT_MIN_VIDEOS = 5
 RETENTION_MIN_VIEWS = 200
+# the daily pipeline's real output (collect.yml: 2 runs a day x SHORTS_PER_RUN Shorts)
+SHORTS_PER_DAY = int(os.environ.get("SHORTS_PER_RUN", "2")) * int(os.environ.get("RUNS_PER_DAY", "2"))
+
+
+def safe_claude(skill: str, task: str, data: str) -> tuple[dict, str]:
+    """One skill through Claude; on failure (the shared Pro limit, a bad answer) the report says
+    so and the other skills still run."""
+    try:
+        return claude(skill, task, data), ""
+    except Exception as exc:
+        print(f"[!] {skill} skipped: {exc}")
+        return {}, f"{skill} skipped this week ({type(exc).__name__})"
 
 
 def creds(scopes: list[str]):
@@ -126,8 +138,12 @@ def comments(yt, channel_id: str) -> list[dict]:
 
 def main() -> None:
     DATA.mkdir(exist_ok=True)
-    yt = service("youtube", "v3", ["https://www.googleapis.com/auth/youtube.readonly"])
-    channel_id, videos = channel_videos(yt)
+    try:
+        yt = service("youtube", "v3", ["https://www.googleapis.com/auth/youtube.readonly"])
+        channel_id, videos = channel_videos(yt)
+    except Exception as exc:   # no channel data this week: the plan is still made
+        print(f"[!] channel data unavailable: {exc}")
+        yt, channel_id, videos = None, "", []
     public = [v for v in videos if v["privacy"] == "public"]
     report = [f"# 📅 NBA Rumors weekly report, {date.today().isoformat()}", "",
               f"Channel: {len(videos)} videos ({len(public)} public)", ""]
@@ -136,10 +152,10 @@ def main() -> None:
     lessons, why = retention(videos)
     report += ["## 📉 yt-retention", ""]
     if lessons:
-        fix = claude("yt-retention", "From these retention reports, list what to change in our scripts "
-                     'and pacing. Return {"findings": ["..."], "change_next_week": ["..."]}',
-                     json.dumps(lessons, indent=1))
-        report += [f"- {x}" for x in fix.get("findings", [])] + ["", "**Change next week:**"]
+        fix, err = safe_claude("yt-retention", "From these retention reports, list what to change in our scripts "
+                               'and pacing. Return {"findings": ["..."], "change_next_week": ["..."]}',
+                               json.dumps(lessons, indent=1))
+        report += ([f"_{err}_"] if err else []) + [f"- {x}" for x in fix.get("findings", [])] + ["", "**Change next week:**"]
         report += [f"- {x}" for x in fix.get("change_next_week", [])]
     else:
         report.append(f"_{why}_")
@@ -148,10 +164,10 @@ def main() -> None:
     # yt-audit
     report += ["", "## 🩺 yt-audit", ""]
     if len(public) >= AUDIT_MIN_VIDEOS:
-        audit = claude("yt-audit", "Audit the channel from these videos (titles, length, views, likes, "
-                       "comments). Return {\"verdict\": \"...\", \"fix_first\": [\"...\"], \"keep\": [\"...\"]}",
-                       json.dumps(public[:60], indent=1))
-        report += [f"**Verdict:** {audit.get('verdict', '')}", "", "**Fix first:**"]
+        audit, err = safe_claude("yt-audit", "Audit the channel from these videos (titles, length, views, likes, "
+                                 "comments). Return {\"verdict\": \"...\", \"fix_first\": [\"...\"], \"keep\": [\"...\"]}",
+                                 json.dumps(public[:60], indent=1))
+        report += ([f"_{err}_"] if err else []) + [f"**Verdict:** {audit.get('verdict', '')}", "", "**Fix first:**"]
         report += [f"- {x}" for x in audit.get("fix_first", [])] + ["", "**Keep doing:**"]
         report += [f"- {x}" for x in audit.get("keep", [])]
     else:
@@ -163,23 +179,25 @@ def main() -> None:
     if os.environ.get("COMMENTS", "off").lower() == "on":
         report += ["", "## 💬 yt-comment", ""]
         try:
-            threads = comments(yt, channel_id) if public else []
+            threads = comments(yt, channel_id) if public and yt else []
         except Exception as exc:
             threads, report = [], report + [f"_comments unavailable: {exc}_"]
         if threads:
-            drafts = claude("yt-comment", "Triage these comments (reply / like only / ignore / hide). Draft a "
+            drafts, _ = safe_claude("yt-comment", "Triage these comments (reply / like only / ignore / hide). Draft a "
                             "short reply in the channel voice for the ones worth answering. No pet names, no "
                             "flirting, never argue, never invent facts. Return {\"drafts\": [{\"thread_id\": "
                             "\"...\", \"comment\": \"...\", \"triage\": \"reply\", \"reply\": \"...\"}]}",
-                            json.dumps(threads[:80], indent=1)).get("drafts", [])
+                            json.dumps(threads[:80], indent=1))
+            drafts = drafts.get("drafts", [])
             for d in [d for d in drafts if d.get("triage") == "reply"][:30]:
                 report.append(f"- **{d.get('comment', '')[:120]}**  \n  ↳ {d.get('reply', '')}")
 
     # yt-plan (always)
     topics = json.loads((DATA / "topics.json").read_text()) if (DATA / "topics.json").exists() else []
-    plan = claude("yt-plan",
-                  "Plan next week for NBA Rumors. Capacity: 3 Shorts a day (automatic) and 2 long videos "
-                  "(8-10 min) a week. Drama and intrigue first, but the biggest viral stories always get in. "
+    plan, err = safe_claude("yt-plan",
+                  f"Plan next week for NBA Rumors. Capacity: {SHORTS_PER_DAY} Shorts a day (automatic, only "
+                  "stories that score high enough are made). Long videos are not produced yet: give long-video "
+                  "IDEAS only. Drama and intrigue first, but the biggest viral stories always get in. "
                   "Use the stories and audience signals below, and the retention/audit lessons if any. "
                   "Plan themes, not invented facts: news decides the exact stories each day. "
                   'Return {"focus": "...", "long_videos": [{"day": "Tue", "title_idea": "...", "angle": "..."}], '
@@ -188,10 +206,14 @@ def main() -> None:
                                            "search_hits": t.get("search_hits", 0)} for t in topics[:25]],
                               "retention_lessons": fix, "audit": audit,
                               "recent_videos": public[:20]}, indent=1))
-    plan["week_of"] = date.today().isoformat()
-    PLAN.parent.mkdir(exist_ok=True)
-    PLAN.write_text(json.dumps(plan, indent=2), encoding="utf-8")
-    report += ["", "## 🗓️ yt-plan: next week", "", f"**Focus:** {plan.get('focus', '')}", ""]
+    report += ["", "## 🗓️ yt-plan: next week", ""]
+    if plan:
+        plan["week_of"] = date.today().isoformat()
+        PLAN.parent.mkdir(exist_ok=True)
+        PLAN.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+    else:   # no new plan: last week's plan stays (never overwritten with an empty one)
+        report.append(f"_{err}: last week's plan stays_")
+    report += [f"**Focus:** {plan.get('focus', '')}", ""]
     report += [f"- {l.get('day', '')}: **{l.get('title_idea', '')}** ({l.get('angle', '')})"
                for l in plan.get("long_videos", [])]
     report += ["", "**Shorts themes:** " + ", ".join(plan.get("shorts_themes", [])),

@@ -158,7 +158,17 @@ def plan_note() -> str:
     """This week's yt-plan (written by the weekly job), so the plan steers the daily picks."""
     if not PLAN.exists():
         return ""
-    plan = json.loads(PLAN.read_text(encoding="utf-8"))
+    try:
+        plan = json.loads(PLAN.read_text(encoding="utf-8"))
+    except ValueError:
+        return ""
+    # a plan more than two weeks old (the weekly job failed since) no longer steers the picks
+    from datetime import date
+    try:
+        if (date.today() - date.fromisoformat(str(plan.get("week_of", ""))[:10])).days > 14:
+            return ""
+    except ValueError:
+        pass
     return ("\nTHIS WEEK'S PLAN (yt-plan): focus: " + str(plan.get("focus", "")) + "; long videos: "
             + "; ".join(f"{l.get('day')}: {l.get('title_idea')}" for l in plan.get("long_videos", []))
             + "; Shorts themes: " + ", ".join(plan.get("shorts_themes", []))

@@ -410,11 +410,28 @@ def phrase_groups(words: list[dict]) -> list[list[dict]]:
     cur: list[dict] = []
     for w in words:
         chars = len(" ".join(x["word"] for x in cur + [w]))
-        if cur and (len(cur) >= PHRASE_WORDS or chars > PHRASE_CHARS or re.search(r"[.,!?;:]$", cur[-1]["word"])):
+        if cur and (len(cur) >= PHRASE_WORDS or chars > PHRASE_CHARS or re.search(r"[.,!?;:]$", cur[-1]["word"])
+                    or bool(cur[-1].get("receipt")) != bool(w.get("receipt"))):   # the receipt stands alone
             groups.append(cur)
             cur = []
         cur.append(w)
     return groups + ([cur] if cur else [])
+
+
+def mark_receipt(words: list[dict], receipt: str) -> tuple[list[dict], float | None]:
+    """The receipt (the Short's sharpest sourced quote or number) is found in the spoken words
+    and marked: it gets its own big caption and a low hit. Returns (words, its start time)."""
+    key = [norm(t) for t in (receipt or "").split() if norm(t)]
+    toks = [norm(w["word"]) for w in words]
+    if not key:
+        return words, None
+    for i in range(len(toks) - len(key) + 1):
+        if toks[i:i + len(key)] == key:
+            out = [dict(w) for w in words]
+            for w in out[i:i + len(key)]:
+                w["receipt"] = True
+            return out, words[i]["start"]
+    return words, None
 
 
 def key_words(beats: list[dict], headline: str = "") -> set[str]:
@@ -464,6 +481,9 @@ def captions(words: list[dict], path: Path, accent: str, keys: set[str] | None =
         y = y_at(g[0]["start"])            # one phrase never jumps mid-way
         chars = len(" ".join(x["word"] for x in g))
         fs = min(140, int(140 * 13 / max(13, chars)))  # long phrases shrink, never run off screen
+        big = any(x.get("receipt") for x in g)
+        if big:                                         # the receipt: bigger, all in the brand colour
+            fs = min(160, int(fs * 1.15))
         for j, w in enumerate(g):
             nxt = starts[idx + 1] if idx + 1 < len(starts) else w["end"] + 0.4
             end = min(nxt, w["end"] + 0.6)  # never overlaps the next caption
@@ -471,7 +491,7 @@ def captions(words: list[dict], path: Path, accent: str, keys: set[str] | None =
             parts = []
             for k, x in enumerate(g):
                 word = re.sub(r"[{}\\]", "", x["word"]).upper()
-                key = norm(x["word"]) in keys
+                key = norm(x["word"]) in keys or big
                 if k == j:
                     parts.append(f"{{\\c{bgr}\\fscx114\\fscy114\\t(0,90,\\fscx100\\fscy100)}}{word}"
                                  f"{{\\c&H00FFFFFF\\fscx100\\fscy100}}")
@@ -835,6 +855,10 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     sfx.append((cta_at + 0.05, "logo"))
     ass = work / "captions.ass"
     words = script_words(timing["words"], timing["beats"])
+    words, receipt_at = mark_receipt(words, short.get("receipt", ""))
+    if receipt_at is not None and not any(k == "impact" and abs(t - receipt_at) < 1.5 for t, k in sfx):
+        sfx.append((max(0.0, receipt_at - 0.05), "impact"))
+        log.append(f"receipt @{receipt_at:.1f}s")
     captions(words, ass, accent, key_words([{"say": short["hook"]["text"]}] + short["beats"],
                                         short.get("headline", "") + ". " + (short.get("thumbnail_text") or "").title()), places)
     log.append(f"captions: {len(phrase_groups(words))} phrases")

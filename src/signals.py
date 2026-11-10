@@ -238,6 +238,32 @@ NBA_WORDS = re.compile(r"\b(nba|basketball|lakers|celtics|warriors|knicks|bucks|
                        r"grizzlies|pelicans|timberwolves)\b", re.I)
 
 
+REDDIT_RSS = "https://www.reddit.com/r/nba/hot/.rss?limit=50"   # public feed, no key
+
+
+def reddit_hot() -> list[str]:
+    """Titles of r/nba's hot posts, in order (the public RSS feed). Fans argue about a beef
+    there before the news sites catch up. Skipped quietly when the feed is not reachable."""
+    import urllib.request
+    import xml.etree.ElementTree as ET
+    req = urllib.request.Request(REDDIT_RSS, headers={"User-Agent": "nba-rumors-pipeline/1.0 (trend signal; "
+                                                                    "github.com/0m3n1t0/nba-rumors)"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        root = ET.fromstring(r.read())
+    return [(el.text or "").strip() for e in root.iter() if e.tag.endswith("entry")
+            for el in e if el.tag.endswith("title")]
+
+
+def reddit_heat(topic: dict, titles: list[str]) -> float:
+    """0-10: how many of r/nba's hot posts are about this topic's real people (a post in the
+    top 10 counts double)."""
+    keys = star_keys(topic)
+    if not keys:
+        return 0.0
+    hits = sum(2 if rank < 10 else 1 for rank, t in enumerate(titles) if mentions(keys, t))
+    return round(min(10.0, 2.0 * hits), 1)
+
+
 def star_keys(topic: dict) -> set[str]:
     """Search keys only for the topic's people that Wikipedia confirmed as sports people."""
     keys = set()
@@ -340,6 +366,16 @@ def main() -> None:
         t["google_queries"] = [g["query"] for g in hits][:3]
 
     try:
+        signals["reddit"] = reddit_hot()
+        print(f"[+] Reddit r/nba: {len(signals['reddit'])} hot posts")
+    except Exception as exc:
+        signals["reddit"] = []
+        signals["errors"].append(f"reddit: {exc}")
+        print(f"[!] Reddit signal skipped: {exc}")
+    for t in topics[:TOP_TOPICS]:
+        t["reddit"] = reddit_heat(t, signals["reddit"])
+
+    try:
         momentum(topics)
     except Exception as exc:
         signals["errors"].append(f"momentum: {exc}")
@@ -354,13 +390,14 @@ def main() -> None:
     for v in signals["videos"][:10]:
         lines.append(f"- {v['views_per_hour']:,}/h · {v['title']} ({v['channel']})")
     lines += ["", "**Topics people are watching and searching:**", "",
-              "| YouTube heat | search hits | Google trend | rising (new outlets) | star power | topic |", "|---|---|---|---|---|---|"]
+              "| YouTube heat | search hits | Google trend | Reddit | rising (new outlets) | star power | topic |", "|---|---|---|---|---|---|---|"]
     hot = sorted(topics[:TOP_TOPICS], key=lambda t: -(t.get("youtube_heat", 0) + t.get("search_hits", 0)
-                                                     + t.get("google_trend", 0)))
+                                                     + t.get("google_trend", 0) + t.get("reddit", 0)))
     for t in hot[:12]:
         gq = f" ({', '.join(t['google_queries'])})" if t.get("google_queries") else ""
         rise = f"+{t['momentum']}" if t.get("momentum") else "0"
-        lines.append(f"| {t.get('youtube_heat', 0)} | {t.get('search_hits', 0)} | {t.get('google_trend', 0)}{gq} | {rise} | {t.get('star_fame', 0)} | {t['headline']} |")
+        lines.append(f"| {t.get('youtube_heat', 0)} | {t.get('search_hits', 0)} | {t.get('google_trend', 0)}{gq} | "
+                     f"{t.get('reddit', 0)} | {rise} | {t.get('star_fame', 0)} | {t['headline']} |")
     nba_trends = [g for g in signals.get("google_trends", [])
                   if re.search(r"nba|lakers|celtics|warriors|knicks|bucks|heat|nuggets|suns|mavericks|"
                                r"76ers|sixers|nets|bulls|cavaliers|thunder|spurs|rockets|clippers|kings|"

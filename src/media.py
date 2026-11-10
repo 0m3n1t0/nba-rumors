@@ -55,6 +55,12 @@ OPENVERSE = "https://api.openverse.org/v1/"
 UA = "NBARumorsPipeline/1.0 (https://github.com/0m3n1t0/nba-rumors)"
 PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY", "")
 OV_ID, OV_SECRET = os.environ.get("OPENVERSE_CLIENT_ID", ""), os.environ.get("OPENVERSE_CLIENT_SECRET", "")
+FLICKR_KEY = os.environ.get("FLICKR_API_KEY", "")   # free key; without it Flickr is simply skipped
+FLICKR_API = "https://api.flickr.com/services/rest/"
+# Flickr licence ids we may use (commercial use and changes allowed): the rest (NC, ND, all
+# rights reserved, "no known copyright restrictions") are never requested.
+FLICKR_LICENCES = {"4": "CC BY 2.0", "5": "CC BY-SA 2.0", "9": "CC0 1.0", "10": "Public Domain Mark",
+                   "11": "CC BY 4.0", "12": "CC BY-SA 4.0"}
 # anonymous Openverse allows ~5 calls/hour (runs are 6 h apart); a free registered key allows 100/min
 OPENVERSE_BUDGET = [80 if OV_ID else 6]
 _OV_TOKEN: list[str] = []
@@ -494,6 +500,61 @@ def openverse_photos(person: str) -> list[dict]:
     return sorted(out, key=lambda f: -f["score"])
 
 
+def flickr_photos(person: str) -> list[dict]:
+    """The person's photos straight from Flickr (where most free NBA photos are first published:
+    All-Pro Reels, Keith Allison and others). The licence comes from Flickr itself, so it is the
+    live one. Same rules as Commons: the person named, big enough, an allowed licence."""
+    if not FLICKR_KEY:
+        return []
+    ids = ",".join(k for k, v in FLICKR_LICENCES.items() if licence_ok(v))
+    params = {"method": "flickr.photos.search", "api_key": FLICKR_KEY, "text": f'"{person}"',
+              "license": ids, "content_type": "1", "media": "photos", "sort": "relevance",
+              "per_page": "60", "format": "json", "nojsoncallback": "1", "safe_search": "1",
+              "extras": "license,owner_name,tags,description,date_taken,url_k,url_h,url_l,o_dims"}
+    try:
+        data = json.loads(get(FLICKR_API + "?" + urllib.parse.urlencode(params), timeout=30))
+        if data.get("stat") != "ok":
+            raise RuntimeError(data.get("message", "Flickr error"))
+    except Exception as exc:
+        print(f"[!] Flickr search failed for {person}: {exc}")
+        PHOTO_STATS.setdefault(person, {})["flickr"] = f"failed ({str(exc)[:40]})"
+        return []
+    first, last = (fold(person).split() + ["", ""])[:2]
+    out = []
+    for r in (data.get("photos") or {}).get("photo", []):
+        desc = r.get("description", {})
+        desc = desc.get("_content", "") if isinstance(desc, dict) else str(desc)
+        text = fold(f"{r.get('title', '')} {r.get('tags', '')} {clean(desc)}")
+        lic = FLICKR_LICENCES.get(str(r.get("license")), "")
+        if first not in text or last not in text or not lic or not licence_ok(lic):
+            continue
+        size = next(((r[f"url_{k}"], int(r.get(f"width_{k}") or 0), int(r.get(f"height_{k}") or 0))
+                     for k in ("k", "h", "l") if r.get(f"url_{k}")), None)
+        if not size or min(size[1], size[2]) < 700:
+            continue
+        url, w, h = size
+        year = int((r.get("datetaken") or "2000")[:4] or 2000)
+        hoops = bool(BASKETBALL.search(text))
+        out.append({
+            "kind": "photo", "url": url, "title": r.get("title", "") or person,
+            "page": f"https://www.flickr.com/photos/{r.get('owner')}/{r.get('id')}/",
+            "author": r.get("ownername") or "Flickr user", "license": lic,
+            "license_url": "", "source": "Flickr", "license_verified": True,
+            "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4) + (1000 if hoops else 0),
+            "hoops": hoops,
+        })
+    if sum(f["hoops"] for f in out) >= 2:      # enough real basketball photos: drop the namesakes
+        out = [f for f in out if f["hoops"]]
+    PHOTO_STATS.setdefault(person, {})["flickr"] = len(out)
+    return sorted(out, key=lambda f: -f["score"])
+
+
+def flickr_id(page: str) -> str:
+    """The same Flickr photo found through Flickr and through Openverse counts once."""
+    m = re.search(r"flickr\.com/photos/[^/]+/(\d+)", page or "")
+    return m.group(1) if m else page
+
+
 _all_photos: dict[str, list[dict]] = {}
 PHOTO_STATS: dict[str, dict] = {}   # per person: how many usable photos each source gave
 
@@ -502,8 +563,11 @@ def photos(person: str) -> list[dict]:
     """Commons AND Openverse (Flickr etc.), merged, best first."""
     if person not in _all_photos:
         found = list(commons_photos(person))
-        seen = {f["page"] for f in found}
-        found += [f for f in openverse_photos(person) if f["page"] not in seen]
+        seen = {flickr_id(f["page"]) for f in found}
+        for f in flickr_photos(person) + openverse_photos(person):   # Flickr's live licence first
+            if flickr_id(f["page"]) not in seen:
+                seen.add(flickr_id(f["page"]))
+                found.append(f)
         _all_photos[person] = sorted(found, key=lambda f: -f["score"])
     return _all_photos[person]
 
@@ -1595,7 +1659,8 @@ def main() -> None:
         report += [f"- {d}" for d in BEAT_DIAG]
     if PHOTO_STATS:
         report += ["", "**Photos found per person** (usable, before AI judging):", ""] + [
-            f"- {who}: Commons {st.get('commons', '-')}, Openverse {st.get('openverse', '-')}"
+            f"- {who}: Commons {st.get('commons', '-')}, Flickr {st.get('flickr', 'no key' if not FLICKR_KEY else '-')}, "
+            f"Openverse {st.get('openverse', '-')}"
             for who, st in PHOTO_STATS.items()]
     if MUSIC_LOG:
         report += ["", "**Music search:**", ""] + [f"- {m}" for m in MUSIC_LOG]

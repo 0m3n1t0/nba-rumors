@@ -66,6 +66,7 @@ headlines, and three AUDIENCE signals:
   search_hits: how many live YouTube search suggestions mention it (what people type)
   google_trend (0-10): a US Google search about it is trending right now (0 = not trending)
   momentum (0-5): how many MORE outlets cover it than a few hours ago (high = breaking now)
+  reddit (0-10): how many of r/nba's hot posts (fans arguing right now) are about its people
   star_fame (0-10): how famous its people are THIS WEEK, measured by their Wikipedia page
                     views (star_names lists them); 0 can also mean a name was not matched
 Media coverage says a story is big; heat, search and trend say the AUDIENCE wants it. Weigh them heavily
@@ -222,6 +223,7 @@ def build_input(topics: list[dict]) -> str:
             "search_hits": t.get("search_hits", 0),
             "google_trend": t.get("google_trend", 0),
             "momentum": t.get("momentum", 0),
+            "reddit": t.get("reddit", 0),
             "star_fame": t.get("star_fame", 0),
             "star_names": t.get("star_names", []),
             "samples": [f'{it["title"]} ({it["publisher"]})' for it in t["items"][:4]],
@@ -324,7 +326,10 @@ def score_parts(r: dict) -> dict:
     return {
         "E": min(10, drama),
         "S": min(10, stars),
-        "D": round(min(10.0, 0.5 * heat + 0.5 * trend + 0.25 * min(hits, 20)), 1),
+        # demand: YouTube views, Google, search phrases and (added on top, never subtracting)
+        # how hot r/nba is about it; a topic without Reddit data scores exactly as before
+        "D": round(min(10.0, 0.5 * heat + 0.5 * trend + 0.25 * min(hits, 20)
+                       + 0.3 * (r.get("reddit", 0) or 0)), 1),
         "T": round(min(10.0, 0.6 * fresh + 1.6 * rising), 1),
         "C": min(10, debate),
         "V": min(10, viral),
@@ -367,6 +372,7 @@ def parse(text: str, n_topics: int, topics: list[dict] | None = None) -> dict:
             r["youtube_heat"] = topics[r["id"]].get("youtube_heat", 0)
             r["google_trend"] = topics[r["id"]].get("google_trend", 0)
             r["momentum"] = topics[r["id"]].get("momentum", 0)
+            r["reddit"] = topics[r["id"]].get("reddit", 0)
             r["star_fame"] = topics[r["id"]].get("star_fame", 0)
             newest = topics[r["id"]].get("newest")
             if newest:

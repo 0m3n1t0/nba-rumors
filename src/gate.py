@@ -142,10 +142,29 @@ def check_technical(video: Path, short: dict) -> tuple[str, list[str]]:
     return verdict, notes
 
 
+def check_editorial(short: dict) -> tuple[str, list[str]]:
+    """The script stage's own hold (⚠️ needs review: it repeats itself, has no closing question,
+    nothing beyond the headline, a number or a quote not in the sources, too close to an
+    earlier Short, wrong length). A held script is never published automatically."""
+    if short.get("ready", True):
+        return C.PASS, []
+    notes = list((short.get("retention") or {}).get("hard") or [])
+    if ((short.get("compliance") or {}).get("verdict") or C.PASS) != C.PASS:
+        notes.append("monetization checks did not pass (see above)")
+    for key, what in (("unsupported_numbers", "numbers not in the sources"),
+                      ("unsupported_quotes", "quotes not in the sources"),
+                      ("banned_phrases", "banned phrases"), ("too_similar_to", "too similar to an earlier Short")):
+        if short.get(key):
+            notes.append(what)
+    return C.REVIEW, notes or ["the script stage held it for review"]
+
+
 def decide(short: dict, items: list, flags: dict, music: dict | None, video: Path) -> dict:
     checks = dict((short.get("compliance") or {}).get("checks") or {})
     if not checks:
         checks["script_checks"] = {"verdict": C.REVIEW, "notes": ["the script was not checked"]}
+    v, n = check_editorial(short)
+    checks["editorial"] = {"verdict": v, "notes": n}
     v, n = check_visuals(items, flags)
     checks["visual_licensing"] = {"verdict": v, "notes": n}
     v, n = check_music(music)

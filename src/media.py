@@ -71,6 +71,7 @@ ALLOW_SA = os.environ.get("MEDIA_ALLOW_SA", "1") != "0"
 SA_NOTE = ("This video is licensed under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/) "
            "because it adapts share-alike photos credited above.")
 CREDIT_MARK = "Photo and video credits:"
+CHANGES_NOTE = "Changes: the photos and clips above were cropped, zoomed, colour-graded and captioned."
 NO_TOOLS = "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task"
 LOGO_WORDS = re.compile(r"\b(logo|brand|nike|adidas|jordan|nba|wnba|jersey number|trademark|text)\b", re.I)
 FALLBACK_BROLL = ["basketball dunk", "basketball game", "basketball player dribbling",
@@ -387,6 +388,23 @@ def commons_trusted(meta: dict, title: str, video: bool = False) -> bool:
 CATEGORY_SUBCATS = 4      # the person's newest sub-categories also read ("Jayson Tatum in 2025")
 
 
+def category_titles(person: str) -> list[str]:
+    """Commons categories whose name is this person's name once accents are ignored
+    ("Category:Luka Dončić" for "Luka Doncic"), the "(basketball)" one first."""
+    params = {"action": "query", "format": "json", "list": "search", "srnamespace": "14",
+              "srsearch": person, "srlimit": "10"}
+    try:
+        hits = json.loads(get(COMMONS + "?" + urllib.parse.urlencode(params))).get("query", {}).get("search", [])
+    except Exception as exc:
+        print(f"[!] Commons category search failed for {person}: {exc}")
+        return []
+    want = fold(person).strip()
+    out = [h["title"] for h in hits if h.get("title", "").startswith("Category:")
+           and fold(re.sub(r"\s*\([^)]*\)\s*$", "", h["title"][9:])).strip() == want
+           and (not re.search(r"\([^)]*\)\s*$", h["title"]) or h["title"].endswith("(basketball)"))]
+    return sorted(out, key=lambda t: not t.endswith("(basketball)"))
+
+
 def category_files(person: str) -> list[dict]:
     """Image files in Commons' category for this person, plus his newest sub-categories.
     "Category:<Name> (basketball)" first (how Commons separates namesakes), then the plain name.
@@ -405,7 +423,14 @@ def category_files(person: str) -> list[dict]:
         return [m["title"] for m in data.get("query", {}).get("categorymembers", [])]
 
     last = fold(person).split()[-1] if person.strip() else ""
-    for cat in (f"Category:{person} (basketball)", f"Category:{person}"):
+    base = [f"Category:{person} (basketball)", f"Category:{person}"]
+
+    def tried():
+        # the plain spelling first (unchanged); only when it has nothing, the category under
+        # its real name ("Luka Dončić", not "Luka Doncic": Commons titles keep the accents)
+        yield from base
+        yield from (c for c in category_titles(person) if c not in base)
+    for cat in tried():
         try:
             files = files_in(cat)
             subs = [c for c in subcats(cat) if last and last in fold(c)]
@@ -430,6 +455,12 @@ def category_files(person: str) -> list[dict]:
         # photos only (the text search uses filetype:bitmap too): no SVG logos, no GIFs
         return [f for f in files if (f.get("imageinfo") or [{}])[0].get("mime", "") in ("image/jpeg", "image/png", "image/webp")]
     return []
+
+
+def shot_date(value: str) -> str:
+    """The day a photo was taken ("2019-06-10"), from Commons' DateTimeOriginal; "" if unknown."""
+    m = re.search(r"\b((?:19|20)\d\d)[-:/](\d\d)[-:/](\d\d)\b", clean(value or ""))
+    return "-".join(m.groups()) if m else ""
 
 
 def commons_photos(person: str) -> list[dict]:
@@ -476,6 +507,7 @@ def commons_photos(person: str) -> list[dict]:
             "kind": "photo", "url": info.get("thumburl"), "title": re.sub(r"^File:", "", title),
             "page": info.get("descriptionurl", ""), "author": clean(meta.get("Artist", "")) or "unknown author",
             "license": lic, "license_url": meta.get("LicenseUrl", ""), "source": "Wikimedia Commons",
+            "date": shot_date(meta.get("DateTimeOriginal", "")),
             "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4)
                      + (1000 if BASKETBALL.search(text) else 0),
             "hoops": bool(BASKETBALL.search(text)),
@@ -980,6 +1012,38 @@ def rank_candidates(cands: list[dict], choice: dict) -> tuple:
     return ranked, claude_top, tier, scores, n_ph, bp, bc
 
 
+def scene_of(c: dict) -> tuple | None:
+    """Two photos by the same photographer on the same day are one scene (the same game, the
+    same moment): they look like a repeat when shown in one Short. None when unknown."""
+    if not c or c.get("kind") != "photo" or not c.get("date"):
+        return None
+    author = fold(re.sub(r"<[^>]+>", "", c.get("author", ""))).strip()
+    return (author, c["date"]) if author and author != "unknown author" else None
+
+
+def fresh_first(order: list[int], cands: list[dict], tier, scores: dict, scenes: set,
+                hook: bool = False) -> list[int]:
+    """Only INSIDE a group the ranking cannot tell apart (same tier, same score, same kind:
+    rank_candidates gives them the same key) prefer a photo from a scene not shown yet in this
+    Short and, on the hook, a basketball photo. Nothing ever moves past a more relevant
+    candidate, so "the person > the story > generic" and "clip vs photo" stay exactly as they are."""
+    def sig(j):
+        return (tier(j), scores.get(j, 0), cands[j]["kind"])
+
+    def pref(j):
+        c = cands[j]
+        return (scene_of(c) in scenes if scene_of(c) else False,
+                bool(hook and c["kind"] == "photo" and not c.get("hoops")))
+    out, i = [], 0
+    while i < len(order):
+        j = i
+        while j < len(order) and sig(order[j]) == sig(order[i]):
+            j += 1
+        out += sorted(order[i:j], key=pref)
+        i = j
+    return out
+
+
 def round2_pool(keep: list[dict], faces: list[dict], more: list[dict]) -> list[dict]:
     """The second search ADDS candidates: round 1's two best stay, every photo of the story's
     people from round 1 stays too (relevance comes first), then the new finds."""
@@ -1087,10 +1151,12 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             print(f"[i] second search round for beats {weak}")
         result: list[dict | None] = []
         shown: set = set()  # nothing repeats inside one Short
+        scenes: set = set()  # the photographer + day of every photo shown (see scene_of)
         for i, cands in enumerate(per_beat):
             choice = picks.get(i, {})
             order = list(range(len(cands)))
             ranked, claude_top, tier, scores, n_ph, bp, bc = rank_candidates(cands, choice)
+            ranked = fresh_first(ranked, cands, tier, scores, scenes, hook=(i == 0))
             REJECTED.update(rejected_photos(cands, choice))
             if ranked and ranked[0] != claude_top:   # Claude's focus/start were for its own top pick
                 choice = {**choice, "score": int(scores.get(ranked[0], 0)), "focus": None, "start": None}
@@ -1130,6 +1196,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 if c["kind"] == "video":
                     used.add(c["id"])
                 shown.add(key)
+                scene_of(c) and scenes.add(scene_of(c))
                 chosen["match"] = (int(scores[idx]) if idx in scores
                                    else choice.get("score") if idx == (k or 0) - 1 else None)
                 break
@@ -1140,6 +1207,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             if need > 0:
                 # the second shot: the next most relevant (6+), a clip when equally relevant
                 fits = [j for j in ranked if scores.get(j, 0) >= ALT_MIN]   # already in who-first order
+                fits = fresh_first(fits, cands, tier, scores, scenes)        # ties: a new scene first
                 for j in fits:
                     c = cands[j]
                     key = c.get("id") or c["page"]
@@ -1156,6 +1224,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                     chosen["alts"].append(alt)
                     chosen["alt"] = chosen["alts"][0]
                     shown.add(key)
+                    scene_of(c) and scenes.add(scene_of(c))
                     if c["kind"] == "video":
                         used.add(c["id"])
                     if len(chosen["alts"]) >= need:
@@ -1528,10 +1597,13 @@ def credits(items: list[dict]) -> str:
             continue
         seen.add(it["page"])
         what = {"photo": "Photo", "video": "Video", "music": "Music"}[it["kind"]]
-        lines.append(f"- {what}: {it['author']}, {it['license']}, via {it['source']}: {it['page']}")
+        lic = it["license"] + (f" ({it['license_url']})" if it.get("license_url") else "")
+        lines.append(f"- {what}: {it['author']}, {lic}, via {it['source']}: {it['page']}")
     if any(it and not it.get("library") and re.search(r"\bsa\b|sharealike", str(it.get("license", "")).lower().replace("-", " "))
            for it in items):
         lines.append(SA_NOTE)
+    if len(lines) > 1:
+        lines.append(CHANGES_NOTE)
     return "\n".join(lines)
 
 

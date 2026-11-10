@@ -333,6 +333,11 @@ def credit_of(items: list[dict]) -> str:
                                       for x in items) + f" / {items[0]['source']}"
 
 
+# every photo's author, licence (with its link) and source are in the description, plus a note
+# that the pictures were changed (cropped, zoomed, captioned): that is how CC licences are
+# credited in a video ("in any reasonable manner based on the medium"), so the small line at the
+# bottom of the picture is off. Set to True to show it again.
+SHOW_CREDIT = False
 NAME_Y = {True: 1050, False: 760}   # name label: above low captions / below raised captions
 
 
@@ -368,7 +373,7 @@ def overlay(item: dict | None, hook_text: str, accent: str, label: str = "", low
             d.text(((W - w) / 2, y), line, font=f, fill="#FFFFFF", stroke_width=6, stroke_fill="#000000")
             y += int(size * 1.1)
     text = credit if credit is not None else credit_of([item] if item else [])
-    if text:
+    if text and SHOW_CREDIT:
         cf = font(28, bold=False)
         while d.textlength(text, font=cf) > W - 40 and cf.size > 18:
             cf = font(cf.size - 2, bold=False)

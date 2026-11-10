@@ -63,6 +63,7 @@ def check_limit(stdout: str, stderr: str) -> None:
 
 MAX_ARTICLES = 3
 WPM = 135           # measured speed of our voice (#11 at 1.15x)
+SPOKEN_WPM = 165    # how fast the finished narration really runs (80 words = 29 s): the summary's estimate
 MAX_WORDS = 85      # about 38 seconds: the niche's top Shorts run 25-35s (benchmark)
 BEAT_WORDS_MAX = 65  # the prompt asks for 45-65 words after the hook; trim only above that
 MIN_MATERIAL = 600   # characters of real article text; less = the story is only a headline
@@ -990,16 +991,25 @@ def stage_of(beat: dict) -> str:
     return st if st in STAGES else STAGE_OF_ROLE.get(str(beat.get("role") or "").lower(), "")
 
 
+NO_DEPTH = re.compile(r"\W*nothing beyond the headline", re.I)
+SPOKEN_PER = re.compile(r"\bper\s+[A-Z][\w'.]*")
+
+
 def retention_check(beats: list[dict]) -> dict:
     """hard = not ready to publish (repeats itself, no closing question);
     soft = weaker structure, shown in the summary."""
     hard, soft = [], []
     said: set[str] = set()
     for k, b in enumerate(beats):
-        words = content_words(b.get("say", ""))
+        text = b.get("say", "")
+        if k == len(beats) - 1:
+            # the closing question names the hook's people again ON PURPOSE (the loop): only the
+            # last beat's other sentences are checked for repeating
+            text = " ".join(x for x in re.split(r"(?<=[.!?])\s+", text.strip()) if x and not x.endswith("?"))
+        words = content_words(text)
         if k and words and len(words & said) / len(words) >= SAME_BEAT:
             hard.append(f"beat {k + 1} repeats what was already said")
-        said |= words
+        said |= content_words(b.get("say", ""))
     if not beats or not beats[-1].get("say", "").strip().endswith("?"):
         hard.append("the last beat does not end with the question")
     stages = [stage_of(b) for b in beats]
@@ -1209,9 +1219,16 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         softened += soften_quotes([h], sources)
         hooks[0]["text"] = h["say"]
     retention = retention_check(beats)
+    if NO_DEPTH.match((draft.get("strategy") or {}).get("headline_gap") or ""):
+        # the hook's question has no answer in the sources and the Short adds nothing to the
+        # headline: a broken promise and a reused-content risk, so a person decides
+        retention["hard"].append("nothing beyond the headline (no answer to the hook in the sources)")
     tics = stock_tics(beats)
     if tics:
         retention["soft"].append("stock phrases: " + ", ".join(f'"{x}"' for x in tics))
+    pers = SPOKEN_PER.findall(" ".join(b.get("say", "") for b in beats))
+    if pers:
+        retention["soft"].append(f'"{pers[0]}" said out loud (say "Yahoo Sports reported", not "per")')
     spoken = " ".join([hooks[0]["text"]] + [b.get("say", "") for b in beats]) if hooks else ""
     if hooks and beats and not loops_back(hooks[0]["text"], beats[-1].get("say", "")):
         retention["soft"].append("the closing question does not come back to the hook (no loop)")
@@ -1252,7 +1269,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         "beats": beats,
         "spoken": spoken,
         "words": words,
-        "seconds": round(words / WPM * 60),
+        "seconds": round(words / SPOKEN_WPM * 60),
         "titles": titles,
         "thumbnail_text": thumb,
         "sources": [{"publisher": s["publisher"], "title": s["title"], "link": s["link"]} for s in used],

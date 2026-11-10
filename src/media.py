@@ -384,6 +384,53 @@ def commons_trusted(meta: dict, title: str, video: bool = False) -> bool:
     return bool(TRUSTED_VIDEO.search(blob + " " + meta.get("Categories", "")))
 
 
+CATEGORY_SUBCATS = 4      # the person's newest sub-categories also read ("Jayson Tatum in 2025")
+
+
+def category_files(person: str) -> list[dict]:
+    """Image files in Commons' category for this person, plus his newest sub-categories.
+    "Category:<Name> (basketball)" first (how Commons separates namesakes), then the plain name.
+    Free, no key. Every file still passes the same licence, size and trust checks."""
+    def files_in(cat: str) -> list[dict]:
+        params = {"action": "query", "format": "json", "generator": "categorymembers",
+                  "gcmtitle": cat, "gcmtype": "file", "gcmlimit": "50",
+                  "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata", "iiurlwidth": "1600"}
+        data = json.loads(get(COMMONS + "?" + urllib.parse.urlencode(params)))
+        return list((data.get("query", {}).get("pages") or {}).values())
+
+    def subcats(cat: str) -> list[str]:
+        params = {"action": "query", "format": "json", "list": "categorymembers", "cmtitle": cat,
+                  "cmtype": "subcat", "cmlimit": "50"}
+        data = json.loads(get(COMMONS + "?" + urllib.parse.urlencode(params)))
+        return [m["title"] for m in data.get("query", {}).get("categorymembers", [])]
+
+    last = fold(person).split()[-1] if person.strip() else ""
+    for cat in (f"Category:{person} (basketball)", f"Category:{person}"):
+        try:
+            files = files_in(cat)
+            subs = [c for c in subcats(cat) if last and last in fold(c)]
+        except Exception as exc:
+            print(f"[!] Commons category failed for {person}: {exc}")
+            return []
+        if not files and not subs:
+            continue
+        if not cat.endswith("(basketball)") and not any(
+                BASKETBALL.search(f.get("title", "") + " " + clean(((f.get("imageinfo") or [{}])[0]
+                                  .get("extmetadata") or {}).get("ImageDescription", {}).get("value", "")))
+                for f in files) and not any(BASKETBALL.search(c) for c in subs):
+            return []      # a namesake's category (a politician called Robert Williams): not ours
+        # newest first: "... in 2026" before "... in 2019"
+        subs.sort(key=lambda c: max([int(y) for y in re.findall(r"\b(20\d\d)\b", c)] or [0]), reverse=True)
+        for sub in subs[:CATEGORY_SUBCATS]:
+            try:
+                files += files_in(sub)
+            except Exception:
+                pass
+        PHOTO_STATS.setdefault(person, {})["category"] = len(files)
+        return [f for f in files if (f.get("imageinfo") or [{}])[0].get("mime", "").startswith("image/")]
+    return []
+
+
 def commons_photos(person: str) -> list[dict]:
     if person in _photo_cache:
         return _photo_cache[person]
@@ -403,6 +450,12 @@ def commons_photos(person: str) -> list[dict]:
             data = {}
         for page in (data.get("query", {}).get("pages") or {}).values():
             pages.setdefault(page.get("title"), page)
+    # The person's own Commons category: files people filed under this exact player (many
+    # transferred from Flickr), found even when the file name does not spell the name out.
+    in_category = set()
+    for page in category_files(person):
+        in_category.add(page.get("title"))
+        pages.setdefault(page.get("title"), page)
     found = []
     first, last = (fold(person).split() + ["", ""])[:2]
     for page in pages.values():
@@ -412,7 +465,8 @@ def commons_photos(person: str) -> list[dict]:
         text = fold(title + " " + clean(meta.get("ImageDescription", "")))
         lic = clean(meta.get("LicenseShortName", ""))
         w, h = info.get("width", 0), info.get("height", 0)
-        if first not in text or last not in text or not licence_ok(lic) or min(w, h) < 700:
+        named = (first in text and last in text) or title in in_category
+        if not named or not licence_ok(lic) or min(w, h) < 700:
             continue
         if "trademark" in meta.get("Restrictions", "").lower() or not commons_trusted(meta, title):
             continue
@@ -1659,8 +1713,9 @@ def main() -> None:
         report += [f"- {d}" for d in BEAT_DIAG]
     if PHOTO_STATS:
         report += ["", "**Photos found per person** (usable, before AI judging):", ""] + [
-            f"- {who}: Commons {st.get('commons', '-')}, Flickr {st.get('flickr', 'no key' if not FLICKR_KEY else '-')}, "
-            f"Openverse {st.get('openverse', '-')}"
+            f"- {who}: Commons {st.get('commons', '-')} (category files read: {st.get('category', 0)}), "
+            + (f"Flickr {st.get('flickr', '-')}, " if FLICKR_KEY else "")
+            + f"Openverse {st.get('openverse', '-')}"
             for who, st in PHOTO_STATS.items()]
     if MUSIC_LOG:
         report += ["", "**Music search:**", ""] + [f"- {m}" for m in MUSIC_LOG]

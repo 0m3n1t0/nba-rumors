@@ -232,6 +232,34 @@ def google_trends() -> list[dict]:
     return out
 
 
+NBA_WORDS = re.compile(r"\b(nba|basketball|lakers|celtics|warriors|knicks|bucks|heat|nuggets|suns|"
+                       r"mavericks|76ers|sixers|nets|bulls|cavaliers|thunder|spurs|rockets|clippers|"
+                       r"kings|pistons|pacers|hawks|hornets|magic|raptors|wizards|jazz|blazers|"
+                       r"grizzlies|pelicans|timberwolves)\b", re.I)
+
+
+def star_keys(topic: dict) -> set[str]:
+    """Search keys only for the topic's people that Wikipedia confirmed as sports people."""
+    keys = set()
+    for entry in topic.get("star_names") or []:
+        name = re.sub(r"\s+[\d.]+$", "", entry).strip()      # "Jayson Tatum 6.1" -> "Jayson Tatum"
+        last = name.split()[-1].lower() if name else ""
+        if last:
+            keys.add(name.lower() if last in COMMON_SURNAMES or len(last) < 5 else last)
+    return keys
+
+
+def trend_matches(topic: dict, trend: dict) -> bool:
+    """The trending search itself names one of the topic's real people, or one of its news
+    headlines names them AND is about basketball."""
+    keys = star_keys(topic)
+    if not keys:
+        return False
+    if mentions(keys, trend.get("query", "")):
+        return True
+    return any(mentions(keys, n) and NBA_WORDS.search(n) for n in trend.get("news", []))
+
+
 def mentions(keys: set[str], text: str) -> bool:
     return any(re.search(rf"\b{re.escape(k)}\b", text, re.I) for k in keys)
 
@@ -281,13 +309,6 @@ def main() -> None:
                  if keys and mentions(keys, x) and (STORY_WORDS.search(x) or len(keys & set(x.split())) > 1)]
         t["search_hits"] = len(story)
         t["search_phrases"] = story[:8]
-        # Google Trends: a trending US search about this topic's people (0-10, log of the traffic:
-        # 200+ searches ~ 4.6, 20K+ ~ 8.6, 100K+ = 10)
-        hits = [g for g in signals.get("google_trends", [])
-                if keys and (mentions(keys, g["query"]) or any(mentions(keys, n) for n in g["news"]))]
-        best = max((g["traffic"] for g in hits), default=0)
-        t["google_trend"] = round(min(10.0, 2 * math.log10(best)), 1) if best > 1 else 0
-        t["google_queries"] = [g["query"] for g in hits][:3]
     top = max(raw.values(), default=0) or 1
     for i, t in enumerate(topics[:TOP_TOPICS]):
         # 0-10 relative to today's hottest topic (square root: differences stay visible,
@@ -307,6 +328,16 @@ def main() -> None:
     except Exception as exc:
         signals["errors"].append(f"star power: {exc}")
         print(f"[!] star power skipped: {exc}")
+
+    # Google Trends: a trending US search about this topic's people (0-10, log of the traffic:
+    # 200+ searches ~ 4.6, 20K+ ~ 8.6, 100K+ = 10). Only through REAL sports people (the names
+    # Wikipedia confirmed above): a Title Case headline makes fake "names" ("Perfect Lineup",
+    # "Blank Space") that matched "snowfall forecast" or "gta vi" and lifted dull stories.
+    for t in topics[:TOP_TOPICS]:
+        hits = [g for g in signals.get("google_trends", []) if trend_matches(t, g)]
+        best = max((g["traffic"] for g in hits), default=0)
+        t["google_trend"] = round(min(10.0, 2 * math.log10(best)), 1) if best > 1 else 0
+        t["google_queries"] = [g["query"] for g in hits][:3]
 
     try:
         momentum(topics)

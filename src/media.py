@@ -80,8 +80,15 @@ SPORT_WORDS = re.compile(r"\b(basketball|sport|sports|athlete|player|arena|stadi
                          r"television|studio|spotlight|scoreboard|trophy|money|contract|phone|"
                          r"smartphone|office|city|night)\b", re.I)
 # stock clips must be basketball (the colosseum, empty fields or random crowds are not this story)
-HOOPS_TAGS = re.compile(r"\b(basketball|nba|dunk|slam dunk|hoop|layup|free throw|three-pointer|"
-                        r"press conference|microphones?|interview)\b", re.I)
+# Stock footage must SHOW basketball. "press conference / microphone / interview" were allowed
+# and let in a coffee cup on a desk: anything that is not basketball never goes on screen.
+HOOPS_TAGS = re.compile(r"\b(basketball|dunk|slam dunk|hoop|layup|free throw|three-pointer)\b", re.I)
+# This is an NBA (men's pro) channel: women's, college, youth or amateur games are a different
+# context, never "generic pro basketball".
+NOT_NBA_LEVEL = re.compile(r"\b(wom[ae]n'?s?|female|girls?|lad(y|ies)|wnba|femenin\w*|feminin\w*|"
+                           r"femminil\w*|frauen|damen|dames|kobiet|ncaa|college|university|"
+                           r"high ?school|youth|junior|u-?1\d|u-?2[0-3]|amateur|wheelchair|3x3|"
+                           r"streetball|kids?|children)\b", re.I)
 UNRELATED = re.compile(r"\b(nurse|wheelchair|elderly|senior|patient|bab(y|ies)|child(ren)?|kids?|boys?|girls?|"
                        r"teen(ager)?s?|youth|junior|school|schoolyard|students?|street|streetball|park|"
                        r"playground|outdoor|backyard|amateur|aerial|drone|empty|colosseum|ruins|wedding|family|garden|nature|beach|cooking|"
@@ -157,15 +164,20 @@ is NOT "an NBA official stopping a player", it is an unrelated video. Score each
   8-9  the person the line is about: a clip, or a photo that fits the moment (face visible)
   6-7  close relevance: another person from THIS story (teammate, rival, coach), the person in
        a calmer moment, or a pro game/arena of the teams in the story
-  4-5  generic PROFESSIONAL basketball (a pro arena, a pro game, an NBA-level crowd) that fits
-       the mood, with no people from the story
-  0-3  everything else: amateur, street, schoolyard, kids or youth basketball, stock actors,
-       office or everyday scenes, wrong person, logos, watermarks, text - EVEN IF the action
-       in it matches the words literally
+  4-5  generic MEN'S PROFESSIONAL basketball (an NBA-level arena, game or crowd) that fits the
+       mood, with no people from the story
+  0-3  everything else: women's, college, amateur, street, schoolyard, kids or youth basketball,
+       stock actors, objects (a cup, a desk, a phone), office or everyday scenes, wrong person,
+       logos, watermarks, text - EVEN IF the thing in it matches the words literally
+WHEN THE LINE IS ABOUT WHAT SOMEONE SAID (an interview, a podcast, a press conference, a
+post): THAT person speaking - in any interview, at a podium or a microphone, even another day's
+interview - scores 9-10 (a clip) or 8 (a photo). Somebody ELSE's interview, or an interview,
+podium or microphone with nobody from the story, is X: the person matters, not the setting.
 Examples: "a Lakers official stopped Robert Williams" -> a photo of Robert Williams scores 8,
 a pro game of Portland or the Lakers 6, a stock clip of a referee with kids 1.
 "Draymond called out Brooks on his podcast" -> Draymond at a microphone 10, a photo of
-Draymond 8, a photo of Brooks 7, a stock podcast microphone 4.
+Draymond 8, a photo of Brooks 7, a stock podcast microphone 0 (an object, not basketball).
+"Kuminga yelled at Gobert" -> Kuminga or Gobert 8-9, a men's NBA game 4, a women's game 0.
 Score honestly and never inflate a clip: the pipeline already prefers clips when they are
 about as relevant. Between equal clips: REAL CLIP > STOCK CLIP. A wrong person always scores 0.
 Nothing may repeat: never pick a candidate already picked for an earlier beat.
@@ -179,8 +191,9 @@ line itself is about the crowd, the arena or the fans.
 
 For every beat return:
   "who": {"candidate number": "P" | "S" | "G" | "X"} for every candidate: P = the person this
-         line is about, S = another person or team from this story, G = generic professional
-         basketball, X = anything else (amateur, kids, street, stock actors, wrong person),
+         line is about, S = another person or team from this story, G = generic men's
+         professional basketball, X = anything else (women's, college, amateur, kids, street,
+         objects, stock actors, wrong person),
   "ranking": candidate numbers from best to worst (only those scoring 4 or more),
   "scores": {"candidate number": score} for every candidate in the ranking,
   "score": the score of the best one,
@@ -237,17 +250,37 @@ def people(short: dict) -> list[str]:
     text = short.get("headline", "") + ". " + ". ".join(b.get("say", "") for b in short.get("beats", []))
     counts = {n: text.count(n) + (5 if n in short.get("headline", "") else 0) for n in names(text)
               if not not_a_person(n)}
+    # "Rudy Gobert" and "Gobert Again": a "name" that starts with another name's surname is a
+    # fragment of the headline, not a second person
+    surnames = {fold(n).split()[-1] for n in counts}
+    counts = {n: c for n, c in counts.items() if fold(n).split()[0] not in surnames}
     return sorted(counts, key=lambda n: -counts[n])[:4]
 
 
 NOT_PERSON_FIRST = {"per", "via", "says", "said", "told", "reportedly", "according", "sources"}
 OUTLET_WORDS = {"yahoo", "espn", "cbs", "athletic", "clutchpoints", "hoopshype", "bleacher"}
+# Title Case headlines ("Kuminga Gets Frustrated With Rudy Gobert Again During
+# Timberwolves-Pelicans Game") give fake names: "Gobert Again", "During Timberwolves-Pelicans",
+# "Blank Space". Ordinary English words and team names are never part of a person's name.
+NOT_NAME_WORDS = set("""again during after before against amid with without over under about into
+onto from since until while when where what which who why how this that these those their there
+here then than now new old big small first last next blank space song music video show live game
+games night day week season team teams fans fan star stars report reports update news trade
+rumor rumors deal win wins loss lose beat beats returns return frustrated gets says said calls
+call back fires shot shots scoring leads lead out up down off still just even more most best
+worst top bottom final finals playoffs playoff cup league camp media day court arena""".split())
+TEAM_WORDS = set("""lakers celtics warriors knicks bucks heat nuggets suns mavericks 76ers sixers
+nets bulls cavaliers cavs thunder spurs rockets clippers kings pistons pacers hawks hornets
+raptors wizards jazz blazers grizzlies pelicans timberwolves wolves orlando golden state angeles
+oklahoma memphis toronto utah detroit phoenix denver boston miami chicago milwaukee cleveland
+houston sacramento portland minnesota charlotte atlanta indiana brooklyn philadelphia""".split())
 
 
 def not_a_person(name: str) -> bool:
-    """"Per Yahoo" or "Per CBS" from a spoken attribution is not a person to search photos of."""
-    words = fold(name).split()
-    return not words or words[0] in NOT_PERSON_FIRST or bool(set(words) & OUTLET_WORDS)
+    """"Per Yahoo", "Gobert Again", "Blank Space": not a person to search photos of."""
+    words = fold(name).replace("-", " ").split()
+    return (not words or words[0] in NOT_PERSON_FIRST or bool(set(words) & OUTLET_WORDS)
+            or bool(set(words) & NOT_NAME_WORDS) or bool(set(words) & TEAM_WORDS))
 
 
 def ask_claude(prompt: str, folder: str | None = None, timeout: int = 240, model: str = "") -> dict:
@@ -507,7 +540,7 @@ def commons_videos(search: str, person: str = "") -> list[dict]:
         text = fold(title + " " + clean(meta.get("ImageDescription", "")))
         if person and (first not in text or last not in text):
             continue
-        if not person and not BASKETBALL.search(text):
+        if not person and (not BASKETBALL.search(text) or NOT_NBA_LEVEL.search(text)):
             continue
         lic = clean(meta.get("LicenseShortName", ""))
         if not licence_ok(lic) or not commons_trusted(meta, title, video=True):
@@ -604,6 +637,7 @@ def pixabay_videos(query: str) -> list[dict]:
     for hit in data.get("hits", []):
         tags = hit.get("tags", "")
         if LOGO_WORDS.search(tags) or UNRELATED.search(tags) or not HOOPS_TAGS.search(tags) \
+                or NOT_NBA_LEVEL.search(tags) \
                 or hit.get("duration", 0) < 3:
             continue
         sizes = hit.get("videos", {})
@@ -838,6 +872,19 @@ def retry_needed(cands: list, pick: dict | None) -> bool:
     return not cands or ((pick or {}).get("score") or 0) < 7
 
 
+REJECTED: set[str] = set()   # photos Claude looked at and refused (wrong person, bad framing)
+
+
+def rejected_photos(cands: list[dict], choice: dict) -> set[str]:
+    """Photos on a judged sheet that Claude did not rank (below 4) or marked X."""
+    if not choice:
+        return set()
+    ranked = {k for k in (choice.get("ranking") or []) if isinstance(k, int)}
+    who = {str(k): str(v).upper()[:1] for k, v in (choice.get("who") or {}).items()}
+    return {c["page"] for n, c in enumerate(cands, 1)
+            if c["kind"] == "photo" and (n not in ranked or who.get(str(n)) == "X")}
+
+
 def unjudged_ok(c: dict, who: list[str]) -> bool:
     """A picture Claude did not look at: only a photo whose file title names one of the story's
     people (and not a group). Same rule as the top-ups."""
@@ -846,6 +893,7 @@ def unjudged_ok(c: dict, who: list[str]) -> bool:
 
 def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
     folder.mkdir(parents=True, exist_ok=True)
+    REJECTED.clear()
     beats = spoken(short)
     plans = plan(short)
     work = Path(tempfile.mkdtemp(prefix="media_"))
@@ -924,6 +972,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             choice = picks.get(i, {})
             order = list(range(len(cands)))
             ranked, claude_top, tier, scores, n_ph, bp, bc = rank_candidates(cands, choice)
+            REJECTED.update(rejected_photos(cands, choice))
             if ranked and ranked[0] != claude_top:   # Claude's focus/start were for its own top pick
                 choice = {**choice, "score": int(scores.get(ranked[0], 0)), "focus": None, "start": None}
             # only candidates that relate to the story; nothing unrelated as a fallback
@@ -1207,7 +1256,8 @@ def solo_title(c: dict, person: str) -> bool:
 
 def person_photos(person: str, shown: set) -> list[dict]:
     """The person's photos that are safe to use unjudged: basketball photos first."""
-    ok = [c for c in photos(person)[:20] if c["page"] not in shown and solo_title(c, person)]
+    ok = [c for c in photos(person)[:20] if c["page"] not in shown and c["page"] not in REJECTED
+          and solo_title(c, person)]
     return sorted(ok, key=lambda c: not c.get("hoops"))
 
 

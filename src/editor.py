@@ -305,7 +305,7 @@ OPINION = re.compile(r"^(why|how|what|should|could|would|ranking|grading|grades|
 # channel has its own analytics, the weekly report tunes them.
 WEIGHTS = {"E": 22, "S": 22, "D": 18, "T": 12, "C": 10, "V": 10}
 CONFLICT_BONUS, NICHE_BONUS, DULL_PENALTY = 6, 4, 40
-MIN_SCORE = 40
+MIN_SCORE = 60   # was 40: a 54-point story (Kuminga vs Gobert) is not a viral Short
 
 
 def score_parts(r: dict) -> dict:

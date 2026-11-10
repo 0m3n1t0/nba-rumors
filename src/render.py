@@ -706,6 +706,18 @@ def plan_shots(main: dict | None, dur: float) -> list[tuple]:
     return [tuple(s) for s in shots]
 
 
+def opening_picture(media: list, n: int) -> list:
+    """The hook must open on a real picture, never on a plain background: if beat 0 has none,
+    the first later picture moves up to the hook (that later beat then continues it, so
+    nothing is shown twice)."""
+    media = list(media) + [None] * max(0, n - len(media))
+    if media and media[0] is None:
+        k = next((k for k in range(1, len(media)) if media[k]), None)
+        if k is not None:
+            media[0], media[k] = media[k], None
+    return media
+
+
 def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
            media: list | None = None, music: dict | None = None, vs: list | None = None) -> list[str]:
     work.mkdir(parents=True, exist_ok=True)
@@ -717,6 +729,7 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     checked = no_repeats(vs + list(media or []) + [None] * len(beats))
     head, media = checked[:len(vs)], checked[len(vs):]
     vs = head if len(head) == 2 and all(head) else []
+    media = opening_picture(media, len(beats))
     # a beat with no picture of its own continues the previous beat's picture (one longer
     # shot): never a repeated picture, never a plain colour card
     runs = []

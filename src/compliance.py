@@ -184,6 +184,7 @@ def check_originality(beats: list[dict], sources: list[dict]) -> tuple[str, list
             else:
                 break
     roles = {str(b.get("role", "")).lower() for b in beats}
+    stages = {str(b.get("stage", "")).lower() for b in beats}
     notes, verdict = [], PASS
     if longest >= COPY_RUN:
         verdict = REVIEW
@@ -194,6 +195,11 @@ def check_originality(beats: list[dict], sources: list[dict]) -> tuple[str, list
     if not roles & {"context", "analysis"}:
         verdict = REVIEW
         notes.append("no context or analysis beat: the Short only retells the news")
+    elif "analysis" not in roles and "payoff" not in stages:
+        # YouTube's reused-content rule: monetized videos need SIGNIFICANT ORIGINAL COMMENTARY.
+        # Background alone is not commentary: our own reading of what it means is.
+        verdict = REVIEW
+        notes.append("no analysis or payoff beat: there is no original commentary, only background")
     return verdict, notes, {"copied_share": round(share, 2), "longest_copy": longest,
                             "roles": sorted(r for r in roles if r)}
 

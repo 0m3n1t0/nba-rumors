@@ -999,5 +999,40 @@ class Stage3(unittest.TestCase):
                 weekly.DATA, weekly.PLAN, weekly.service, weekly.claude, editor.PLAN = old
 
 
+    # 46. The Doc Rivers run: the Short's own take sat in the closing beat, so there was "no payoff"
+    #     and originality held it; the take becomes the payoff (nothing invented). And the hook
+    #     photo's face (near the top edge) went under the hook words: now it never does.
+    def test_46_payoff_and_hook_face(self):
+        import script
+        beats = [{"say": "Doc coached Giannis, then questioned his IQ.", "stage": "setup"},
+                 {"say": "Doc was half right and fully clumsy. Was he right, or just blaming Giannis again?",
+                  "stage": "exit", "tone": "tense"}]
+        script.split_payoff(beats)
+        self.assertEqual([b["stage"] for b in beats], ["setup", "payoff", "exit"])
+        self.assertEqual(beats[1]["say"], "Doc was half right and fully clumsy.")
+        self.assertEqual(beats[2]["say"], "Was he right, or just blaming Giannis again?")
+        only_q = [{"say": "x", "stage": "setup"}, {"say": "So who is right?", "stage": "exit"}]
+        script.split_payoff(only_q)
+        self.assertEqual(len(only_q), 2)                       # a question alone: nothing to split
+        has = [{"say": "x", "stage": "payoff"}, {"say": "He is done. Agree?", "stage": "exit"}]
+        script.split_payoff(has)
+        self.assertEqual(len(has), 2)                          # already has a payoff: unchanged
+        try:
+            import render
+            from PIL import Image
+        except ImportError as e:
+            self.skipTest(f"render needs {e.name}")
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tall.jpg"
+            Image.new("RGB", (1000, 1400), "gray").save(path)
+            bg, where = render.photo_bg(path, (0.5, 0.06), hook=True, known=True)
+            self.assertEqual(bg.size, (render.W, render.H))
+            self.assertAlmostEqual(where[1], render.FACE_UNDER_HOOK / render.H, places=2)
+            bg, where = render.photo_bg(path, (0.5, 0.45), hook=True, known=True)   # normal case unchanged
+            self.assertGreater(where[1] * render.H, render.FACE_UNDER_HOOK - 60)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

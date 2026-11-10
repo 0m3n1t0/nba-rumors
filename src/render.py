@@ -202,14 +202,19 @@ def face_focus(path: Path) -> tuple[float, float] | None:
 
 
 def focus_of(item: dict) -> tuple[tuple[float, float], bool]:
-    """(where the subject is, whether we really know it): Claude's judged focus first, else a
-    detected face, else the usual head height."""
+    """(where the subject is, whether we really know it): Claude's judged focus (it knows WHO),
+    made exact by the face detector when the detected face is the same person (close to
+    Claude's point across the picture); else a detected face, else the usual head height.
+    Claude's point comes from a small contact sheet and is often only roughly right (a face at
+    10% of the height marked at 30% put the hook words over the face)."""
+    face = face_focus(ROOT / item["file"]) if item.get("kind") == "photo" and item.get("file") else None
     if item.get("focus") and item.get("match") is not None:
-        return tuple(item["focus"][:2]), True
-    if item.get("kind") == "photo" and item.get("file"):
-        f = face_focus(ROOT / item["file"])
-        if f:
-            return f, True
+        fx, fy = item["focus"][:2]
+        if face and abs(face[0] - fx) <= 0.25:
+            return face, True
+        return (fx, fy), True
+    if face:
+        return face, True
     return tuple((item.get("focus") or [0.5, 0.3])[:2]), bool(item.get("focus"))
 
 
@@ -236,6 +241,15 @@ def photo_bg(path: Path, focus: list | tuple | None = None, hook: bool = False,
         left = min(max(0, round(fx * sw - W / 2)), sw - W)
         top = min(max(0, round(fy * sh - FACE_UNDER_HOOK)), sh - H)
         where = ((fx * sw - left) / W, (fy * sh - top) / H)
+        drop = round(FACE_UNDER_HOOK - fy * sh) if top == 0 else 0
+        if drop > 120:
+            # the face is so close to the top edge that no crop can bring it under the hook words:
+            # the photo moves DOWN over a blurred copy of itself, so the words sit on the blur
+            bg = ImageOps.fit(src, (W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(40))
+            bg = ImageEnhance.Brightness(bg).enhance(0.45)
+            fg = ImageEnhance.Brightness(big.crop((left, 0, left + W, H - drop))).enhance(0.8)
+            bg.paste(fg, (0, drop))
+            return bg, ((fx * sw - left) / W, FACE_UNDER_HOOK / H)
         return ImageEnhance.Brightness(big.crop((left, top, left + W, top + H))).enhance(0.8), where
     bg = ImageOps.fit(src, (W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(40))
     bg = ImageEnhance.Brightness(bg).enhance(0.45)

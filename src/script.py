@@ -729,6 +729,26 @@ def question_last(beat: dict) -> None:
         beat["say"] = " ".join(parts + [q])
 
 
+def split_payoff(beats: list[dict]) -> None:
+    """A script whose own take sits inside the closing beat ("Doc was half right and fully
+    clumsy. Was he right, or...?") has no payoff beat, so it looked like background only and was
+    held. The take becomes its own payoff beat (the closing question stays the exit). Nothing
+    is written or invented: only a label that matches what the words already are. A closing
+    beat that is only a question is left as it is (then there really is no payoff)."""
+    if not beats or any(b.get("stage") == "payoff" for b in beats) or beats[-1].get("stage") != "exit":
+        return
+    last = beats[-1]
+    parts = [x for x in re.split(r"(?<=[.!?])\s+", last.get("say", "").strip()) if x]
+    takes = [x for x in parts if not x.endswith("?")]
+    asks = [x for x in parts if x.endswith("?")]
+    if not takes or not asks or len(" ".join(takes).split()) < 4:
+        return
+    payoff = {**{k: v for k, v in last.items() if k not in ("say", "stage", "role")},
+              "say": " ".join(takes), "stage": "payoff", "role": "analysis"}
+    last["say"] = " ".join(asks)
+    beats.insert(len(beats) - 1, payoff)
+
+
 STOCK_TICS = ["honestly?", "i mean, come on", "tell me i'm wrong", "make it make sense",
               "wait, it gets better", "wait. it gets better", "but here's the thing",
               # generic endings: the close must be a pick-a-side question about THIS story
@@ -1226,6 +1246,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     if beats and not beats[-1]["stage"]:
         beats[-1]["stage"] = "exit"
     add_cta(beats, topic["headline"])
+    split_payoff(beats)
     softened = soften_quotes(beats, sources)
     if hooks:
         h = {"say": hooks[0].get("text", "")}     # the hook's words live in "text", not "say"

@@ -710,6 +710,40 @@ class Stage3(unittest.TestCase):
         self.assertEqual(compliance.check_social_proof("The people in charge are quiet.",
                                                        [{"title": "x", "text": "Nothing."}])[0], compliance.PASS)
 
+    # 39. Story strategist: the headline gap, the controversy kind, a new angle for a running
+    #     story, no generic ending, a reworded quote in the HOOK corrected too, and the silent
+    #     agree/disagree line on the end screen (rotating, never spoken)
+    def test_39_strategist(self):
+        import script
+        for p in ("headline_gap", "controversy", "What do you think?", "DIFFERENT angle"):
+            self.assertIn(p, script.PROMPT)
+        self.assertIn("headline_gap", script.HUMANIZE)
+        self.assertEqual(script.stock_tics([{"say": "So who blinks first, Brown or Tatum?"}]), [])
+        self.assertIn("what do you think?", script.stock_tics([{"say": "Wild night. What do you think?"}]))
+        old = list(script.RECENT)
+        try:
+            script.RECENT[:] = [{"time": "2026-11-01T10:00", "headline": "Kuminga rips Gobert after loss",
+                                 "hook": "Did Jonathan Kuminga just call out Rudy Gobert?",
+                                 "angle": "pressure on Kuminga's contract", "spoken": "x"}]
+            note = script.rivalry_history("Rudy Gobert fires back at Jonathan Kuminga")
+            self.assertIn("our angle: pressure on Kuminga's contract", note)
+        finally:
+            script.RECENT[:] = old
+        src = [{"title": "t", "text": "Asked about Rivers, Giannis said: He is not my coach. "
+                                      "My coach is Erik Spoelstra. Then he left."}]
+        h = {"say": 'Did Giannis just say "Rivers is not my coach, Spoelstra is my coach" on camera?'}
+        script.soften_quotes([h], src)
+        self.assertIn('"He is not my coach. My coach is Erik Spoelstra."', h["say"])
+        try:
+            import render
+        except ImportError as e:
+            self.skipTest(f"render needs {e.name}")
+        lines = {render.engage_line(f"story {k}") for k in range(40)}
+        self.assertGreater(len(lines), 1)                                  # the wording rotates
+        self.assertEqual(render.engage_line("same"), render.engage_line("same"))
+        img = render.cta_card("#FACC15", "Kuminga vs Gobert")
+        self.assertEqual(img.size, (render.W, render.H))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

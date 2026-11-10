@@ -590,6 +590,55 @@ class Stage3(unittest.TestCase):
         self.assertIn(["He's", "not", "my", "coach."], [[w["word"] for w in g] for g in groups])
         self.assertEqual(render.mark_receipt(words, "")[1], None)
 
+    # 34. Commons player categories (free, no key): the player's own category and his newest
+    #     sub-categories are read; a namesake's category is ignored; licence and size rules stay
+    def test_34_commons_category(self):
+        import media, json as js
+        def page(title, w=1200, h=1600, lic="CC BY-SA 4.0", desc="Boston Celtics basketball"):
+            return {"title": title, "imageinfo": [{"mime": "image/jpeg", "width": w, "height": h, "thumburl": "u",
+                    "descriptionurl": "https://commons.wikimedia.org/wiki/" + title,
+                    "extmetadata": {"LicenseShortName": {"value": lic}, "Artist": {"value": "A"},
+                                    "ImageDescription": {"value": desc}, "Categories": {"value": ""}}}]}
+        cats = {"Category:Jayson Tatum (basketball)": ([], []),
+                "Category:Jayson Tatum": ([page("File:JT dunk.jpg"), page("File:JT small.jpg", 500, 600),
+                                           page("File:JT nc.jpg", lic="CC BY-NC 2.0")],
+                                          ["Category:Jayson Tatum in 2019", "Category:Jayson Tatum in 2025"]),
+                "Category:Jayson Tatum in 2025": ([page("File:Celtics 2025 02.jpg")], []),
+                "Category:Jayson Tatum in 2019": ([page("File:Old.jpg")], [])}
+
+        def fake_get(url, timeout=30):
+            q = dict(__import__("urllib.parse").parse.parse_qsl(url.split("?", 1)[1]))
+            if q.get("generator") == "search":
+                return js.dumps({}).encode()
+            cat = q.get("gcmtitle") or q.get("cmtitle")
+            files, subs = cats.get(cat, ([], []))
+            if q.get("list") == "categorymembers":
+                return js.dumps({"query": {"categorymembers": [{"title": c} for c in subs]}}).encode()
+            return js.dumps({"query": {"pages": {str(i): f for i, f in enumerate(files)}}}).encode()
+        orig, media.get = media.get, fake_get
+        media._photo_cache.pop("Jayson Tatum", None)
+        try:
+            found = media.commons_photos("Jayson Tatum")
+        finally:
+            media.get = orig
+            media._photo_cache.pop("Jayson Tatum", None)
+        titles = sorted(f["title"] for f in found)
+        # "JT dunk" has no name in its file name but is in his category; small and NC are refused
+        self.assertEqual(titles, ["Celtics 2025 02.jpg", "JT dunk.jpg", "Old.jpg"])
+        # a namesake's category (no basketball anywhere) is not used
+        cats2 = {"Category:Robert Williams": ([page("File:RW speech.jpg", desc="Senator at a hearing")], [])}
+        def fake2(url, timeout=30):
+            q = dict(__import__("urllib.parse").parse.parse_qsl(url.split("?", 1)[1]))
+            files, subs = cats2.get(q.get("gcmtitle") or q.get("cmtitle"), ([], []))
+            if q.get("list") == "categorymembers":
+                return js.dumps({"query": {"categorymembers": []}}).encode()
+            return js.dumps({"query": {"pages": {str(i): f for i, f in enumerate(files)}}}).encode()
+        media.get = fake2
+        try:
+            self.assertEqual(media.category_files("Robert Williams"), [])
+        finally:
+            media.get = orig
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

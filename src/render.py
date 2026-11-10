@@ -984,8 +984,15 @@ def main() -> None:
         except subprocess.CalledProcessError as exc:
             print(f"[!] {name}: ffmpeg failed: {exc.stderr.decode(errors='replace')[-800:]}")
             continue
+        except Exception as exc:   # one broken Short must never stop the others
+            import traceback
+            traceback.print_exc()
+            ERRORS.append(f"{name}: {type(exc).__name__}: {str(exc)[:160]}")
+            continue
         # keep the hook card as a still (preview / thumbnail)
-        (VIDEO / f"_{name}" / "thumb.png").replace(VIDEO / f"{name}_thumb.png")
+        thumb = VIDEO / f"_{name}" / "thumb.png"
+        if thumb.exists():
+            thumb.replace(VIDEO / f"{name}_thumb.png")
         rendered.append((name, short, timing, log))
         print(f"[+] {name}: {out.stat().st_size / 1e6:.1f} MB, {timing['duration']:.1f}s")
     lines = ["## 🎬 Video", "", "| Short | length | ready | beats (stage: 🆚 VS 🎥 clip 📷 photo ⏩ fast push ↔️ sideways 💥 twist ⬛ empty) | title |",

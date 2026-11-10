@@ -957,5 +957,19 @@ class Stage3(unittest.TestCase):
             render._yunet.clear()
 
 
+    # 44. Voice: a season is read as a season ("2020-21" was spoken "2020 to 21"), scores and
+    #     records keep their old readings
+    def test_44_speakable_seasons(self):
+        try:
+            import tts
+        except ImportError as e:
+            self.skipTest(f"tts needs {e.name}")
+        self.assertEqual(tts.speakable("his most since 2020-21."), "his most since 2020 21.")
+        self.assertEqual(tts.speakable("the 1999-00 season"), "the 1999 2000 season")
+        self.assertEqual(tts.speakable("Lakers won 124-114"), "Lakers won 124 to 114")
+        self.assertEqual(tts.speakable("a 10-2 record"), "a 10 and 2 record")
+        self.assertEqual(tts.speakable("52-24-8 shooting"), "52, 24, 8 shooting")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

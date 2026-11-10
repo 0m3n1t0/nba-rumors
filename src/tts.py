@@ -43,6 +43,9 @@ BRIGHT = "equalizer=f=3500:t=q:w=1.2:g=2.5,acompressor=threshold=-18dB:ratio=2.5
 def speakable(text: str) -> str:
     """Small fixes so the voice reads the way a person would."""
     text = re.sub(r"(\d+)-(\d+)-(\d+)", r"\1, \2, \3", text)      # 52-24-8
+    # a season ("since 2020-21") is said "twenty twenty, twenty-one", not "2020 to 21"
+    text = re.sub(r"\b((?:19|20)\d{2})[-/](\d{2})\b",
+                  lambda m: f"{m.group(1)} {int(m.group(1)) + 1 if m.group(2) == '00' else m.group(2)}", text)
     text = re.sub(r"(\d{2,3})-(\d{2,3})", r"\1 to \2", text)       # 112-111
     text = re.sub(r"\b(\d{1,2})-(\d{1,2})\b", r"\1 and \2", text)   # a 3-6 record
     text = text.replace("&", " and ").replace("%", " percent").replace("vs.", "versus")
@@ -306,6 +309,7 @@ def main() -> None:
         attempts = [("chatterbox", s) for s in (CONFIG["chatterbox"]["seed"], CONFIG["chatterbox"]["seed"] + 1)] \
             if performer else []
         attempts.append(("kokoro", 0))
+        done = False
         for engine, seed in attempts:
             try:
                 if engine == "chatterbox":
@@ -323,10 +327,17 @@ def main() -> None:
             wav.unlink()
             words = word_times(mp3)
             heard = coverage(text, words)
+            done = True
             if engine == "kokoro" or heard >= MIN_COVERAGE:
                 break
             print(f"[!] {name}: {engine} seed {seed} garbled the text ({heard:.0%} of words heard), retrying")
 
+        if not done:
+            # every engine failed for this Short: it gets no narration (the gate rejects a video
+            # that was never made), and the OTHER Shorts are still voiced
+            print(f"[!] {name}: no voice could be made")
+            lines.append(f"| {short['n']}: {short['headline'][:60]} | ⛔ | - | - | none (all engines failed) | - | - |")
+            continue
         duration = duration_of(mp3)
         beats = beat_times(parts, words, duration)
         timing = {"duration": duration, "beats": beats, "words": words, "engine": engine,

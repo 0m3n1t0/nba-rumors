@@ -17,6 +17,7 @@ Output: data/video/short_N.mp4 + short_N_thumb.png
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -276,9 +277,22 @@ def wrap_px(d: ImageDraw.ImageDraw, text: str, f: ImageFont.FreeTypeFont, max_w:
     return lines + ([line] if line else [])
 
 
-def cta_card(accent: str) -> Image.Image:
+# the end screen's silent agree/disagree line (never spoken, so the loop and the length stay as
+# they are): agreeing turns into a like, disagreeing into a comment (the strongest signal).
+# The wording rotates so the Shorts never repeat one formula.
+ENGAGE_LINES = [("AGREE WITH OUR TAKE? LIKE IT", "DISAGREE? TELL US WHY"),
+                ("SEE IT OUR WAY? HIT LIKE", "SEE IT DIFFERENTLY? COMMENT WHY"),
+                ("ON OUR SIDE? LIKE IT", "NOT BUYING IT? SAY WHY BELOW"),
+                ("WE GOT IT RIGHT? LIKE IT", "WE GOT IT WRONG? PROVE IT BELOW")]
+
+
+def engage_line(seed: str) -> tuple[str, str]:
+    return ENGAGE_LINES[int(hashlib.md5(seed.encode("utf-8")).hexdigest(), 16) % len(ENGAGE_LINES)]
+
+
+def cta_card(accent: str, seed: str = "") -> Image.Image:
     """Subscribe prompt for the end of every Short: a red pill with the value line, above the
-    captions and inside the Shorts safe zone."""
+    captions and inside the Shorts safe zone, and above it the silent agree/disagree line."""
     # a plain, calm background instead of the last picture: the channel logo goes on it as soon
     # as assets/logo.png exists in the repo (until then it stays blank)
     img = Image.new("RGBA", (W, H), (11, 11, 14, 255))
@@ -287,7 +301,7 @@ def cta_card(accent: str) -> Image.Image:
         try:
             logo = Image.open(logo_path).convert("RGBA")
             logo.thumbnail((520, 520), Image.LANCZOS)
-            img.alpha_composite(logo, ((W - logo.width) // 2, 820 - logo.height))
+            img.alpha_composite(logo, ((W - logo.width) // 2, 700 - logo.height))
         except OSError:
             pass
     d = ImageDraw.Draw(img)
@@ -298,6 +312,13 @@ def cta_card(accent: str) -> Image.Image:
     d.rounded_rectangle((x0, y0, x0 + w, y0 + 190), radius=40, fill="#E62117", outline="#FFFFFF", width=6)
     d.text(((W - d.textlength(t1, font=big)) / 2, y0 + 22), t1, font=big, fill="#FFFFFF")
     d.text(((W - d.textlength(t2, font=small)) / 2, y0 + 118), t2, font=small, fill=accent if accent != "#E62117" else "#FFFFFF")
+    for k, line in enumerate(engage_line(seed)):
+        size = 50
+        while size > 30 and d.textlength(line, font=font(size)) > W - 120:
+            size -= 2
+        f = font(size)
+        d.text(((W - d.textlength(line, font=f)) / 2, 718 + k * 62), line, font=f,
+               fill="#FFFFFF" if k == 0 else accent, stroke_width=3, stroke_fill="#000000")
     return img
 
 
@@ -865,7 +886,7 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     bar = f"drawbox=x=0:y=0:w='iw*t/{total:.2f}':h=14:color={accent.replace('#', '0x')}@1:t=fill"
     fonts = f":fontsdir={FONT_DIR}" if FONT_DIR.exists() else ""
     cta_png = work / "cta.png"
-    cta_card(accent).save(cta_png)
+    cta_card(accent, short.get("headline", "")).save(cta_png)
     # the card covers the picture, never the captions or the progress bar (drawn on top of it)
     vf = (f"[CTA:v]format=rgba,fade=t=in:st={cta_at:.2f}:d=0.25:alpha=1[cta];"
           f"[0:v][cta]overlay=0:0:enable='gte(t,{cta_at:.2f})'[base];"

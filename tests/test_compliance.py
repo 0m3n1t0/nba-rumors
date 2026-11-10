@@ -648,6 +648,68 @@ class Stage3(unittest.TestCase):
         self.assertFalse(script.quota_reached(r(True), 2))
         self.assertFalse(script.quota_reached(r(False), 2))
 
+    # 36. No spoken "subscribe": the question closes the Short (the end card asks on screen); a
+    #     fact that contains the word stays; a beat that was only a call to action goes
+    def test_36_no_spoken_cta(self):
+        import script
+        beats = [{"say": "He subscribed to that theory."}, {"say": "Subscribe for more."}, {"say": "So who's right?"}]
+        script.add_cta(beats, "seed")
+        self.assertEqual([b["say"] for b in beats], ["He subscribed to that theory.", "So who's right?"])
+        beats = [{"say": "Context."}, {"say": "Subscribe for daily NBA drama. So who's right, Doc or Giannis?"}]
+        script.add_cta(beats, "seed")
+        self.assertEqual(beats[-1]["say"], "So who's right, Doc or Giannis?")
+        beats = [{"say": "So who's right? Hit subscribe for more."}]
+        script.add_cta(beats, "seed")
+        self.assertEqual(beats[-1]["say"], "So who's right?")
+        self.assertIn("STRATEGY FIRST", script.PROMPT)
+        self.assertIn("CRITICAL EDITOR", script.HUMANIZE)
+
+    # 37. Quotes: a reworded quote is CORRECTED to the source's exact words (it stays the
+    #     player's words, never the narrator's); narration is never pulled into it; an invented
+    #     quote is still caught; the receipt follows the same balance
+    def test_37_quote_balance(self):
+        import script
+        src = [{"title": "t", "summary": "", "text": "Asked about Rivers, Giannis said: He is not my coach. "
+                                                     "My coach is Erik Spoelstra, and we are 4 and 6. Then he left."}]
+        exact = "He is not my coach. My coach is Erik Spoelstra, and we are 4 and 6."
+        for written in ["He's not my coach. My coach is Erik Spoelstra, and we are 4 and 6.",
+                        "Rivers is not my coach, Spoelstra is my coach, and we are 4 and 6."]:
+            b = [{"say": f'Giannis said "{written}"'}]
+            script.soften_quotes(b, src)
+            self.assertEqual(b[0]["say"], f'Giannis said "{exact}"')
+            self.assertEqual(script.quote_check(b[0]["say"], src), [])
+        src2 = [{"title": "t", "text": "Brown told reporters there is no beef but it might be a little lamb chop "
+                                       "and some gravy. He should stay ready."}]
+        b = [{"say": 'Brown said "there\'s no beef, but maybe a little lamb chop and gravy."'}]
+        script.soften_quotes(b, src2)
+        self.assertEqual(b[0]["say"], 'Brown said "there is no beef but it might be a little lamb chop and some gravy."')
+        b = [{"say": 'Giannis said "Doc Rivers ruined my whole career forever."'}]
+        script.soften_quotes(b, src)
+        self.assertTrue(script.quote_check(b[0]["say"], src))             # invented: still flagged
+        self.assertEqual(script.checked_receipt("4 and 6", [{"say": "Miami sits 4 and 6 now."}], src), "4 and 6")
+        self.assertEqual(script.checked_receipt("4 and 9", [{"say": "Miami sits 4 and 9 now."}], src), "")
+
+    # 38. Fan reaction is balanced: any sign of a public reaction (or a measurably hot story) is
+    #     enough; only a reaction with no sign anywhere is held. Hook, title and frame: one promise
+    def test_38_social_proof_and_promise(self):
+        import compliance, script
+        quiet = [{"title": "Kolek says he misspoke", "text": "Kolek said he misspoke about Taylor Swift."}]
+        loud = [{"title": "Swifties slam Kolek", "text": "Kolek drew a backlash online after his comments."}]
+        line = "Fans are furious with Kolek."
+        self.assertEqual(compliance.check_social_proof(line, quiet)[0], compliance.REVIEW)
+        self.assertEqual(compliance.check_social_proof(line, loud)[0], compliance.PASS)
+        self.assertEqual(compliance.check_social_proof(line, quiet, audience_hot=True)[0], compliance.PASS)
+        self.assertEqual(compliance.check_social_proof("Kolek said he misspoke.", quiet)[0], compliance.PASS)
+        self.assertTrue(script.one_promise("Did Tyler Kolek just call Taylor Swift a fake Knicks fan?",
+                                           "Kolek vs Taylor Swift got PERSONAL", "KOLEK vs SWIFT"))
+        self.assertFalse(script.one_promise("Did the Knicks just lose their best guard?",
+                                            "Knicks in TROUBLE", "KOLEK vs SWIFT"))
+        # the title COMPLEMENTS the frame (no shared word needed), both match the hook
+        self.assertTrue(script.one_promise("Did Kevin Durant just demand a trade from Phoenix?",
+                                           "Durant WANTS OUT of Phoenix", "TRADE DEMAND?"))
+        self.assertEqual(compliance.check_social_proof("The people in charge are quiet.",
+                                                       [{"title": "x", "text": "Nothing."}])[0], compliance.PASS)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

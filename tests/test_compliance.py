@@ -745,5 +745,90 @@ class Stage3(unittest.TestCase):
         self.assertEqual(img.size, (render.W, render.H))
 
 
+    # 40. Visual fixes after the Cousins/Luka run: the accented Commons category is found, two
+    #     photos of one scene count as one only among EQUALLY relevant picks (relevance order
+    #     never changes), the credit moves to the description (licence link + changes note)
+    def test_40_visual_fixes(self):
+        import json, media
+        old_get = media.get
+        calls = []
+
+        def fake(url, timeout=30):
+            calls.append(url)
+            if "list=search" in url:
+                return json.dumps({"query": {"search": [{"title": "Category:Luka Dončić"},
+                                                        {"title": "Category:Luka Dončić (disambiguation)"},
+                                                        {"title": "Category:Luka Dončić in 2024"}]}}).encode()
+            if "Don%C4%8Di%C4%87" in url and "generator=categorymembers" in url:
+                return json.dumps({"query": {"pages": {"1": {"title": "File:Luka Dončić Lakers.jpg",
+                                  "imageinfo": [{"mime": "image/jpeg", "extmetadata": {
+                                      "ImageDescription": {"value": "Luka Dončić, basketball"}}}]}}}}).encode()
+            return json.dumps({"query": {}}).encode()
+        try:
+            media.get = fake
+            self.assertEqual(media.category_titles("Luka Doncic"), ["Category:Luka Dončić"])
+            calls.clear()
+            files = media.category_files("Luka Doncic")
+            self.assertEqual([f["title"] for f in files], ["File:Luka Dončić Lakers.jpg"])
+            # the plain spelling is still tried first (unchanged path)
+            self.assertIn("Category%3ALuka+Doncic+%28basketball%29", calls[0])
+        finally:
+            media.get = old_get
+        self.assertEqual(media.shot_date("2019-06-10 19:38:23"), "2019-06-10")
+        self.assertEqual(media.shot_date("<time>2019:06:10</time>"), "2019-06-10")
+        self.assertEqual(media.shot_date("June 2019"), "")
+        a = {"kind": "photo", "author": "Chensiyuan", "date": "2019-06-10", "hoops": True}
+        b = {"kind": "photo", "author": "Chensiyuan", "date": "2019-06-10", "hoops": True}
+        c = {"kind": "photo", "author": "Erik Drost", "date": "2021-01-02", "hoops": True}
+        d = {"kind": "photo", "author": "Embassy", "date": "", "hoops": False}
+        clip = {"kind": "video"}
+        cands = [a, b, c, d, clip]
+        tier = lambda j: {0: 3, 1: 3, 2: 3, 3: 3, 4: 1}[j]
+        scenes = {media.scene_of(a)}
+        # equal relevance: the new scene goes first
+        self.assertEqual(media.fresh_first([1, 2], cands, tier, {1: 8, 2: 8}, scenes), [2, 1])
+        # a MORE relevant photo of the same scene still wins: relevance is never overruled
+        self.assertEqual(media.fresh_first([1, 2], cands, tier, {1: 9, 2: 8}, scenes), [1, 2])
+        # the hook prefers a basketball photo among equals, not over a better one
+        self.assertEqual(media.fresh_first([3, 2], cands, tier, {3: 8, 2: 8}, set(), hook=True), [2, 3])
+        self.assertEqual(media.fresh_first([3, 2], cands, tier, {3: 9, 2: 8}, set(), hook=True), [3, 2])
+        self.assertEqual(media.fresh_first([3, 4], cands, tier, {3: 8, 4: 8}, scenes), [3, 4])
+        self.assertIsNone(media.scene_of(d))
+        text = media.credits([{"kind": "photo", "author": "Erik Drost", "license": "CC BY 2.0",
+                               "license_url": "https://creativecommons.org/licenses/by/2.0/",
+                               "source": "Openverse", "page": "https://x/1"}])
+        self.assertIn("CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/)", text)
+        self.assertIn(media.CHANGES_NOTE, text)
+        self.assertNotIn(media.CHANGES_NOTE, media.credits([]))
+
+    # 41. The gate honours the script stage's hold; the closing question may name the hook's
+    #     people again (the loop); "nothing beyond the headline" is held; "per X" is noted
+    def test_41_editorial_hold(self):
+        import gate, compliance, script
+        self.assertEqual(gate.check_editorial({"ready": True})[0], compliance.PASS)
+        self.assertEqual(gate.check_editorial({})[0], compliance.PASS)
+        v, notes = gate.check_editorial({"ready": False, "retention": {"hard": ["beat 3 repeats what was already said"]}})
+        self.assertEqual(v, compliance.REVIEW)
+        self.assertIn("beat 3 repeats what was already said", notes)
+        beats = [{"say": "Cousins picked a Laker, and it was not Luka.", "stage": "setup"},
+                 {"say": "Luka leads the league at 40 points a game.", "stage": "conflict"},
+                 {"say": "So who's your favorite Laker, Luka or Cousins' pick?", "stage": "exit"}]
+        self.assertEqual(script.retention_check(beats)["hard"], [])
+        beats[2]["say"] = "Luka leads the league at 40 points a game. So who's right?"
+        self.assertTrue(any("repeats" in h for h in script.retention_check(beats)["hard"]))
+        self.assertTrue(script.NO_DEPTH.match("Nothing beyond the headline on what Cousins said."))
+        self.assertFalse(script.NO_DEPTH.match("Atlanta drafted him third and traded him."))
+        self.assertEqual(script.SPOKEN_PER.findall('He said "me," per Yahoo Sports.'), ["per Yahoo"])
+        self.assertEqual(script.SPOKEN_PER.findall("He scored 30 per game."), [])
+        try:
+            import render
+        except ImportError as e:
+            self.skipTest(f"render needs {e.name}")
+        self.assertFalse(render.SHOW_CREDIT)
+        x = render.overlay(None, "", "#FACC15", credit="Photo: Erik Drost / CC BY 2.0")
+        y = render.overlay(None, "", "#FACC15", credit="")
+        self.assertEqual(x.tobytes(), y.tobytes())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

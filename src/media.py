@@ -261,7 +261,46 @@ def people(short: dict) -> list[str]:
     # fragment of the headline, not a second person
     surnames = {fold(n).split()[-1] for n in counts}
     counts = {n: c for n, c in counts.items() if fold(n).split()[0] not in surnames}
-    return sorted(counts, key=lambda n: -counts[n])[:4]
+    ranked = sorted(counts, key=lambda n: -counts[n])
+    # Only REAL sports people: a Title Case headline makes fake "names" ("Only Has", "World
+    # Reacts", "York Times"), and a fake name finds random photos (a doll, a beach, an arch).
+    # Wikipedia decides; if Wikipedia cannot be reached, the old list is used as before.
+    real = real_people(ranked)
+    return (ranked if real is None else real)[:4]
+
+
+PEOPLE_CHECK = os.environ.get("MEDIA_PEOPLE_CHECK", "1") != "0"
+PERSON_DESC = re.compile(r"basketball|\bnba\b|coach|executive|sports|athlete|broadcaster|analyst|"
+                         r"journalist|reporter", re.I)
+_person_cache: dict[str, bool] = {}
+
+
+def real_people(names_list: list[str]) -> list[str] | None:
+    """The names that are a sports person's English Wikipedia page (through redirects:
+    "Luka Doncic" -> "Luka Dončić"), in the same order. None when Wikipedia cannot be reached."""
+    if not PEOPLE_CHECK:
+        return None
+    todo = [n for n in dict.fromkeys(names_list) if n not in _person_cache]
+    for i in range(0, len(todo), 40):
+        part = todo[i:i + 40]
+        q = urllib.parse.urlencode({"action": "query", "format": "json", "redirects": 1,
+                                    "prop": "pageprops", "ppprop": "wikibase-shortdesc|disambiguation",
+                                    "titles": "|".join(part)})
+        try:
+            data = json.loads(get(f"https://en.wikipedia.org/w/api.php?{q}", 30)).get("query", {})
+        except Exception as exc:
+            print(f"[!] Wikipedia person check failed ({exc}): names used unchecked")
+            return None
+        alias = {}
+        for step in ("normalized", "redirects"):
+            for m in data.get(step, []):
+                alias[m["from"]] = m["to"]
+        good = {pg["title"] for pg in (data.get("pages") or {}).values()
+                if "missing" not in pg and "disambiguation" not in (pg.get("pageprops") or {})
+                and PERSON_DESC.search((pg.get("pageprops") or {}).get("wikibase-shortdesc", ""))}
+        for n in part:
+            _person_cache[n] = alias.get(alias.get(n, n), alias.get(n, n)) in good
+    return [n for n in names_list if _person_cache.get(n)]
 
 
 NOT_PERSON_FIRST = {"per", "via", "says", "said", "told", "reportedly", "according", "sources"}
@@ -275,7 +314,9 @@ here then than now new old big small first last next blank space song music vide
 games night day week season team teams fans fan star stars report reports update news trade
 rumor rumors deal win wins loss lose beat beats returns return frustrated gets says said calls
 call back fires shot shots scoring leads lead out up down off still just even more most best
-worst top bottom final finals playoffs playoff cup league camp media day court arena""".split())
+worst top bottom final finals playoffs playoff cup league camp media day court arena only has
+have had reacts react drops drop bombshell exit controversial times insider discloses
+details request ignored bounce real""".split())
 TEAM_WORDS = set("""lakers celtics warriors knicks bucks heat nuggets suns mavericks 76ers sixers
 nets bulls cavaliers cavs thunder spurs rockets clippers kings pistons pacers hawks hornets
 raptors wizards jazz blazers grizzlies pelicans timberwolves wolves orlando golden state angeles
@@ -502,15 +543,21 @@ def commons_photos(person: str) -> list[dict]:
             continue
         if "trademark" in meta.get("Restrictions", "").lower() or not commons_trusted(meta, title):
             continue
-        year = max([int(y) for y in re.findall(r"\b(20[12]\d)\b", title)] or [2000])
+        date = shot_date(meta.get("DateTimeOriginal", ""))
+        # newest first: the year in the file name, else the day it was taken ("Jaylen Brown
+        # (cropped).jpg" from 2024 before a 2018 youth-camp photo)
+        year = max([int(y) for y in re.findall(r"\b(20[12]\d)\b", title)]
+                   + ([int(date[:4])] if date else []) or [2000])
+        # a file in the player's own Commons category is a basketball photo of him, even when
+        # its title and caption never say "basketball" (the category was checked for namesakes)
+        hoops = bool(BASKETBALL.search(text)) or title in in_category
         found.append({
             "kind": "photo", "url": info.get("thumburl"), "title": re.sub(r"^File:", "", title),
             "page": info.get("descriptionurl", ""), "author": clean(meta.get("Artist", "")) or "unknown author",
             "license": lic, "license_url": meta.get("LicenseUrl", ""), "source": "Wikimedia Commons",
-            "date": shot_date(meta.get("DateTimeOriginal", "")),
-            "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4)
-                     + (1000 if BASKETBALL.search(text) else 0),
-            "hoops": bool(BASKETBALL.search(text)),
+            "date": date,
+            "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4) + (1000 if hoops else 0),
+            "hoops": hoops,
         })
     if sum(f["hoops"] for f in found) >= 2:   # enough real basketball photos: drop the namesakes
         found = [f for f in found if f["hoops"]]
@@ -1436,9 +1483,11 @@ GROUP_TITLE = re.compile(r"\b(and|with|vs|versus|family)\b|&", re.I)
 
 
 def solo_title(c: dict, person: str) -> bool:
+    """A photo Claude did not look at is used only when its file title names this person in full
+    (first AND last name: "Green" alone also matches a green field) and nobody else."""
     title = fold(re.sub(r"\.[a-z0-9]{3,4}$", "", c.get("title", ""), flags=re.I))
-    last = fold(person).split()[-1] if person.strip() else ""
-    return bool(last) and re.search(rf"\b{re.escape(last)}\b", title) is not None \
+    parts = fold(person).split() if person.strip() else []
+    return bool(parts) and all(re.search(rf"\b{re.escape(w)}\b", title) for w in (parts[:1] + parts[-1:])) \
         and not GROUP_TITLE.search(title)
 
 
@@ -1753,6 +1802,13 @@ def main() -> None:
             MEDIA_ERRORS.append(f"{type(exc).__name__}: {str(exc)[:160]}")
             items = []
         who = people(short)[:3]
+        flags_path = MEDIA / f"{name}_flags.json"
+        try:
+            flags = json.loads(flags_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            flags = {}
+        flags["people"] = people(short)[:4]
+        flags_path.write_text(json.dumps(flags), encoding="utf-8")
         items = fill_empty(items, len(spoken(short)), MEDIA / name, used, who, short)
         items = verify_openverse(items)
         vs = verify_openverse(vs_pair(short, items, MEDIA / name, people(short)[:4]))

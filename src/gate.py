@@ -52,6 +52,11 @@ def licence_accepted(lic: str) -> bool:
     return bool(lic) and not REFUSED.search(lic) and bool(ACCEPTED.search(lic))
 
 
+def full_name_in(title: str, person: str) -> bool:
+    t, parts = C.fold(title or ""), C.fold(person).split()
+    return bool(parts) and all(re.search(rf"\b{re.escape(w)}\b", t) for w in (parts[:1] + parts[-1:]))
+
+
 def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:
     verdict, notes = C.PASS, []
     if flags.get("unjudged"):
@@ -60,6 +65,14 @@ def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:
     shown = [x for it in items if it for x in [it] + (it.get("alts") or []) if x]
     if not shown:
         return C.REVIEW, notes + ["no pictures"]
+    who = [w for w in (flags.get("people") or []) if w]
+    for x in shown:
+        # a picture Claude never judged (a top-up) must be a photo NAMED after one of the story's
+        # people in full; anything else could be a random object, so a person looks first
+        if x.get("match") is None and x.get("kind") == "photo" and who \
+                and not any(full_name_in(x.get("title", ""), w) for w in who):
+            verdict = C.worst(verdict, C.REVIEW)
+            notes.append(f"picture not judged and not named after the story's people: {(x.get('title') or '')[:50]}")
     for x in shown:
         label = x.get("title") or x.get("page") or x.get("file", "")
         if not licence_accepted(x.get("license", "")):

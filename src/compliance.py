@@ -115,6 +115,11 @@ def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[
             status = "UNVERIFIED"
         idx = c.get("source")
         src = sources[idx - 1] if isinstance(idx, int) and 1 <= idx <= len(sources) else None
+        if c.get("official_result"):
+            # every number in it matched the league's own results (nbadata.py): official word
+            out.append({**c, "status": "CONFIRMED"})
+            notes.append(f"confirmed by {c['official_result'][:90]}")
+            continue
         if src is None and status != "UNVERIFIED":
             notes.append(f"claim has no valid source: {c.get('text', '')[:60]}")
             status = "UNVERIFIED"

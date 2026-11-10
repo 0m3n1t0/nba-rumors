@@ -146,8 +146,31 @@ BAND_H = 1150           # wide picture with a known face / any clip: a tall band
 _faces: dict[str, tuple[float, float] | None] = {}
 
 
+YUNET = ROOT / "assets" / "models" / "face_detection_yunet_2023mar.onnx"   # OpenCV Zoo, Apache-2.0
+_yunet: list = []
+
+
+def yunet_faces(cv2, img, side: int) -> list | None:
+    """Faces found by YuNet, OpenCV's small modern face detector (free; finds turned and
+    half-lit faces the older Haar detector misses), as (x, y, w, h). None when it cannot run."""
+    try:
+        if not _yunet:
+            if not YUNET.exists() or not hasattr(cv2, "FaceDetectorYN"):
+                return None
+            _yunet.append(cv2.FaceDetectorYN.create(str(YUNET), "", (320, 320), 0.8, 0.3, 5000))
+        det = _yunet[0]
+        det.setInputSize((img.shape[1], img.shape[0]))
+        _, found = det.detect(img)
+        if found is None:
+            return []
+        return [tuple(int(v) for v in f[:4]) for f in found if f[2] >= side and f[3] >= side]
+    except Exception:
+        return None
+
+
 def face_focus(path: Path) -> tuple[float, float] | None:
-    """Centre of the biggest face in a photo (0-1), found by OpenCV's free face detector.
+    """Centre of the biggest face in a photo (0-1), found by OpenCV's free face detector
+    (YuNet; the older Haar detector when YuNet cannot run).
     Used for every photo nobody looked at (top-ups, VS) and to keep faces out from under
     the words. None when no face is found or OpenCV is missing."""
     key = str(path)
@@ -160,10 +183,13 @@ def face_focus(path: Path) -> tuple[float, float] | None:
         if img is not None:
             h, w = img.shape[:2]
             k = 900 / max(h, w) if max(h, w) > 900 else 1.0
-            gray = cv2.cvtColor(cv2.resize(img, (round(w * k), round(h * k))), cv2.COLOR_BGR2GRAY)
-            det = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+            small = cv2.resize(img, (round(w * k), round(h * k)))
+            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
             side = max(30, int(min(gray.shape) * 0.06))
-            faces = det.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=6, minSize=(side, side))
+            faces = yunet_faces(cv2, small, side)
+            if faces is None:   # no YuNet model / OpenCV without it: the older detector, as before
+                det = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+                faces = det.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=6, minSize=(side, side))
             faces = sorted(faces, key=lambda f: -f[2] * f[3]) if len(faces) else []
             # a crowd (many similar faces) has no one subject: better unknown than wrong
             clear = len(faces) < 3 or faces[0][2] * faces[0][3] >= 1.8 * faces[1][2] * faces[1][3]

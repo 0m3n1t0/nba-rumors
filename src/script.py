@@ -34,6 +34,7 @@ sys.path.insert(0, str(VENDOR / "yt-package"))
 import hookscore  # noqa: E402  (youtube-agent-skill)
 import title as titlecheck  # noqa: E402  (youtube-agent-skill)
 import compliance  # noqa: E402  (monetization safety checks, enforced in code)
+import nbadata  # noqa: E402  (official NBA results: confirms scores and records in claims)
 from editor import MIN_SCORE, niche_data, score_line, short_score  # noqa: E402  (same order and niche scan as the editor)
 
 # ---- Claude Pro budget: model choice + clean stop when the plan's usage limit is reached ----
@@ -136,18 +137,29 @@ S. STRATEGY FIRST (the content strategist's job, before a single line is written
    - "techniques": the 3-5 techniques this kind of story needs, from its menu (never all of
      them: stacking every trick makes a script sound fake):
        beef: curiosity gap, conflict, escalation, the receipt, contrast/reversal, the other
-             side's best point in one line (fair, and it fuels the comments), pick-a-side ending
+             side's best point in one line (fair, and it fuels the comments), show don't tell,
+             peak-end, pick-a-side ending
        rumor_trade: information gap, the stakes (what changes for whom), foreshadowing,
-             context, the detail most fans missed (only if the sources have it), pick-a-side ending
+             context, the detail most fans missed (only if the sources have it), rule of three,
+             analogy, peak-end, pick-a-side ending
        controversy: what is confirmed first, the two readings of it (each side's best point,
              fairly), the rule or context that decides it, the response or denial when the
-             sources carry one, a balanced verdict, pick-a-side ending. Never manufacture a
+             sources carry one, a balanced verdict, show don't tell, pick-a-side ending. Never manufacture a
              dispute the sources do not show, never imply guilt that is not established.
-       injury_comeback: human interest, before/after contrast, the stakes, emotional contrast
+       injury_comeback: human interest, before/after contrast, the stakes, emotional contrast,
+             rule of three, peak-end
        off_court_moment: pattern interrupt, surprise-reveal, humor, real fan reaction (only if
-             the sources or today's audience data show it), callback
+             the sources or today's audience data show it), callback, show don't tell, social currency
        achievement: specificity, context (why the number matters), expectation vs reality,
-             myth busting
+             myth busting, rule of three, analogy, social currency
+     What five of them mean here: ANALOGY = one comparison from the NBA world that makes the
+     story click at once (a real, well-known precedent, never invented; no numbers or dates in
+     it, because only the sources' numbers may be spoken). RULE OF THREE = three
+     facts in one rhythm ("32 points, 10 assists, 5 steals"), all from the sources. SHOW DON'T
+     TELL = what the person did or said, not a label ("he walked off mid-question", not "he was
+     angry"). SOCIAL CURRENCY = the one detail a fan will repeat to a friend, from the sources
+     only. PEAK-END = the payoff is the strongest ANSWER of the Short, never a weaker repeat of
+     the hook; peak-end never takes anything from the hook - the hook keeps the whole intrigue.
    Two openers are for the MIDDLE of a script only, never the hook: identity ("If you grew up
    on...") and the viewer-as-hero ("Imagine being..."). The hook always opens on names + clash.
    Fan reactions ("fans are furious", "it went viral") only when the sources describe a public
@@ -1294,6 +1306,12 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
                              or (topic.get("youtube_heat") or 0) >= 3 or (topic.get("search_hits") or 0) >= 3),
         "claims": draft.get("claims") or [],
     }
+    # a final score or a team record in a claim is checked against the official results
+    # (only ever confirms; without the key or when the API is down nothing changes)
+    try:
+        nbadata.annotate(short["claims"])
+    except Exception as exc:
+        print(f"[!] official results check skipped: {exc}")
     # monetization safety, enforced in code (the media, music and video checks follow in gate.py)
     result = compliance.evaluate_script(short, sources, known)
     short["claims"] = result["claims"]
@@ -1315,6 +1333,10 @@ def write_summary(shorts: list[dict]) -> None:
                   ""] + [f"{n}. {x}" for n, x in enumerate(QUEUE, 1)] + [""]
     if SKIPPED:
         lines += ["**Stories skipped (why):**", ""] + [f"- {x}" for x in SKIPPED] + [""]
+    if not nbadata.KEY:
+        lines += ["**Official results check:** off (no BALLDONTLIE_API_KEY in this step)", ""]
+    elif nbadata.LOG:
+        lines += ["**Official results check:** " + "; ".join(dict.fromkeys(nbadata.LOG)), ""]
     for s in shorts:
         status = "✅ ready" if s["ready"] else "⚠️ needs review"
         lines += [f"### Short {s['n']}: {s['headline']}", "",
@@ -1331,6 +1353,7 @@ def write_summary(shorts: list[dict]) -> None:
             if s.get("claims"):
                 lines += ["**Claims:**", ""] + [f"- {c.get('status')} · {c.get('text', '')}"
                                                 + (f" ({c['reported_by']})" if c.get("reported_by") else "")
+                                                + (f" ✅ {c['official_result']}" if c.get("official_result") else "")
                                                 for c in s["claims"]] + [""]
         if s["unsupported_numbers"]:
             lines.append(f"**Fact check:** numbers not found in sources: {', '.join(s['unsupported_numbers'])}")

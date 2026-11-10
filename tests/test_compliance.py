@@ -477,7 +477,11 @@ class Stage3(unittest.TestCase):
             self.assertFalse(media.not_a_person(real), real)
         short = {"headline": "Jonathan Kuminga Gets Frustrated With Rudy Gobert Again During Timberwolves-Pelicans Game",
                  "beats": [{"say": "Kuminga yelled at Gobert."}]}
-        self.assertEqual(sorted(media.people(short)), ["Jonathan Kuminga", "Rudy Gobert"])
+        old_check, media.PEOPLE_CHECK = media.PEOPLE_CHECK, False   # the word filter alone (offline)
+        try:
+            self.assertEqual(sorted(media.people(short)), ["Jonathan Kuminga", "Rudy Gobert"])
+        finally:
+            media.PEOPLE_CHECK = old_check
         self.assertTrue(media.NOT_NBA_LEVEL.search("Women's basketball game Stanford vs UConn"))
         self.assertTrue(media.NOT_NBA_LEVEL.search("Baloncesto femenino final"))
         self.assertFalse(media.NOT_NBA_LEVEL.search("Real Madrid vs Barcelona basketball Euroleague"))
@@ -828,6 +832,129 @@ class Stage3(unittest.TestCase):
         x = render.overlay(None, "", "#FACC15", credit="Photo: Erik Drost / CC BY 2.0")
         y = render.overlay(None, "", "#FACC15", credit="")
         self.assertEqual(x.tobytes(), y.tobytes())
+
+
+    # 42. The Draymond run: "Only Has" / "World Reacts" were taken for people and found a doll,
+    #     a beach photo and an arch. Only Wikipedia-confirmed sports people are searched, an
+    #     unjudged photo needs the FULL name in its title, and the gate holds anything else.
+    def test_42_only_real_people(self):
+        import json, media, gate, compliance
+        old_get, old_cache, old_check = media.get, dict(media._person_cache), media.PEOPLE_CHECK
+
+        def fake(url, timeout=30):
+            return json.dumps({"query": {
+                "redirects": [{"from": "Luka Doncic", "to": "Luka Dončić"}],
+                "pages": {"1": {"title": "Draymond Green", "pageprops": {"wikibase-shortdesc": "American basketball player (born 1990)"}},
+                          "2": {"title": "Luka Dončić", "pageprops": {"wikibase-shortdesc": "Slovenian basketball player"}},
+                          "3": {"title": "Sam Amick", "pageprops": {"wikibase-shortdesc": "American sports journalist"}},
+                          "-1": {"title": "Only Has", "missing": ""},
+                          "-2": {"title": "World Reacts", "missing": ""},
+                          "4": {"title": "Taylor Swift", "pageprops": {"wikibase-shortdesc": "American singer-songwriter"}}}}}).encode()
+        try:
+            media.get, media.PEOPLE_CHECK = fake, True
+            media._person_cache.clear()
+            got = media.real_people(["Draymond Green", "Only Has", "World Reacts", "Luka Doncic", "Sam Amick", "Taylor Swift"])
+            self.assertEqual(got, ["Draymond Green", "Luka Doncic", "Sam Amick"])
+            short = {"headline": "“He Only Has Value in Golden State” – NBA World Reacts as Insider Drops "
+                                 "Bombshell Draymond Green Trade Report", "beats": [{"say": "Sam Amick says the Warriors will listen."}]}
+            self.assertNotIn("Only Has", media.people(short))
+            self.assertIn("Draymond Green", media.people(short))
+
+            def down(url, timeout=30):
+                raise OSError("offline")
+            media.get = down
+            media._person_cache.clear()
+            self.assertIsNone(media.real_people(["Draymond Green"]))      # unreachable: old behaviour
+        finally:
+            media.get, media.PEOPLE_CHECK = old_get, old_check
+            media._person_cache.clear()
+            media._person_cache.update(old_cache)
+        self.assertFalse(media.solo_title({"title": "St. Louis Only Has One Arch"}, "Draymond Green"))
+        self.assertFalse(media.solo_title({"title": "File:Green field in spring.jpg"}, "Draymond Green"))
+        self.assertTrue(media.solo_title({"title": "File:Draymond Green (33053301711).jpg"}, "Draymond Green"))
+        self.assertTrue(media.solo_title({"title": "File:Luka Dončić 2024.jpg"}, "Luka Doncic"))
+        items = [{"kind": "photo", "title": "Draymond Green 2016.jpg", "match": 8, "license": "CC BY 2.0",
+                  "author": "A", "page": "p1",
+                  "alts": [{"kind": "photo", "title": "SHE ONLY HAS EYES FOR ME..", "match": None,
+                            "license": "CC BY 2.0", "author": "B", "page": "p2"}]},
+                 {"kind": "photo", "title": "File:Draymond Green (cropped).jpg", "match": None,
+                  "license": "CC BY-SA 2.0", "author": "C", "page": "p3"}]
+        v, notes = gate.check_visuals(items, {"people": ["Draymond Green", "Sam Amick"]})
+        self.assertEqual(v, compliance.REVIEW)
+        self.assertEqual(len(notes), 1)
+        self.assertIn("SHE ONLY HAS EYES", notes[0])
+        items[0]["alts"] = []
+        self.assertEqual(gate.check_visuals(items, {"people": ["Draymond Green"]})[0], compliance.PASS)
+        self.assertEqual(gate.check_visuals(items, {})[0], compliance.PASS)       # older runs: unchanged
+
+
+    # 43. Official results (balldontlie) only ever CONFIRM: a score or a record whose every number
+    #     matches; a claim with any unchecked number (player points) stays as it was; no key or a
+    #     dead API changes nothing. YuNet finds faces, and the old detector takes over without it.
+    def test_43_official_results_and_faces(self):
+        import datetime as dt, nbadata, compliance
+        lakers = {"id": 14, "name": "Lakers", "conference": "West"}
+        hawks = {"id": 1, "name": "Hawks", "conference": "East"}
+        pistons = {"id": 9, "name": "Pistons", "conference": "East"}
+        g1 = {"date": "2026-11-09", "status": "Final", "home_team": hawks, "visitor_team": lakers,
+              "home_team_score": 114, "visitor_team_score": 124, "postseason": False}
+        g2 = {"date": "2026-11-08", "status": "Final", "home_team": lakers, "visitor_team": pistons,
+              "home_team_score": 120, "visitor_team_score": 101, "postseason": False}
+        calls = []
+
+        def fake(path, params):
+            calls.append(path)
+            if path == "teams":
+                return {"data": [lakers, hawks, pistons, {"id": 99, "name": "Old Team", "conference": ""}]}
+            if "team_ids[]" in params:
+                return {"data": [g1, g2]}
+            return {"data": [g1, g2]}
+        old = (nbadata._get, nbadata.KEY, dict(nbadata._cache))
+        try:
+            nbadata._get, nbadata.KEY = fake, "test"
+            nbadata._cache.clear()
+            today = dt.date(2026, 11, 10)
+            self.assertIn("Lakers 124-114 Hawks", nbadata.confirm("The Lakers beat the Hawks 124 to 114.", today))
+            self.assertIn("Lakers 2-0", nbadata.confirm("The Lakers are 2-0.", today))
+            self.assertEqual(nbadata.confirm("The Lakers are 10-2.", today), "")              # wrong record
+            self.assertEqual(nbadata.confirm("The Lakers beat the Hawks 125 to 114.", today), "")
+            self.assertEqual(nbadata.confirm("Doncic had 32 points in the 124 to 114 win over the Hawks.", today), "")
+            self.assertEqual(nbadata.confirm("Doncic is the best player in the league.", today), "")
+            claims = [{"text": "The Lakers beat the Hawks 124 to 114.", "status": "REPORTED", "source": 1},
+                      {"text": "Doncic had 32 points.", "status": "REPORTED", "source": 1}]
+            self.assertEqual(nbadata.annotate(claims, today), 1)
+            src = [{"title": "t", "text": "x", "tier": 1, "publisher": "Yahoo Sports"}]
+            _, notes, out = compliance.check_claims(claims, src, "The Lakers beat the Hawks, per Yahoo.")
+            self.assertEqual([c["status"] for c in out], ["CONFIRMED", "REPORTED"])
+
+            def down(path, params):
+                raise OSError("offline")
+            nbadata._get = down
+            nbadata._cache.clear()
+            claims2 = [{"text": "The Lakers beat the Hawks 124 to 114.", "status": "REPORTED", "source": 1}]
+            self.assertEqual(nbadata.annotate(claims2, today), 0)
+            self.assertNotIn("official_result", claims2[0])
+            nbadata.KEY = ""
+            self.assertEqual(nbadata.annotate([{"text": "The Lakers are 2-0."}], today), 0)
+        finally:
+            nbadata._get, nbadata.KEY = old[0], old[1]
+            nbadata._cache.clear()
+            nbadata._cache.update(old[2])
+        try:
+            import cv2, numpy as np, render
+        except ImportError as e:
+            self.skipTest(f"render needs {e.name}")
+        self.assertTrue(render.YUNET.exists())
+        blank = np.zeros((400, 300, 3), dtype=np.uint8)
+        self.assertEqual(render.yunet_faces(cv2, blank, 30), [])
+        render._yunet.clear()
+        old_model = render.YUNET
+        try:
+            render.YUNET = render.ROOT / "missing.onnx"
+            self.assertIsNone(render.yunet_faces(cv2, blank, 30))          # -> the Haar detector
+        finally:
+            render.YUNET = old_model
+            render._yunet.clear()
 
 
 if __name__ == "__main__":

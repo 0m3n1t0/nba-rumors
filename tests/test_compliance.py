@@ -465,6 +465,59 @@ class Stage3(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(len(found), 1)
 
+    # 27. Only relevant pictures: no objects, no women's/college games on an NBA channel, no fake
+    #     "names" from Title Case headlines, refused photos never come back, the hook never opens
+    #     on a plain background
+    def test_27_relevance_guards(self):
+        import media, render
+        for junk in ["Gobert Again", "During Timberwolves-Pelicans", "Blank Space", "Golden State", "Per Yahoo"]:
+            self.assertTrue(media.not_a_person(junk), junk)
+        for real in ["Rudy Gobert", "Jonathan Kuminga", "Taylor Swift", "Magic Johnson", "De'Aaron Fox",
+                     "Will Richard", "Derrick White", "Jalen Green", "Kon Knueppel"]:
+            self.assertFalse(media.not_a_person(real), real)
+        short = {"headline": "Jonathan Kuminga Gets Frustrated With Rudy Gobert Again During Timberwolves-Pelicans Game",
+                 "beats": [{"say": "Kuminga yelled at Gobert."}]}
+        self.assertEqual(sorted(media.people(short)), ["Jonathan Kuminga", "Rudy Gobert"])
+        self.assertTrue(media.NOT_NBA_LEVEL.search("Women's basketball game Stanford vs UConn"))
+        self.assertTrue(media.NOT_NBA_LEVEL.search("Baloncesto femenino final"))
+        self.assertFalse(media.NOT_NBA_LEVEL.search("Real Madrid vs Barcelona basketball Euroleague"))
+        self.assertFalse(media.HOOPS_TAGS.search("coffee, cup, desk, microphone, interview"))
+        cands = [{"kind": "photo", "page": "a"}, {"kind": "photo", "page": "b"}, {"kind": "video", "page": "c"}]
+        self.assertEqual(media.rejected_photos(cands, {"ranking": [1, 3], "who": {"1": "P", "2": "X"}}), {"b"})
+        self.assertEqual(media.rejected_photos(cands, {}), set())
+        self.assertEqual(render.opening_picture([None, None, {"f": 1}, {"f": 2}], 4), [{"f": 1}, None, None, {"f": 2}])
+        self.assertEqual(render.opening_picture([{"f": 0}, None], 2), [{"f": 0}, None])
+
+    # 28. Google Trends only counts for the story's real people, and only basketball news
+    def test_28_trends_and_threshold(self):
+        import signals, editor
+        topic = {"star_names": ["Tyler Kolek 3.1", "Jayson Tatum 6.0"]}
+        self.assertFalse(signals.trend_matches(topic, {"query": "sarah jukaku", "news": ["Sarah Jukaku stuns fans"]}))
+        self.assertFalse(signals.trend_matches(topic, {"query": "snowfall forecast", "news": ["Snow in Boston"]}))
+        self.assertTrue(signals.trend_matches(topic, {"query": "jayson tatum", "news": []}))
+        self.assertTrue(signals.trend_matches(topic, {"query": "celtics 76ers", "news": ["Tatum and the Celtics fall"]}))
+        self.assertFalse(signals.trend_matches({"star_names": []}, {"query": "lineup", "news": []}))
+        self.assertGreaterEqual(editor.MIN_SCORE, 60)
+
+    # 29. Hooks the way the best openers are written; commentary required for monetization;
+    #     an interview only counts when it is the right person
+    def test_29_hook_craft_commentary_interview(self):
+        import script, compliance, media
+        weak = "Did Jonathan Kuminga just go off on Rudy Gobert again, and is this where it breaks in Minnesota?"
+        strong = "Did Jonathan Kuminga just scream at Rudy Gobert on camera, mid-game?"
+        self.assertIn("two questions", [f for f, _ in script.hook_flaws(weak)])
+        self.assertEqual(script.hook_flaws(strong), [])
+        self.assertIn("fog word", [f for f, _ in script.hook_flaws("Is the Celtics drama about to explode?")])
+        self.assertGreater(script.nba_hook_score(strong)[1], script.nba_hook_score(weak)[1])
+        background_only = [{"say": "Brown got traded to Philly this summer.", "role": "context", "stage": "setup"},
+                           {"say": "So is it really no beef?", "role": "question", "stage": "exit"}]
+        v, notes, _ = compliance.check_originality(background_only, [])
+        self.assertEqual(v, compliance.REVIEW)
+        with_take = background_only[:1] + [{"say": "I think the silence says more than any quote.",
+                                            "role": "analysis", "stage": "payoff"}] + background_only[1:]
+        self.assertEqual(compliance.check_originality(with_take, [])[0], compliance.PASS)
+        self.assertIn("Somebody ELSE's interview", media.PICK_PROMPT)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -518,6 +518,78 @@ class Stage3(unittest.TestCase):
         self.assertEqual(compliance.check_originality(with_take, [])[0], compliance.PASS)
         self.assertIn("Somebody ELSE's interview", media.PICK_PROMPT)
 
+    # 30. Flickr straight from the source: allowed licences only, the person named, big enough,
+    #     no key = skipped (nothing changes), the same photo via Openverse counts once
+    def test_30_flickr(self):
+        import media, io, json as js
+        self.assertEqual(media.flickr_id("https://www.flickr.com/photos/allproreels/53012345678/"), "53012345678")
+        self.assertNotIn("1", media.FLICKR_LICENCES)          # NC never requested
+        old_key = media.FLICKR_KEY
+        media.FLICKR_KEY = ""
+        self.assertEqual(media.flickr_photos("Jayson Tatum"), [])
+        media.FLICKR_KEY = "test"
+        reply = {"stat": "ok", "photos": {"photo": [
+            {"id": "1", "owner": "o", "ownername": "All-Pro Reels", "title": "Jayson Tatum", "tags": "basketball celtics",
+             "license": "5", "datetaken": "2025-03-01", "url_h": "u1", "width_h": "1067", "height_h": "1600"},
+            {"id": "2", "owner": "o", "ownername": "x", "title": "Jayson Tatum", "tags": "nba", "license": "4",
+             "datetaken": "2024-01-01", "url_l": "u2", "width_l": "683", "height_l": "1024"},
+            {"id": "3", "owner": "o", "ownername": "x", "title": "Celtics game", "tags": "basketball", "license": "4",
+             "datetaken": "2025-01-01", "url_h": "u3", "width_h": "1600", "height_h": "1067"}]}}
+        orig = media.get
+        media.get = lambda url, timeout=30: js.dumps(reply).encode()
+        try:
+            found = media.flickr_photos("Jayson Tatum")
+        finally:
+            media.get, media.FLICKR_KEY = orig, old_key
+        self.assertEqual([f["page"] for f in found], ["https://www.flickr.com/photos/o/1/"])   # 2 too small, 3 not him
+        self.assertEqual(found[0]["license"], "CC BY-SA 2.0")
+
+    # 31. A running story: our earlier Shorts about the same people; the receipt must be said and
+    #     sourced; the closing question loops back to the hook
+    def test_31_history_receipt_loop(self):
+        import script
+        script.RECENT.clear()
+        script.RECENT.extend([
+            {"time": "2026-11-05T10:00", "headline": "Jaylen Brown doesn't expect to talk to Jayson Tatum", "hook": "h1", "spoken": "x"},
+            {"time": "2026-11-07T10:00", "headline": "Austin Reaves savage reaction", "hook": "h2", "spoken": "x"},
+            {"time": "2026-11-08T10:00", "headline": "Jayson Tatum injury update", "hook": "h3", "spoken": "x"}])
+        try:
+            hist = script.rivalry_history("Jayson Tatum won't give air to Jaylen Brown drama")
+        finally:
+            script.RECENT.clear()
+        lines = hist.splitlines()
+        self.assertIn("Jaylen Brown doesn't expect", lines[0])          # both people: first
+        self.assertNotIn("Reaves", hist)
+        beats = [{"say": "Giannis said \"He's not my coach.\" Then he left."}]
+        src = [{"title": "t", "text": "Giannis said: He\u2019s not my coach. My coach is Erik Spoelstra."}]
+        self.assertEqual(script.checked_receipt("He's not my coach", beats, src), "He's not my coach")
+        self.assertEqual(script.checked_receipt("He is a fraud", beats, src), "")
+        self.assertTrue(script.loops_back("Did Jaylen Brown just shrug off Jayson Tatum?",
+                                          "Tuesday decides it. So who blinks first, Brown or Tatum?"))
+        self.assertFalse(script.loops_back("Did Jaylen Brown just shrug off Jayson Tatum?", "So would you trade him?"))
+
+    # 32. Reddit adds demand only: a topic without Reddit data scores exactly as before
+    def test_32_reddit_adds_only(self):
+        import signals, editor
+        topic = {"star_names": ["Jayson Tatum 6.0"]}
+        titles = ["Jayson Tatum on facing Brown: 'another game'"] + ["other post"] * 20 + ["Tatum highlights"]
+        self.assertEqual(signals.reddit_heat(topic, titles), 6.0)
+        self.assertEqual(signals.reddit_heat({"star_names": []}, titles), 0.0)
+        base = {"drama": 7, "virality": 7, "youtube_heat": 2, "search_hits": 4, "google_trend": 0, "conflict": True}
+        self.assertEqual(editor.short_score(base), editor.short_score({**base, "reddit": 0}))
+        self.assertGreater(editor.short_score({**base, "reddit": 6}), editor.short_score(base))
+
+    # 33. The receipt is found in the spoken words and gets its own big caption
+    def test_33_receipt_caption(self):
+        import render
+        words = [{"word": w, "start": k * 0.3, "end": k * 0.3 + 0.25} for k, w in
+                 enumerate("Then he said He's not my coach. Wow.".split())]
+        marked, at = render.mark_receipt(words, "He's not my coach")
+        self.assertAlmostEqual(at, 0.9)
+        groups = render.phrase_groups(marked)
+        self.assertIn(["He's", "not", "my", "coach."], [[w["word"] for w in g] for g in groups])
+        self.assertEqual(render.mark_receipt(words, "")[1], None)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -639,6 +639,15 @@ class Stage3(unittest.TestCase):
         finally:
             media.get = orig
 
+    # 35. Exactly 2 scripts per run, a held one included (no extra try: even Claude budget)
+    def test_35_quota(self):
+        import script
+        r = lambda *flags: [{"ready": f} for f in flags]
+        self.assertTrue(script.quota_reached(r(True, True), 2))
+        self.assertTrue(script.quota_reached(r(False, True), 2))
+        self.assertFalse(script.quota_reached(r(True), 2))
+        self.assertFalse(script.quota_reached(r(False), 2))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

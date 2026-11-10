@@ -29,10 +29,10 @@ jobs:
     runs-on: ubuntu-24.04      # pinned: "ubuntu-latest" is moving to Ubuntu 26, which could change ffmpeg/espeak
     timeout-minutes: 120     # Chatterbox voices on a CPU: a few extra minutes per Short
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Story history (what was already made, kept between runs)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: data/history
           key: story-history-${{ github.run_id }}
@@ -40,13 +40,13 @@ jobs:
 
       - name: Private state repository (permanent history and licence records)
         continue-on-error: true      # without it the run still works from the cache
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: 0m3n1t0/nba-rumors-state
           token: ${{ secrets.STATE_REPO_TOKEN }}
           path: state
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"   # Chatterbox (the voice) needs 3.11
           cache: pip
@@ -87,7 +87,7 @@ jobs:
 
       - name: Cache voice models
         if: hashFiles('data/skip_reason.txt') == ''
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/huggingface
           key: voice-models-pipeline-v2
@@ -95,7 +95,7 @@ jobs:
 
       - name: Cache the voice engine's English model (so it is downloaded only once)
         if: hashFiles('data/skip_reason.txt') == ''
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/voice-wheels
           key: voice-wheels-v1
@@ -126,7 +126,7 @@ jobs:
       - name: Music library (private repo with YouTube Audio Library tracks; skipped if not set up)
         if: hashFiles('data/skip_reason.txt') == ''
         continue-on-error: true
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: 0m3n1t0/music-library
           token: ${{ secrets.MUSIC_REPO_TOKEN }}
@@ -161,7 +161,7 @@ jobs:
 
       - name: "Download 1: finished Shorts only (small)"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: shorts-ready
           path: |
@@ -172,7 +172,7 @@ jobs:
 
       - name: "Download 2: working data for checking problems (no big media files)"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pipeline-data
           path: |

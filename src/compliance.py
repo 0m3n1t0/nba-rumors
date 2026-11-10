@@ -141,8 +141,31 @@ ANON = re.compile(r"\b(a (league |team )?source|sources (say|said|tell|told|clos
                   r"in the locker room,? he (said|told|yelled|screamed)|behind closed doors,? he)\b", re.I)
 
 
+# Fan reaction ("fans are furious", "the internet lost it", "it went viral"). Balanced on
+# purpose: the sources do not have to use the same words. Any described public reaction in
+# the sources (fans, social media, backlash, viral...) or a story that is measurably hot today
+# (Reddit, Google Trends, YouTube heat, search) carries it. Only a reaction with no sign of one
+# anywhere is held for review.
+SOCIAL_PROOF = re.compile(r"\b(fans?|the internet|twitter|social media|everyone|the nba world|swifties|"
+                          r"nba twitter)\b[^.!?]{0,30}\b(furious|angry|livid|mad|outraged|split|divided|"
+                          r"lost it|losing it|going crazy|melting down|erupt\w*|explod\w*|roasting|"
+                          r"reacting|talking about|can'?t stop|in shock|stunned|calling for|demanding)\b|"
+                          r"\b(went viral|broke the internet|blew up online)\b", re.I)
+REACTION_EVIDENCE = re.compile(r"\b(fans?|supporters|social media|twitter|x\.com|instagram|tiktok|"
+                               r"reddit|viral|backlash|outrage|reacted|reaction|criticism|criticized|"
+                               r"slammed|mocked|trolled|swifties|online|comments?|buzz|trending|"
+                               r"uproar|blasted|ripped)\b", re.I)
+
+
+def check_social_proof(spoken: str, sources: list[dict], audience_hot: bool = False) -> tuple[str, list[str]]:
+    m = SOCIAL_PROOF.search(spoken)
+    if not m or audience_hot or REACTION_EVIDENCE.search(material(sources)):
+        return PASS, []
+    return REVIEW, [f"fan reaction with no sign of one in the sources or today's data: \"{m.group(0)}\""]
+
+
 def check_fabrication(spoken: str, sources: list[dict], bad_quotes: list[str],
-                      unsupported_numbers: list[str]) -> tuple[str, list[str]]:
+                      unsupported_numbers: list[str], audience_hot: bool = False) -> tuple[str, list[str]]:
     notes, verdict = [], PASS
     mat = fold(material(sources))
     for m in ANON.finditer(spoken):
@@ -160,7 +183,8 @@ def check_fabrication(spoken: str, sources: list[dict], bad_quotes: list[str],
     if unsupported_numbers:
         verdict = worst(verdict, REVIEW)
         notes.append(f"numbers not in the sources: {', '.join(unsupported_numbers)}")
-    return verdict, notes
+    v, n = check_social_proof(spoken, sources, audience_hot)
+    return worst(verdict, v), notes + n
 
 
 # ---------- 4. original storytelling (not a read-out article) ----------
@@ -374,7 +398,7 @@ def evaluate_script(short: dict, sources: list[dict], known: set[str] | None = N
     v, n, claims = check_claims(short.get("claims") or [], sources, spoken)
     checks["claim_classification"] = {"verdict": v, "notes": n}
     v, n = check_fabrication(spoken, sources, short.get("unsupported_quotes", []),
-                             short.get("unsupported_numbers", []))
+                             short.get("unsupported_numbers", []), bool(short.get("audience_hot")))
     checks["factual_accuracy"] = {"verdict": v, "notes": n}
     v, n, stats = check_originality(short.get("beats", []), sources)
     checks["original_storytelling"] = {"verdict": v, "notes": n, **stats}

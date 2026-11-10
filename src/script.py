@@ -1162,6 +1162,12 @@ SCRIPT_LEDGER = DATA / "history" / "ledger" / "scripts.jsonl"
 SHORTS_PER_RUN = int(os.environ.get("SHORTS_PER_RUN", "2"))
 
 
+def quota_reached(shorts: list[dict], per_run: int | None = None) -> bool:
+    """SHORTS_PER_RUN scripts per run, held ones included (decided: no extra try, so the
+    Claude Pro budget stays even between the two channels)."""
+    return len(shorts) >= (per_run or SHORTS_PER_RUN)
+
+
 def remember(shorts: list[dict]) -> None:
     """What was made, kept between runs (GitHub cache), so the editor does not repeat stories."""
     import datetime as dt
@@ -1225,8 +1231,10 @@ def main() -> None:
                  f"{' 🎯 wins in niche: ' + ', '.join(r['niche_match']) if r.get('niche_match') else ''}"
                  f" · {editor['topics'][r['id']]['headline'][:80]}"
                  for r in top)
+    # Exactly SHORTS_PER_RUN scripts per run (a Short held for review still counts), so the
+    # Claude limit stays predictable for both channels.
     for topic_id in queue:
-        if len(shorts) == SHORTS_PER_RUN:
+        if quota_reached(shorts):
             break
         if topic_id in dupes:
             continue

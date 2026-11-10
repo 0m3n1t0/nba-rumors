@@ -427,7 +427,8 @@ def category_files(person: str) -> list[dict]:
             except Exception:
                 pass
         PHOTO_STATS.setdefault(person, {})["category"] = len(files)
-        return [f for f in files if (f.get("imageinfo") or [{}])[0].get("mime", "").startswith("image/")]
+        # photos only (the text search uses filetype:bitmap too): no SVG logos, no GIFs
+        return [f for f in files if (f.get("imageinfo") or [{}])[0].get("mime", "") in ("image/jpeg", "image/png", "image/webp")]
     return []
 
 

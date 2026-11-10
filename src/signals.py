@@ -398,11 +398,10 @@ def main() -> None:
         rise = f"+{t['momentum']}" if t.get("momentum") else "0"
         lines.append(f"| {t.get('youtube_heat', 0)} | {t.get('search_hits', 0)} | {t.get('google_trend', 0)}{gq} | "
                      f"{t.get('reddit', 0)} | {rise} | {t.get('star_fame', 0)} | {t['headline']} |")
+    # whole words only: "heat" inside "theaters" made "movie times" look basketball-related
     nba_trends = [g for g in signals.get("google_trends", [])
-                  if re.search(r"nba|lakers|celtics|warriors|knicks|bucks|heat|nuggets|suns|mavericks|"
-                               r"76ers|sixers|nets|bulls|cavaliers|thunder|spurs|rockets|clippers|kings|"
-                               r"pistons|pacers|hawks|hornets|magic|raptors|wizards|jazz|blazers|"
-                               r"grizzlies|pelicans|timberwolves|basketball", g["query"] + " " + " ".join(g["news"]), re.I)]
+                  if NBA_WORDS.search(g["query"] + " " + " ".join(g["news"]))
+                  and not re.search(r"\bwnba\b|\bwomen'?s\b|\bcollege\b|\bncaa\b", g["query"] + " " + " ".join(g["news"]), re.I)]
     lines += ["", "**Google Trends (US, now), basketball-related:** "
               + (" · ".join(f"{g['query']} ({g['traffic']:,}+)" for g in nba_trends[:10]) or "none right now")]
     matched = list(dict.fromkeys(p for t in topics[:TOP_TOPICS] for p in t.get("search_phrases", [])))

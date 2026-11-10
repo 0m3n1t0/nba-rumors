@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+# made by every run (kept in the run's downloads and the private state repository, never here)
+data/
+samples/
+# checked out by the workflows
+state/
+music_library/

@@ -11,20 +11,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Cache voice models
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/huggingface
           key: voice-models-chatterbox-v2
 
       - name: Cache the voice engine's English model (so it is downloaded only once)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/voice-wheels
           key: voice-wheels-v1
@@ -42,7 +42,7 @@ jobs:
 
       - name: Save samples
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: voice-samples
           path: samples/

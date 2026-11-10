@@ -454,6 +454,7 @@ def gather_sources(topic: dict, editor: dict, topic_id: int) -> list[dict]:
             text = None
         if text:
             it["text"] = text[:ARTICLE_CHARS]
+            it["url"] = url          # the publisher's own address (not the Google News redirect)
             fetched += 1
     return out
 
@@ -1284,7 +1285,9 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         "seconds": round(words / SPOKEN_WPM * 60),
         "titles": titles,
         "thumbnail_text": thumb,
-        "sources": [{"publisher": s["publisher"], "title": s["title"], "link": s["link"]} for s in used],
+        # "read": the article itself was read (not only its headline): the Summary shows it
+        "sources": [{"publisher": s["publisher"], "title": s["title"], "link": s.get("url") or s["link"],
+                     "read": bool(s.get("text"))} for s in used],
         "description": description,
         "tags": tags,
         "seo": seo,
@@ -1406,9 +1409,12 @@ def write_summary(shorts: list[dict]) -> None:
             lines.append(f"- {q['query']} {mark}")
         first = " / ".join(s.get("description", "").splitlines()[:2])
         lines += [f"", f"**Description (first 2 lines):** {first}", f"**Tags:** {', '.join(s.get('tags', []))}"]
-        lines += [f"", f"**Thumbnail:** {s['thumbnail_text']}", "", "**Sources:**"]
+        read = sum(1 for src in s["sources"] if src.get("read"))
+        lines += ["", f"**Thumbnail:** {s['thumbnail_text']}", "",
+                  f"**Sources** ({read} of {len(s['sources'])} articles read in full; 📰 = headline only):"]
         for src in s["sources"]:
-            lines.append(f"- [{src['publisher']}: {src['title']}]({src['link']})")
+            mark = "" if src.get("read") else " 📰"
+            lines.append(f"- [{src['publisher']}: {src['title']}]({src['link']}){mark}")
         lines.append("")
     text = "\n".join(lines)
     print(text)

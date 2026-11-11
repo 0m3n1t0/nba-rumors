@@ -35,6 +35,8 @@ the "Safety tests" step before anything is installed or made.
  23. photos: a photo taken before his NBA career ("PRE-NBA", run 43066151290: Brown at a 2015
      high school game) goes last and Claude is told; off-court events score low; a Commons
      derivative ("File:X.jpg ... derivative work") is the same picture as X
+ 25. TWO VERSIONS (C1): the editor names where two accounts clash, the writer puts both sides
+     in (attributed), the critic checks it; never invented
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1078,7 +1080,7 @@ class MustKnowContext(unittest.TestCase):
         script.HUMANIZE.format(voice="v", sources="s", draft="d")
         self.assertIn("MUST-KNOW", script.PROMPT.format(**{k: "x" for k in (
             "skill_script", "skill_package", "skill_seo", "voice", "formulas", "rules", "headline",
-            "main_note", "why", "story_type", "niche", "search", "history", "sources")}))
+            "main_note", "why", "two_versions", "story_type", "niche", "search", "history", "sources")}))
 
 
 class OwnTake(unittest.TestCase):
@@ -1361,6 +1363,24 @@ class OpenverseRetries(unittest.TestCase):
         self.assertEqual(len(tries), 5)
         self.assertEqual(slept, [5, 10, 20, 30])
         self.assertEqual(sum(media.OPENVERSE_WAITS), 125)        # about two minutes at most
+
+
+class TwoVersions(unittest.TestCase):
+    """C1 (owner's plan, 2026-11-11): the channel lives on two accounts that clash. Run
+    43066151290 had one ("wasn't paying attention" vs "said beforehand he wouldn't speak")."""
+
+    def test_editor_names_it(self):
+        import editor
+        self.assertIn('"two_versions"', editor.PROMPT)
+        self.assertIn("Never invent the other side", editor.PROMPT)
+
+    def test_writer_and_critic(self):
+        import script
+        self.assertIn("TWO VERSIONS", script.PROMPT)
+        self.assertIn("{two_versions}", script.PROMPT)
+        self.assertIn("Never manufacture a contradiction", script.PROMPT)
+        self.assertIn("TWO VERSIONS", script.HUMANIZE)
+        self.assertIn("never invented", script.HUMANIZE)
 
 
 if __name__ == "__main__":

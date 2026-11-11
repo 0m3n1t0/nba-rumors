@@ -103,6 +103,7 @@ rule wins: the names and the shot fired come first, never "you"):
 THE STORY: {headline}
 ITS OWN ARTICLE: {main_note}
 Editor note: {why}
+Two versions the editor saw in the headlines: {two_versions}
 STORY TYPE: {story_type}
 
 WHAT PEOPLE ARE TYPING INTO YOUTUBE SEARCH ABOUT IT RIGHT NOW (work the best phrase's
@@ -172,6 +173,14 @@ S. STRATEGY FIRST (the content strategist's job, before a single line is written
    on...") and the viewer-as-hero ("Imagine being..."). The hook always opens on names + clash.
    Fan reactions ("fans are furious", "it went viral") only when the sources describe a public
    reaction or the story is measurably hot today (its audience signals): never invented.
+TWO VERSIONS (the channel lives on them): before choosing the angle, search the sources for
+   the place where two accounts clash: what someone SAID against what he DID, his version
+   against another person's, what he said then against what he says now. When the sources
+   show one, it is usually the strongest angle: put BOTH sides in the Short, each exactly as
+   the sources state it and attributed ("Brown says...", "but Yahoo reported..."), let the
+   payoff weigh them in her own words, and let the closing question make the viewer pick.
+   Never manufacture a contradiction the sources do not show, and never drop the side that
+   weakens the drama: both sides, fairly, is what makes people argue in the comments.
 0. ANGLE FIRST. Before writing anything, list 3 different angles this story could be told
    from (for example: a clash, a betrayal, money at stake, a contradiction between words and
    actions, a power struggle, pressure on someone, a reversal), and through whose eyes it
@@ -412,6 +421,9 @@ YOU ARE ALSO THE CRITICAL EDITOR. Before returning, check and fix:
 - the closing question asks the strategy's "central_question" as a pick-a-side (naming the
   hook's people), never a generic "who's right, A or B?" that misses what the story is about;
 - no quote is spoken twice (hook and beat, or two beats), and the exit never re-says the twist;
+- TWO VERSIONS: when the sources show two accounts that clash (said vs did, his version vs
+  another's), both sides are in the beats, each attributed exactly as the sources say it; a
+  side the sources do not show is never invented;
 - QUESTIONS: a middle beat re-asks the hook's question (make it a statement), or the closing
   question names someone the Short never introduced or no one from the hook (fix it);
 - MUST-KNOW CONTEXT: a cold viewer would ask "who is that?" or "why is he in this?", a trade is
@@ -1488,6 +1500,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         headline=topic["headline"],
         main_note=main_note(sources, topic["headline"]),
         why=judged.get("why", ""),
+        two_versions=judged.get("two_versions") or "(none named: look for one in the sources)",
         story_type=story_type(judged),
         niche=niche_block(),
         search="\n".join(f"- {p}" for p in topic.get("search_phrases", [])) or "- (no data today)",

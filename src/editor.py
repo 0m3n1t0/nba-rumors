@@ -103,6 +103,12 @@ Judge every topic:
   in half, 1 = nothing to argue about (a plain injury update).
 - "same_as": list of other ids that are the same story (so we never make two videos about it)
 - "why": one short sentence, the reason fans will care (or not)
+- "two_versions": TWO VERSIONS is the strongest fuel of intrigue: where two accounts clash.
+  What someone SAID against what he DID ("no beef", then he skipped him again), his version
+  against another person's ("I wasn't paying attention" vs "he said beforehand he wouldn't
+  speak to him"), then against now. One short line naming both sides, ONLY when these
+  headlines show both; otherwise "". Never invent the other side. A story with two versions
+  is worth more drama and debate than the same story without them.
 - "hook": the first sentence of a Short about it, max 15 words, punchy but TRUE to
   the headlines (no invented facts, no invented quotes)
 
@@ -126,7 +132,7 @@ Then pick:
   8-10 minute video this week, with "long_ids" listing the ids it uses.
 
 Return ONLY valid JSON, no markdown, in exactly this shape:
-{"ranked": [{"id": 0, "nba": true, "kind": "...", "conflict": true, "virality": 7, "drama": 8, "star_power": 8, "debate": 7, "same_as": [], "repeat": false, "why": "...", "hook": "..."}],
+{"ranked": [{"id": 0, "nba": true, "kind": "...", "conflict": true, "virality": 7, "drama": 8, "star_power": 8, "debate": 7, "same_as": [], "repeat": false, "why": "...", "two_versions": "", "hook": "..."}],
  "shorts": [0, 1, 2],
  "long": {"title_idea": "...", "long_ids": [0, 3]}}
 

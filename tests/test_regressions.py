@@ -45,6 +45,8 @@ the "Safety tests" step before anything is installed or made.
  29. stale Wikidata (run 43080115985): an undated "current" team is not trusted; college / high
      school photos are PRE-NBA from their own text; a former role is said as former
  30. Openverse kept: a good search is kept 14 days per person; a failed one uses it
+ 31. sentences never split at an initial ("Stephen A. smart?" is one question; run 43088629255
+     held a good Short for "repeating" because of it)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1616,6 +1618,30 @@ class OpenverseKept(unittest.TestCase):
             m.PHOTO_STATS.clear(); m.PHOTO_STATS.update(saved[4])
         self.assertEqual(got, [photo])
         self.assertIn("kept", note)
+
+
+class Initials(unittest.TestCase):
+    """31. Run 43088629255: "So was Stephen A. smart to stand down from LeBron, or did money
+    win?" was cut after "A.", the piece "So was Stephen A." counted as a repeat, Short held."""
+
+    BEATS = [{"say": "LeBron confronted Stephen A. over his Bronny comments, and he let it go.", "stage": "setup"},
+             {"say": "He told Kevin Garnett why: \"It's the first day of my new contract.\" 100 million from ESPN.", "stage": "conflict"},
+             {"say": "He says he knew it would be a problem.", "stage": "escalation"},
+             {"say": "I think that was smart: no argument is worth that kind of money. Now he says he's over it.", "stage": "payoff"},
+             {"say": "So was Stephen A. smart to stand down from LeBron, or did money win?", "stage": "exit"}]
+
+    def test_split(self):
+        import compliance as C
+        self.assertEqual(C.split_sentences("So was Stephen A. smart? Yes. J.R. Smith said no. Then Brown left."),
+                         ["So was Stephen A. smart?", "Yes.", "J.R. Smith said no.", "Then Brown left."])
+        self.assertEqual(C.split_sentences("Gary Payton Jr. scored. Dr. J smiled."), ["Gary Payton Jr. scored.", "Dr. J smiled."])
+
+    def test_the_held_short_passes(self):
+        import script
+        self.assertEqual(script.retention_check(self.BEATS)["hard"], [])
+        repeat = [dict(b) for b in self.BEATS]
+        repeat[4]["say"] = "No argument is worth that kind of money. So was Stephen A. smart, or did money win?"
+        self.assertIn("beat 5 repeats what was already said", script.retention_check(repeat)["hard"])   # real repeats still caught
 
 
 if __name__ == "__main__":

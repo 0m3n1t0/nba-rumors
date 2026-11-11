@@ -889,7 +889,7 @@ def question_last(beat: dict) -> None:
     """The closing question is always the very last sentence (that is what drives comments
     and loops the Short). Anything written after it (a subscribe line, "tell me I'm wrong")
     moves in front of it."""
-    parts = [x for x in re.split(r"(?<=[.!?])\s+", beat.get("say", "").strip()) if x]
+    parts = [x for x in compliance.split_sentences(beat.get("say", "")) if x]
     asks = [k for k, x in enumerate(parts) if x.endswith("?")]
     if asks and asks[-1] != len(parts) - 1:
         q = parts.pop(asks[-1])
@@ -905,7 +905,7 @@ def split_payoff(beats: list[dict]) -> None:
     if not beats or any(b.get("stage") == "payoff" for b in beats) or beats[-1].get("stage") != "exit":
         return
     last = beats[-1]
-    parts = [x for x in re.split(r"(?<=[.!?])\s+", last.get("say", "").strip()) if x]
+    parts = [x for x in compliance.split_sentences(last.get("say", "")) if x]
     takes = [x for x in parts if not x.endswith("?")]
     asks = [x for x in parts if x.endswith("?")]
     if not takes or not asks or len(" ".join(takes).split()) < 4:
@@ -940,7 +940,7 @@ def add_cta(beats: list[dict], seed: str) -> None:
     the question and the loop; the end card asks for the subscription on screen). Any subscribe
     sentence the writer added is removed, and the question stays the very last sentence."""
     for b in beats:
-        parts = [x for x in re.split(r"(?<=[.!?])\s+", b.get("say", "").strip()) if x]
+        parts = [x for x in compliance.split_sentences(b.get("say", "")) if x]
         kept = [x for x in parts if not CTA_SENTENCE.search(x)]
         if len(kept) != len(parts):
             b["say"] = " ".join(kept)
@@ -1221,7 +1221,7 @@ def retention_check(beats: list[dict]) -> dict:
         if k == len(beats) - 1:
             # the closing question names the hook's people again ON PURPOSE (the loop): only the
             # last beat's other sentences are checked for repeating
-            text = " ".join(x for x in re.split(r"(?<=[.!?])\s+", text.strip()) if x and not x.endswith("?"))
+            text = " ".join(x for x in compliance.split_sentences(text) if x and not x.endswith("?"))
         words = content_words(text)
         if k and words and len(words & said) / len(words) >= SAME_BEAT:
             hard.append(f"beat {k + 1} repeats what was already said")

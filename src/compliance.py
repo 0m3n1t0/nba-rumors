@@ -107,6 +107,14 @@ SENTENCE_HEDGE = re.compile(
     r"predicts?|expects?|suggest(s|ed)?|speculat\w*|whispers?|buzz|hears?|heard|apparently|allegedly)\b",
     re.I)
 CONTENT_WORD = re.compile(r"[a-z]{4,}")
+# A sentence ends at . ! ? followed by space, but NOT after an initial or a short title:
+# "So was Stephen A. smart to stand down?" is ONE question (run 43088629255: the split made
+# "So was Stephen A." a sentence of its own, and a good Short was held for "repeating").
+SENTENCE_END = re.compile(r"(?<!\b[A-Z]\.)(?<!\bJr\.)(?<!\bSr\.)(?<!\bSt\.)(?<!\bDr\.)(?<!\bMr\.)(?<!\bvs\.)(?<=[.!?])\s+")
+
+
+def split_sentences(text: str) -> list[str]:
+    return [x for x in SENTENCE_END.split((text or "").strip()) if x and x.strip()]
 
 
 def bare_claims(claims: list[dict], spoken: str) -> list[str]:
@@ -115,7 +123,7 @@ def bare_claims(claims: list[dict], spoken: str) -> list[str]:
     elsewhere no longer covers it. Returns the claims spoken as plain fact. A REPORTED claim is
     left to the whole-script check: many of them are plain facts no league office announced."""
     # a question asserts nothing ("Did the Lakers just shop Reaves?"): only statements count
-    sentences = [x for x in re.split(r"(?<=[.?!])\s+", spoken or "") if x.strip() and not x.strip().endswith("?")]
+    sentences = [x for x in split_sentences(spoken) if not x.strip().endswith("?")]
     out = []
     for c in claims or []:
         if str(c.get("status", "")).upper() not in HEDGED:

@@ -13,6 +13,7 @@ the "Safety tests" step before anything is installed or made.
   8. yt-edit: only real silence over 0.7 s is shortened, natural pauses never
   9. end card: after the voice's last real sound, never over it
  10. the public run page is short; the full report and working data are kept privately
+ 11. the weekly plan and competitor scan come from the private repository (not this public one)
 """
 
 from __future__ import annotations
@@ -562,6 +563,29 @@ class PrivateReport(unittest.TestCase):
                                  "media/short_1.json", "scripts/short_1.json", "scripts/short_2.json", "summary.md"])
         self.assertEqual(sorted(p.name for p in (home / "runs").iterdir()),
                          ["2026-11-01_222.tar.gz", kept.name])         # the old one is gone, no MP3/MP4
+
+
+class PrivatePlan(unittest.TestCase):
+    """11. plan/ is no longer in this public repository: every run restores it privately."""
+
+    def test_restore_brings_the_plan(self):
+        import state
+        saved = (state.ROOT, state.DATA, state.STATE, state.HOME)
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            state.ROOT, state.DATA = tmp, tmp / "data"
+            state.STATE = tmp / "state"
+            state.HOME = state.STATE / "nba"
+            (state.STATE / ".git").mkdir(parents=True)
+            (state.HOME / "plan").mkdir(parents=True)
+            (state.HOME / "plan" / "niche.json").write_text('{"date": "2026-11-09"}')
+            (state.HOME / "plan" / "week.json").write_text('{"week_of": "2026-11-09"}')
+            state.restore()
+            self.assertEqual(sorted(p.name for p in (tmp / "plan").iterdir()), ["niche.json", "week.json"])
+        finally:
+            state.ROOT, state.DATA, state.STATE, state.HOME = saved
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.assertIn("plan/", (ROOT / ".gitignore").read_text())
 
 
 if __name__ == "__main__":

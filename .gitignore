@@ -7,3 +7,6 @@ samples/
 # checked out by the workflows
 state/
 music_library/
+# the weekly plan and competitor scan: kept in the private state repository (restored at the
+# start of every run), never in this public repository
+plan/

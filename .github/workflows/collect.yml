@@ -27,6 +27,10 @@ env:
   CLAUDE_MODEL: sonnet         # writing, judging, choosing pictures (Opus would use the plan 5x faster)
   CLAUDE_MODEL_LIGHT: haiku    # simple steps (trimming, search words)
   MUSIC_UNDER_DB: "14"         # background music this many dB under the voice (14 = clearly audible, voice stays on top)
+  # Claude Code is PINNED (owner's decision 2026-11-11): a new release can never change a run
+  # unseen. Claude checks the newest version once a month and proposes the update in chat.
+  CLAUDE_CODE_VERSION: "2.1.322"
+  DISABLE_AUTOUPDATER: "1"   # and it never updates itself during a run
 
 jobs:
   pipeline:
@@ -83,8 +87,9 @@ jobs:
 
       - name: Install Claude Code
         run: |
-          curl -fsSL https://claude.ai/install.sh | bash
+          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/claude" --version
 
       - name: "Stage 2: AI editor picks today's stories"
         env:

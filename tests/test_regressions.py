@@ -39,6 +39,7 @@ the "Safety tests" step before anything is installed or made.
      in (attributed), the critic checks it; never invented
  26. RUMOR LABELS (C2): an anonymous report, a rumor or a speculation is voiced as such in its
      own sentence; a fact stated plainly is never forced to sound like a rumor
+ 27. PODCASTS (C3): two Google News searches for what was said on NBA podcasts and shows
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1423,6 +1424,21 @@ class RumorLabels(unittest.TestCase):
         self.assertTrue(any("sounds like a fact" in p for p in problems), problems)
         for word in ("ANONYMOUS", "SPECULATION", "IN ITS OWN SENTENCE"):
             self.assertIn(word, script.PROMPT)
+
+
+class PodcastSources(unittest.TestCase):
+    """C3 (owner's plan, 2026-11-11): beefs often start on podcasts (Arenas ripping Tatum and
+    Brown, Stephen A. and Garnett). Articles about them come in through Google News."""
+
+    def test_feeds(self):
+        from sources import FEEDS
+        by = {f["name"]: f for f in FEEDS}
+        for name in ("GN: podcasts", "GN: podcast clash"):
+            self.assertIn(name, by)
+            self.assertEqual(by[name]["tier"], 2)            # never trusted alone for a rumor
+            self.assertIn("when:1d", by[name]["url"])
+            self.assertIn("-odds", by[name]["url"])          # betting previews kept out
+        self.assertEqual(len(by), len(FEEDS))                # no name used twice
 
 
 if __name__ == "__main__":

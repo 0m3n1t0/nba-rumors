@@ -30,6 +30,10 @@ FEEDS = [
     {"name": "GN: ejected", "url": GOOGLE_NEWS.format(q="NBA+ejected+OR+altercation+OR+scuffle+OR+technical"), "tier": 2},
     {"name": "GN: front office", "url": GOOGLE_NEWS.format(q="NBA+%22front+office%22+OR+owner+OR+GM+controversy"), "tier": 2},
     {"name": "GN: investigation", "url": GOOGLE_NEWS.format(q="NBA+investigation+OR+%22league+office%22+OR+punishment"), "tier": 2},
+    # C3 (owner's plan, 2026-11-11): podcasts and interviews, where many beefs start. Articles
+    # about what was said on a show (free, readable, verifiable); never the audio or video.
+    {"name": "GN: podcasts", "url": GOOGLE_NEWS.format(q="NBA+(%22All+the+Smoke%22+OR+%22Draymond+Green+Show%22+OR+%22Club+520%22+OR+%22Knuckleheads%22+OR+%22Old+Man+and+the+Three%22+OR+%22Gil%27s+Arena%22+OR+%22Podcast+P%22+OR+%22The+Pivot%22+OR+%22Mind+the+Game%22+OR+%22Road+Trippin%22)+-odds+-prediction"), "tier": 2},
+    {"name": "GN: podcast clash", "url": GOOGLE_NEWS.format(q="NBA+podcast+(slams+OR+rips+OR+%22calls+out%22+OR+%22fires+back%22+OR+feud+OR+beef+OR+%22goes+off%22)+-odds"), "tier": 2},
 ]
 
 # Publishers found inside Google News items that count as tier 1.

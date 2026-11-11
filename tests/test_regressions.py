@@ -44,6 +44,7 @@ the "Safety tests" step before anything is installed or made.
      news (2+ articles in 30 days), never one used in the last 90 days, told as OLD
  29. stale Wikidata (run 43080115985): an undated "current" team is not trusted; college / high
      school photos are PRE-NBA from their own text; a former role is said as former
+ 30. Openverse kept: a good search is kept 14 days per person; a failed one uses it
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -67,6 +68,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+import os  # noqa: E402
+# the tests must never write the pipeline's real history (it is saved to the private repo)
+os.environ.setdefault("NBA_OV_CACHE", str(Path(tempfile.gettempdir()) / "nba_test_openverse_cache.json"))
 
 import numpy as np  # noqa: E402  (in requirements.txt)
 
@@ -1360,9 +1364,12 @@ class OpenverseRetries(unittest.TestCase):
             return Reply()
         urllib.request.urlopen, time.sleep = fake, slept.append
         media.OPENVERSE_BUDGET[0], media.openverse_token, media.namesake = 50, (lambda: ""), (lambda p, t: False)
+        saved_cache = media.OV_CACHE
+        media.OV_CACHE = Path(tempfile.mkdtemp()) / "openverse_cache.json"
         try:
             got = media.openverse_photos("Paul George")
         finally:
+            media.OV_CACHE = saved_cache
             (urllib.request.urlopen, time.sleep, media.OPENVERSE_BUDGET[0], media.openverse_token,
              media.namesake) = saved[:5]
             media.PHOTO_STATS.clear(); media.PHOTO_STATS.update(saved[5])
@@ -1559,6 +1566,56 @@ class StaleWikidata(CurrentTeam):
     def test_former_role_rule(self):
         import script
         self.assertIn("a FORMER role stays former", script.PROMPT)
+
+
+class OpenverseKept(unittest.TestCase):
+    """30. Run 43080115985: 3 of 5 Openverse searches still 504 after ~2 minutes of tries."""
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = media.OV_CACHE
+        media.OV_CACHE = Path(tempfile.mkdtemp()) / "openverse_cache.json"
+
+    def tearDown(self):
+        shutil.rmtree(self.m.OV_CACHE.parent, ignore_errors=True)
+        self.m.OV_CACHE = self.saved
+
+    def test_kept_and_used_when_openverse_fails(self):
+        import datetime as dt
+        m = self.m
+        photo = {"kind": "photo", "url": "https://x/1.jpg", "title": "Doc Rivers", "score": 3}
+        m.openverse_keep("Doc Rivers", [photo])
+        self.assertEqual(m.openverse_cached("Doc Rivers"), [photo])
+        self.assertEqual(m.openverse_cached("Jordan Poole"), [])
+        old = json.loads(m.OV_CACHE.read_text())
+        old["Doc Rivers"]["day"] = (dt.date.today() - dt.timedelta(days=m.OV_CACHE_DAYS)).isoformat()
+        m.OV_CACHE.write_text(json.dumps(old))
+        self.assertEqual(m.openverse_cached("Doc Rivers"), [])             # too old: not used
+        m.openverse_keep("Paul George", [photo])
+        self.assertNotIn("Doc Rivers", json.loads(m.OV_CACHE.read_text()))  # and dropped on write
+
+    def test_a_failed_search_returns_the_kept_one(self):
+        import urllib.error
+        import urllib.request
+        import time
+        m = self.m
+        photo = {"kind": "photo", "url": "https://x/2.jpg", "title": "Doc Rivers", "score": 3}
+        m.openverse_keep("Doc Rivers", [photo])
+        saved = (urllib.request.urlopen, time.sleep, m.OPENVERSE_BUDGET[0], m.openverse_token, dict(m.PHOTO_STATS))
+
+        def always_504(req, timeout=30):
+            raise urllib.error.HTTPError(req.full_url, 504, "Gateway Timeout", {}, None)
+        urllib.request.urlopen, time.sleep = always_504, (lambda s: None)
+        m.OPENVERSE_BUDGET[0], m.openverse_token = 50, (lambda: "")
+        try:
+            got = m.openverse_photos("Doc Rivers")
+            note = m.PHOTO_STATS["Doc Rivers"]["openverse"]
+        finally:
+            urllib.request.urlopen, time.sleep, m.OPENVERSE_BUDGET[0], m.openverse_token = saved[:4]
+            m.PHOTO_STATS.clear(); m.PHOTO_STATS.update(saved[4])
+        self.assertEqual(got, [photo])
+        self.assertIn("kept", note)
 
 
 if __name__ == "__main__":

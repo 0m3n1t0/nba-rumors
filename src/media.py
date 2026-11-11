@@ -822,6 +822,46 @@ def openverse_token() -> str:
     return _OV_TOKEN[0]
 
 
+# kept in the private state repo; the safety tests point it at a temporary file (NBA_OV_CACHE)
+OV_CACHE = Path(os.environ.get("NBA_OV_CACHE") or ROOT / "data" / "history" / "openverse_cache.json")
+OV_CACHE_DAYS = 14
+
+
+def _ov_cache() -> dict:
+    try:
+        return json.loads(OV_CACHE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def openverse_keep(person: str, photos: list[dict]) -> None:
+    """Openverse often answers 504 (a busy gateway, 3 of 5 searches in run 43080115985), so
+    every successful search is kept for OV_CACHE_DAYS days, per person: a failed search uses
+    the last good one instead of nothing. Old entries are dropped on every write."""
+    import datetime as _dt
+    today = _dt.date.today()
+    data = {k: v for k, v in _ov_cache().items()
+            if (today - _dt.date.fromisoformat(v.get("day", "1970-01-01"))).days < OV_CACHE_DAYS}
+    if photos:
+        data[person] = {"day": today.isoformat(), "photos": photos}
+    try:
+        OV_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        OV_CACHE.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except OSError as exc:
+        print(f"[!] Openverse results not kept: {exc}")
+
+
+def openverse_cached(person: str) -> list[dict]:
+    """The last good Openverse search for this person, if it is younger than OV_CACHE_DAYS."""
+    import datetime as _dt
+    hit = _ov_cache().get(person) or {}
+    try:
+        age = (_dt.date.today() - _dt.date.fromisoformat(hit.get("day", ""))).days
+    except ValueError:
+        return []
+    return list(hit.get("photos") or []) if age < OV_CACHE_DAYS else []
+
+
 def openverse_photos(person: str) -> list[dict]:
     if OPENVERSE_BUDGET[0] <= 3:  # keep 3 calls for the background music
         return []
@@ -854,8 +894,10 @@ def openverse_photos(person: str) -> list[dict]:
                     raise
     except Exception as exc:
         print(f"[!] Openverse search failed for {person}: {exc}")
-        PHOTO_STATS.setdefault(person, {})["openverse"] = f"failed ({str(exc)[:40]})"
-        return []
+        kept = openverse_cached(person)
+        PHOTO_STATS.setdefault(person, {})["openverse"] = (
+            f"{len(kept)} kept from {OV_CACHE_DAYS} days ({str(exc)[:30]})" if kept else f"failed ({str(exc)[:40]})")
+        return kept
     first, last = (fold(person).split() + ["", ""])[:2]
     out = []
     for r in data.get("results", []):
@@ -879,7 +921,9 @@ def openverse_photos(person: str) -> list[dict]:
             "team": photo_team(person, text),
         })
     PHOTO_STATS.setdefault(person, {})["openverse"] = len(out)
-    return sorted(out, key=lambda f: -f["score"])
+    out = sorted(out, key=lambda f: -f["score"])
+    openverse_keep(person, out)
+    return out
 
 
 def flickr_photos(person: str) -> list[dict]:

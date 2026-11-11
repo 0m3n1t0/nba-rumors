@@ -12,6 +12,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+import os  # noqa: E402
+# the tests must never write the pipeline's real history (it is saved to the private repo)
+os.environ.setdefault("NBA_OV_CACHE", str(Path(tempfile.gettempdir()) / "nba_test_openverse_cache.json"))
 
 import compliance as C  # noqa: E402
 import gate  # noqa: E402

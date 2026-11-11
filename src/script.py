@@ -1912,6 +1912,42 @@ def remember(shorts: list[dict]) -> None:
                                ensure_ascii=False) + "\n")
 
 
+def fill_with_evergreen(shorts: list[dict], editor: dict, voice: str, formulas: dict) -> bool:
+    """B20 / C4: a weak day's empty slot gets a famous beef that is back in the news (see
+    evergreen.py). Same scripts, same checks, same 2-per-run quota. True = Claude limit hit."""
+    import evergreen
+    from sources import TIER1_PUBLISHERS
+    try:
+        found = evergreen.candidates(tuple(TIER1_PUBLISHERS))
+    except Exception as exc:          # the bank must never cost the day's real Shorts
+        print(f"[!] evergreen search failed: {exc}")
+        return False
+    for c in found:
+        if quota_reached(shorts):
+            break
+        topic_id = len(editor["topics"])
+        editor["topics"].append({"headline": c["headline"], "items": c["items"], "verified": True,
+                                 "outlets": len(c["items"]), "star_names": c["people"], "evergreen": c["key"]})
+        editor["ranked"].append({"id": topic_id, "nba": True, "kind": "player_vs_player", "conflict": True,
+                                 "why": c["why"], "two_versions": "", "same_as": []})
+        n = len(shorts) + 1
+        try:
+            short = build_short(n, topic_id, editor, voice, formulas)
+        except UsageLimit as exc:
+            print(f"[i] Claude Pro usage limit reached during the evergreen Short: {exc}")
+            return True
+        except Exception as exc:
+            print(f"[!] evergreen {c['key']} skipped: {exc}")
+            SKIPPED.append(f"historic beef {c['key']}: {str(exc)[:140]}")
+            continue
+        short["evergreen"] = c["key"]
+        evergreen.mark_used(c["key"])
+        (OUT / f"short_{n}.json").write_text(json.dumps(short, indent=2), encoding="utf-8")
+        shorts.append(short)
+        print(f"[+] weak day: historic beef {c['key']} made (back in the news)")
+    return False
+
+
 def main() -> None:
     editor = json.loads((DATA / "editor.json").read_text(encoding="utf-8"))
     voice = (ROOT / "voice.md").read_text(encoding="utf-8")
@@ -1975,6 +2011,8 @@ def main() -> None:
         shorts.append(short)
         RECENT.append({"headline": short["headline"], "hook": (short.get("hook") or {}).get("text", ""),
                        "spoken": " ".join(b.get("say", "") for b in short["beats"])})   # same run counts too
+    if not quota_reached(shorts) and not limit_hit:
+        limit_hit = fill_with_evergreen(shorts, editor, voice, formulas) or limit_hit
     write_summary(shorts)
     remember(shorts)
     if not shorts and limit_hit:

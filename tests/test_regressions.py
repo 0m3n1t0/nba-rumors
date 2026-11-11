@@ -40,6 +40,8 @@ the "Safety tests" step before anything is installed or made.
  26. RUMOR LABELS (C2): an anonymous report, a rumor or a speculation is voiced as such in its
      own sentence; a fact stated plainly is never forced to sound like a rumor
  27. PODCASTS (C3): two Google News searches for what was said on NBA podcasts and shows
+ 28. HISTORIC BEEFS (B20/C4): a weak day's empty slot gets a famous beef that is back in the
+     news (2+ articles in 30 days), never one used in the last 90 days, told as OLD
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1439,6 +1441,81 @@ class PodcastSources(unittest.TestCase):
             self.assertIn("when:1d", by[name]["url"])
             self.assertIn("-odds", by[name]["url"])          # betting previews kept out
         self.assertEqual(len(by), len(FEEDS))                # no name used twice
+
+
+class HistoricBeefs(unittest.TestCase):
+    """B20 / C4 (owner's plan, 2026-11-11): weak days get a famous beef that is back in the news."""
+
+    def setUp(self):
+        import tempfile
+        import evergreen
+        self.e = evergreen
+        self.tmp = Path(tempfile.mkdtemp())
+        self.saved = (evergreen.USED, evergreen.fresh_news, evergreen.wikipedia_item, evergreen.BANK)
+        evergreen.USED = self.tmp / "evergreen_used.json"
+        evergreen.BANK = [("Kobe Bryant", "Shaquille O'Neal", "the Kobe and Shaq feud"),
+                          ("Michael Jordan", "Isiah Thomas", "the Jordan and Isiah feud"),
+                          ("Kevin Durant", "Russell Westbrook", "Durant and Westbrook")]
+        news = {"Kobe Bryant": 3, "Michael Jordan": 1, "Kevin Durant": 2}
+
+        def fake(a, b, tier1=()):
+            return [{"title": f"{a} and {b} story {k}", "link": f"https://x/{a}{k}", "publisher": "P", "tier": 2}
+                    for k in range(news[a])]
+        evergreen.fresh_news = fake
+        evergreen.wikipedia_item = lambda a, b: {"title": "Feud (Wikipedia)", "link": "https://en.wikipedia.org/wiki/F",
+                                                 "publisher": "Wikipedia", "tier": 1}
+
+    def tearDown(self):
+        self.e.USED, self.e.fresh_news, self.e.wikipedia_item, self.e.BANK = self.saved
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_only_fresh_and_not_recent(self):
+        e = self.e
+        got = e.candidates()
+        self.assertEqual([c["key"] for c in got], [e.key_of("Kobe Bryant", "Shaquille O'Neal"),
+                                                   e.key_of("Kevin Durant", "Russell Westbrook")])  # Jordan: 1 article
+        self.assertIn("OLD", got[0]["why"])
+        self.assertIn("NEVER present the old events as new", got[0]["why"])
+        self.assertEqual(got[0]["items"][-1]["publisher"], "Wikipedia")
+        e.mark_used(got[0]["key"])
+        self.assertNotIn(got[0]["key"], [c["key"] for c in e.candidates()])          # 90 days
+        import datetime as dt
+        later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=e.REUSE_DAYS + 1)
+        self.assertIn(got[0]["key"], [c["key"] for c in e.candidates(now=later)])
+
+    def test_fills_only_the_empty_slot(self):
+        import script
+        saved = (script.build_short, script.OUT)
+        made = []
+        script.OUT = self.tmp
+        script.build_short = lambda n, tid, editor, voice, formulas: (
+            made.append(editor["topics"][tid]["headline"]) or {"headline": editor["topics"][tid]["headline"], "beats": []})
+        try:
+            editor = {"topics": [], "ranked": []}
+            shorts = [{"headline": "today's strong story"}]
+            self.assertFalse(script.fill_with_evergreen(shorts, editor, "", {}))
+        finally:
+            script.build_short, script.OUT = saved
+        self.assertEqual(len(shorts), script.SHORTS_PER_RUN)                       # quota kept: one added
+        self.assertEqual(len(made), 1)
+        self.assertEqual(shorts[1]["evergreen"], self.e.key_of("Kobe Bryant", "Shaquille O'Neal"))
+        self.assertIn(shorts[1]["evergreen"], self.e.used())
+        self.assertTrue(editor["topics"][0]["verified"])
+
+    def test_a_failure_never_costs_the_day(self):
+        import script
+        saved = script.build_short
+
+        def boom(*a, **k):
+            raise ValueError("not enough material")
+        script.build_short = boom
+        try:
+            shorts = [{"headline": "x"}]
+            self.assertFalse(script.fill_with_evergreen(shorts, {"topics": [], "ranked": []}, "", {}))
+            self.assertEqual(len(shorts), 1)
+            self.assertEqual(self.e.used(), {})                                        # nothing marked
+        finally:
+            script.build_short = saved
 
 
 if __name__ == "__main__":

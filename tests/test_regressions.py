@@ -28,6 +28,8 @@ the "Safety tests" step before anything is installed or made.
      right") goes to the repair pass (run 43027675858)
  19. the hook pick sees the whole Short and the names fans know: no question the Short never
      answers, no line built on a name nobody knows (run 43027675858)
+ 20. details (venue, crowd, someone's job) only as the sources give them: a hook with one goes
+     back, the repair pass fixes the beats, the gate holds what is left (run 43011651547)
 """
 
 from __future__ import annotations
@@ -1132,6 +1134,49 @@ class HookPick(unittest.TestCase):
             self.assertEqual(script.intrigue_pick(hooks, "h")[0]["text"], "A?")
         finally:
             script.ask_claude = saved
+
+
+class DetailsFromSources(unittest.TestCase):
+    """Run 43011651547's hook: "...in front of his own crowd": no source said where it was.
+    Run 43027675858's "Heat radio host Brendan Tobin" WAS in the source ("Miami sports radio
+    host Brendan Tobin"): a true detail must pass."""
+
+    TOBIN = [{"title": "Heat Journalist Goes Ballistic On Doc Rivers", "tier": 1, "text":
+              "Doc Rivers' comments drew criticism, including from Miami sports radio host Brendan "
+              "Tobin. Speaking on the Heat Collective podcast, Tobin said..."}]
+    SNUB = [{"title": "Jaylen Brown appears to blow off Jayson Tatum's greeting", "tier": 1, "text":
+             "Brown did not greet Tatum before tip-off. Tatum scored 21 and Paul George 36."}]
+
+    def test_true_details_pass(self):
+        import compliance as C
+        self.assertEqual(C.unsupported_details("Heat radio host Brendan Tobin says that's on you.", self.TOBIN), [])
+        self.assertEqual(C.unsupported_details("On his podcast, Tobin went off.", self.TOBIN), [])
+        self.assertEqual(C.unsupported_details("Brown snubbed Tatum, and Booker watched.", self.SNUB), [])
+
+    def test_invented_details_caught(self):
+        import compliance as C
+        self.assertEqual(C.unsupported_details("Brown snubbed Tatum in front of his own crowd.", self.SNUB), ["crowd"])
+        self.assertEqual(C.unsupported_details("The fans booed him on the road.", self.SNUB), ["booed", "on the road"])
+        self.assertEqual(C.unsupported_details("ESPN analyst Tobin said it.", self.TOBIN), ["analyst"])
+
+    def test_gate_holds_it(self):
+        import compliance as C
+        v, notes = C.check_fabrication("Brown snubbed Tatum in front of his own crowd.", self.SNUB, [], [])
+        self.assertEqual(v, C.REVIEW)
+        self.assertTrue(any("details not in the sources: crowd" in n for n in notes))
+        v, _ = C.check_fabrication("Heat radio host Brendan Tobin says that's on you.", self.TOBIN, [], [])
+        self.assertEqual(v, C.PASS)
+
+    def test_repair_fixes_beats_not_the_fixed_hook(self):
+        import script
+        beats = [{"say": "Brown snubbed Tatum in front of his own crowd.", "stage": "setup"},
+                 {"say": "I think the snub said more than his 13 points, because he went quiet.", "stage": "payoff"},
+                 {"say": "So who won that night, Brown or Tatum?", "stage": "exit"}]
+        problems = script.repair_needed("Did Brown snub Tatum?", beats, {}, self.SNUB)
+        self.assertTrue(any("not in any source: crowd" in p for p in problems), problems)
+        beats[0]["say"] = "Brown snubbed Tatum before tip-off."
+        self.assertEqual(script.repair_needed("Did Brown snub Tatum in front of his own crowd?", beats, {}, self.SNUB), [])
+        self.assertEqual(script.repair_needed("Did Brown snub Tatum?", beats, {}), [])   # old call unchanged
 
 
 if __name__ == "__main__":

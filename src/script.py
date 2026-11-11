@@ -1249,7 +1249,7 @@ def borrowed_take(beats: list[dict]) -> bool:
     return bool(pay) and all(AGREE_ONLY.search(p) for p in pay)
 
 
-def repair_needed(hook: str, beats: list[dict], retention: dict) -> list[str]:
+def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[dict] | None = None) -> list[str]:
     """What a repair pass should fix, in plain words (empty = nothing to repair)."""
     problems = [f"beat {k + 1} repeats the hook's words (the hook already said them): confirm it in "
                 f"a few words of your own and move on" for k in hook_repeats(hook, beats)]
@@ -1262,6 +1262,14 @@ def repair_needed(hook: str, beats: list[dict], retention: dict) -> list[str]:
         problems.append("the payoff only agrees with someone else's view (\"I think that's right\"): "
                         "give her OWN reason or a point that view did not make, in one sentence, "
                         "built from facts in the sources")
+    if sources is not None:
+        # the beats only: the hook is fixed here (a detail in it is held by the gate instead)
+        said = " ".join([b.get("say", "") for b in beats] + [b.get("on_screen", "") for b in beats])
+        details = compliance.unsupported_details(said, sources)
+        if details:
+            problems.append(f"these details are not in any source: {', '.join(details)} (where it "
+                            "happened, the crowd, someone's job): say them only as the sources do, "
+                            "or drop them")
     return problems
 
 
@@ -1470,7 +1478,10 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     for h in hooks:
         h["recycled"], h["recycled_from"] = closest(h["text"], "hook")
         h["recycled"] = h["recycled"] >= HOOK_SAME and h["recycled"]
-    hooks.sort(key=lambda h: bool(h.get("recycled")))
+    # a hook with a detail no source has (venue, crowd, someone's job) goes behind every clean one
+    for h in hooks:
+        h["unsupported_details"] = compliance.unsupported_details(h["text"], sources)
+    hooks.sort(key=lambda h: (bool(h["unsupported_details"]), bool(h.get("recycled"))))
 
     thumb = draft.get("thumbnail_text", "")
     titles = [niche_adjust(titlecheck.check(t, thumb)) for t in draft.get("titles", [])[:10]]
@@ -1500,7 +1511,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     # every fact and quote still checks out. Otherwise the original stays (and is held).
     repaired: list[str] = []
     if hooks and beats:
-        problems = repair_needed(hooks[0]["text"], beats, retention)
+        problems = repair_needed(hooks[0]["text"], beats, retention, sources)
         if problems:
             try:
                 fixed = ask_claude(REPAIR.format(
@@ -1523,7 +1534,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
                 split_payoff(cand)
                 cand_soft = soften_quotes(cand, sources)
                 cand_ret = retention_check(cand)
-                left = repair_needed(hooks[0]["text"], cand, cand_ret)
+                left = repair_needed(hooks[0]["text"], cand, cand_ret, sources)
 
                 def spoken_of(bs: list[dict]) -> str:
                     return " ".join([hooks[0]["text"]] + [b.get("say", "") for b in bs]
@@ -1606,6 +1617,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         "tags": tags,
         "seo": seo,
         "unsupported_numbers": unsupported,
+        "unsupported_details": compliance.unsupported_details(f"{spoken} {on_screen}", sources),
         "unsupported_quotes": bad_quotes,
         "banned_phrases": banned,
         "similarity": same,
@@ -1675,6 +1687,8 @@ def write_summary(shorts: list[dict]) -> None:
                                                 for c in s["claims"]] + [""]
         if s["unsupported_numbers"]:
             lines.append(f"**Fact check:** numbers not found in sources: {', '.join(s['unsupported_numbers'])}")
+        if s.get("unsupported_details"):
+            lines.append(f"**Fact check:** details not found in sources: {', '.join(s['unsupported_details'])}")
             lines.append("")
         if s["banned_phrases"]:
             lines.append(f"**Banned phrases:** {', '.join(s['banned_phrases'])}")

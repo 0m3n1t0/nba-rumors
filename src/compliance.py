@@ -169,6 +169,36 @@ def check_social_proof(spoken: str, sources: list[dict], audience_hot: bool = Fa
     return REVIEW, [f"fan reaction with no sign of one in the sources or today's data: \"{m.group(0)}\""]
 
 
+# Small details a writer fills in from habit, not from the articles: where it happened, how the
+# crowd reacted, what someone's job is. Each must be in the source material (2026-11-11: a hook
+# said "in front of his own crowd" with no source for the venue). Pairs: (what was said, what
+# the material must contain).
+DETAILS = [
+    ("crowd", r"\bcrowds?\b", r"\bcrowd"),
+    ("booed", r"\bboo(?:s|ed|ing)?\b", r"\bboo(?:s|ed|ing)?\b"),
+    ("cheered", r"\bcheer(?:s|ed|ing)?\b", r"\bcheer"),
+    ("chanted", r"\bchant(?:s|ed|ing)?\b", r"\bchant"),
+    ("sold out", r"\bsold[- ]out\b", r"\bsold[- ]out\b"),
+    ("at home", r"\b(?:home court|at home|home crowd|home game|home fans|his own building)\b", r"\bhome\b|\bown building\b"),
+    ("on the road", r"\b(?:on the road|road game|road trip)\b", r"\broad\b"),
+    ("radio", r"\bradio\b", r"\bradio\b"),
+    ("podcast", r"\bpodcast(?:s|er|ers)?\b", r"\bpodcast"),
+    ("columnist", r"\bcolumnists?\b", r"\bcolumn"),
+    ("analyst", r"\banalysts?\b", r"\banalyst"),
+    ("journalist", r"\bjournalists?\b", r"\bjournalis"),
+    ("reporter", r"\breporters?\b", r"\breport"),
+    ("broadcaster", r"\b(?:broadcasters?|commentators?|anchors?)\b", r"\b(?:broadcast|commentat|anchor|announcer|tv)"),
+    ("agent", r"\bagents?\b", r"\bagent"),
+]
+
+
+def unsupported_details(text: str, sources: list[dict]) -> list[str]:
+    """Details said in the Short (venue, crowd, someone's job) that no source mentions."""
+    t, mat = fold(text), fold(material(sources))
+    return [label for label, said, need in DETAILS
+            if re.search(said, t) and not re.search(need, mat)]
+
+
 def check_fabrication(spoken: str, sources: list[dict], bad_quotes: list[str],
                       unsupported_numbers: list[str], audience_hot: bool = False) -> tuple[str, list[str]]:
     notes, verdict = [], PASS
@@ -188,6 +218,10 @@ def check_fabrication(spoken: str, sources: list[dict], bad_quotes: list[str],
     if unsupported_numbers:
         verdict = worst(verdict, REVIEW)
         notes.append(f"numbers not in the sources: {', '.join(unsupported_numbers)}")
+    details = unsupported_details(spoken, sources)
+    if details:
+        verdict = worst(verdict, REVIEW)
+        notes.append(f"details not in the sources: {', '.join(details)}")
     v, n = check_social_proof(spoken, sources, audience_hot)
     return worst(verdict, v), notes + n
 

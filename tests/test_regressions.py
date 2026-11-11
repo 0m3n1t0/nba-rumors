@@ -12,6 +12,7 @@ the "Safety tests" step before anything is installed or made.
   7. quotes in single quotes are checked against the sources too
   8. yt-edit: only real silence over 0.7 s is shortened, natural pauses never
   9. end card: after the voice's last real sound, never over it
+ 10. the public run page is short; the full report and working data are kept privately
 """
 
 from __future__ import annotations
@@ -510,6 +511,57 @@ class Timing(unittest.TestCase):
         self.assertAlmostEqual(render.end_card_at({"duration": 31.0, "voice_end": 28.0}), 28.4, delta=0.001)
         self.assertEqual(render.end_card_at({"duration": 30.0}), 30.0)
         self.assertEqual(render.END_CARD_SECONDS, 2.0)
+
+
+class PrivateReport(unittest.TestCase):
+    """10. Public repository: the run page shows counts only; the full report goes private."""
+
+    def setUp(self):
+        import public_summary
+        import state
+        self.mods = (state, public_summary)
+        self.saved = (state.DATA, public_summary.DATA)
+        self.tmp = Path(tempfile.mkdtemp())
+        data = self.tmp / "data"
+        for sub in ("scripts", "media", "gate", "audio", "video"):
+            (data / sub).mkdir(parents=True)
+        (data / "summary.md").write_text("## Scripts\nDid Luka Doncic really tell Hawks fans...")
+        (data / "scripts" / "short_1.json").write_text(json.dumps({"hook": {"text": "Did Luka Doncic really..."}}))
+        (data / "scripts" / "short_2.json").write_text("{}")
+        (data / "media" / "short_1.json").write_text("[]")
+        (data / "gate" / "short_1.json").write_text(json.dumps({"verdict": "PASS"}))
+        (data / "gate" / "short_2.json").write_text(json.dumps({"verdict": "REVIEW"}))
+        (data / "audio" / "short_1.timing.json").write_text("{}")
+        (data / "audio" / "short_1.mp3").write_bytes(b"x" * 1000)
+        (data / "video" / "short_1.mp4").write_bytes(b"x" * 1000)
+        state.DATA = public_summary.DATA = data
+
+    def tearDown(self):
+        (state, public_summary) = self.mods
+        state.DATA, public_summary.DATA = self.saved
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_public_page_has_no_story(self):
+        import public_summary
+        text = "\n".join(public_summary.lines())
+        self.assertIn("| 2 | 1 | 1 | 1 | 0 |", text)        # scripts, videos, PASS, REVIEW, REJECT
+        self.assertNotIn("Luka", text)                       # no headline, hook or script
+
+    def test_full_report_kept_privately_14_days(self):
+        import tarfile
+        from datetime import datetime, timezone
+        import state
+        home = self.tmp / "state" / "nba"
+        (home / "runs").mkdir(parents=True)
+        (home / "runs" / "2026-10-20_111.tar.gz").write_bytes(b"old")     # older than 14 days
+        (home / "runs" / "2026-11-01_222.tar.gz").write_bytes(b"recent")
+        kept = state.bundle_run(home, datetime(2026, 11, 11, tzinfo=timezone.utc))
+        with tarfile.open(kept) as tar:
+            names = sorted(tar.getnames())
+        self.assertEqual(names, ["audio/short_1.timing.json", "gate/short_1.json", "gate/short_2.json",
+                                 "media/short_1.json", "scripts/short_1.json", "scripts/short_2.json", "summary.md"])
+        self.assertEqual(sorted(p.name for p in (home / "runs").iterdir()),
+                         ["2026-11-01_222.tar.gz", kept.name])         # the old one is gone, no MP3/MP4
 
 
 if __name__ == "__main__":

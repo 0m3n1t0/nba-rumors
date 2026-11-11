@@ -26,6 +26,8 @@ the "Safety tests" step before anything is installed or made.
      game, roles exactly as the sources give them (run 43027675858)
  18. her analysis is her own: a payoff that only agrees with an outlet ("...and I think that's
      right") goes to the repair pass (run 43027675858)
+ 19. the hook pick sees the whole Short and the names fans know: no question the Short never
+     answers, no line built on a name nobody knows (run 43027675858)
 """
 
 from __future__ import annotations
@@ -1090,6 +1092,46 @@ class OwnTake(unittest.TestCase):
         self.assertIn("Agreeing with an outlet", script.PROMPT)
         self.assertIn("never only agreeing with someone else's view", script.HUMANIZE)
         self.assertIn("never only agreeing with someone else's view", script.REPAIR)
+
+
+class HookPick(unittest.TestCase):
+    """Run 43027675858: "Why did Jaylen Brown leave Jayson Tatum's pregame dap hanging...?" (the
+    Short never said why) and "Did Brendan Tobin just tell Doc Rivers...?" (a podcaster first)."""
+
+    def test_the_fan_sees_story_and_known_names(self):
+        import script
+        seen = {}
+
+        def fake(prompt, model=None, **kw):
+            seen["prompt"] = prompt
+            return {"best": 2}
+        saved = script.ask_claude
+        script.ask_claude = fake
+        try:
+            hooks = [{"text": "Did Brendan Tobin just tell Doc Rivers the blame is his?", "question": True, "score": 41},
+                     {"text": "Did Doc Rivers just say sorry to Giannis, and mean it?", "question": True, "score": 45}]
+            got = script.intrigue_pick(hooks, "Doc Rivers apologizes", "Doc Rivers questioned Giannis's IQ...",
+                                       ["Giannis Antetokounmpo 3.4", "Doc Rivers 2.3"])
+        finally:
+            script.ask_claude = saved
+        p = seen["prompt"]
+        self.assertIn("Giannis Antetokounmpo, Doc Rivers", p)      # names, not their fame numbers
+        self.assertNotIn("3.4", p)
+        self.assertIn("Doc Rivers questioned Giannis's IQ", p)      # the whole Short
+        self.assertIn("THE SHORT ANSWERS IT", p)
+        self.assertIn("A STRANGER GETS IT AT ONCE", p)
+        self.assertTrue(got[0]["intrigue_pick"])
+        self.assertEqual(got[0]["text"], hooks[1]["text"])
+
+    def test_old_call_still_works(self):
+        import script
+        saved = script.ask_claude
+        script.ask_claude = lambda prompt, model=None, **kw: {"best": 1}
+        try:
+            hooks = [{"text": "A?", "question": True, "score": 50}, {"text": "B?", "question": True, "score": 45}]
+            self.assertEqual(script.intrigue_pick(hooks, "h")[0]["text"], "A?")
+        finally:
+            script.ask_claude = saved
 
 
 if __name__ == "__main__":

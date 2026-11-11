@@ -1092,20 +1092,36 @@ a vague one. A line that OPENS with the names and the shot fired beats one that 
 act) early beats a general description; a reversal ("his own team sided with her") beats a
 plain fact; ONE short question beats a line with two questions. Story: {headline}
 
+TWO MUSTS before intrigue (a line that fails one can only win when every line fails it):
+1. THE SHORT ANSWERS IT. Below is everything the Short says after the opening line. An opening
+   question it never answers (it asks "why did he...?" and no line gives the why) breaks the
+   viewer's trust: rule it out.
+2. A STRANGER GETS IT AT ONCE. You get it in one hearing, without knowing this week's news.
+   The names fans know: {stars}. An opening line that leans on a name NOT in that list (a
+   reporter, a podcaster, a radio host) is weaker than one built on the names fans know; a
+   long line with three names or more loses to a short one.
+
+WHAT THE SHORT SAYS AFTER THE OPENING LINE:
+{story}
+
 {hooks}
 
 Return ONLY JSON: {{"best": <number of the line>}}"""
 
 
-def intrigue_pick(hooks: list[dict], headline: str) -> list[dict]:
-    """hookscore checks the craft; a fan's eye picks the most intriguing of the good ones."""
+def intrigue_pick(hooks: list[dict], headline: str, story: str = "", stars: list | None = None) -> list[dict]:
+    """hookscore checks the craft; a fan's eye picks the most intriguing of the good ones.
+    Run 43027675858: the pick asked "why did Brown...?" (the Short never said why) and led
+    with a podcaster nobody knew, so the fan now first rules out a question the Short does not
+    answer and a line a stranger cannot follow (names fans know = the topic's star_names)."""
     # hookscore filters out broken hooks (under 40); among the rest a fan's eye decides, because
     # hookscore rewards "you" openers ("If you're a fan...") that bury the clash
     good = [h for h in hooks if h["question"] and h["score"] >= 40]
     if len(good) < 2:
         return hooks
     try:
-        ans = ask_claude(INTRIGUE.format(headline=headline, hooks="\n".join(
+        known = ", ".join(re.sub(r"\s+[\d.]+$", "", n) for n in (stars or [])) or "(not known today)"
+        ans = ask_claude(INTRIGUE.format(headline=headline, stars=known, story=story or "(not given)", hooks="\n".join(
             f"{i}. {h['text']}" for i, h in enumerate(good, 1))), CLAUDE_MODEL_LIGHT)
         best = good[int(ans.get("best", 1)) - 1]
     except UsageLimit:
@@ -1448,7 +1464,8 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         hooks.sort(key=lambda h: (not h["question"], -h["score"]))
         hooks = hooks[:5]
 
-    hooks = intrigue_pick(hooks, topic["headline"])
+    hooks = intrigue_pick(hooks, topic["headline"], " ".join(b.get("say", "") for b in draft.get("beats", [])),
+                          topic.get("star_names"))
     # a hook built on the same template as a recent one goes to the back (stable: order kept otherwise)
     for h in hooks:
         h["recycled"], h["recycled_from"] = closest(h["text"], "hook")

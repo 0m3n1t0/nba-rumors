@@ -200,7 +200,11 @@ TOKEN = re.compile(r"[a-z0-9']+")
 
 
 def tokens(text: str) -> list[str]:
-    return TOKEN.findall(text.lower().replace("\u2019", "'"))
+    # quote marks around a quote ('You ... me') are not part of the words: Whisper writes the
+    # words without them, so "'you" must count as "you" (inner ones stay: "who's"). Both the
+    # script and Whisper's words go through this, so they are always compared the same way.
+    found = TOKEN.findall(text.lower().replace("\u2018", "'").replace("\u2019", "'"))
+    return [t for t in (w.strip("'") for w in found) if t]
 
 
 def beat_times(parts: list[dict], words: list[dict], duration: float) -> list[dict]:
@@ -309,7 +313,9 @@ def main() -> None:
         attempts = [("chatterbox", s) for s in (CONFIG["chatterbox"]["seed"], CONFIG["chatterbox"]["seed"] + 1)] \
             if performer else []
         attempts.append(("kokoro", 0))
-        done = False
+        # The BEST take is kept, not simply the last one: a Kokoro fallback that Whisper hears
+        # worse than a Chatterbox take never replaces it (on a tie the earlier, Chatterbox, wins).
+        best = None   # (heard, engine, words, take file)
         for engine, seed in attempts:
             try:
                 if engine == "chatterbox":
@@ -322,16 +328,29 @@ def main() -> None:
                 print(f"[!] {name}: {engine} failed: {exc}")
                 continue
             tail = np.zeros(int(rate * 0.3), dtype=np.float32)
+            take = AUDIO / f"{name}.take_{engine}_{seed}.mp3"
             sf.write(wav, np.concatenate([clip, tail]), rate)
-            finish(wav, mp3, tempo)
+            finish(wav, take, tempo)
             wav.unlink()
-            words = word_times(mp3)
-            heard = coverage(text, words)
-            done = True
-            if engine == "kokoro" or heard >= MIN_COVERAGE:
+            take_words = word_times(take)
+            take_heard = coverage(text, take_words)
+            if best is None or take_heard > best[0]:
+                if best is not None:
+                    best[3].unlink(missing_ok=True)
+                best = (take_heard, engine, take_words, take)
+            else:
+                take.unlink(missing_ok=True)
+            if take_heard >= MIN_COVERAGE:
                 break
-            print(f"[!] {name}: {engine} seed {seed} garbled the text ({heard:.0%} of words heard), retrying")
+            if engine == "kokoro":
+                print(f"[!] {name}: kokoro heard {take_heard:.0%}; keeping the best take ({best[1]}, {best[0]:.0%})")
+            else:
+                print(f"[!] {name}: {engine} seed {seed} garbled the text ({take_heard:.0%} of words heard), retrying")
 
+        done = best is not None
+        if done:
+            heard, engine, words, take = best
+            take.replace(mp3)
         if not done:
             # every engine failed for this Short: it gets no narration (the gate rejects a video
             # that was never made), and the OTHER Shorts are still voiced

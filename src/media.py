@@ -1612,8 +1612,8 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
     1. an empty beat gets a photo of the person the line is about (else the story's main person),
     2. a long beat gets MORE different photos of its people, so the picture changes about every
        3 seconds without repeating anything,
-    3. only then general pro basketball footage,
-    4. a beat with still nothing continues the previous picture (no cut, no repeat)."""
+    3. a beat with still nothing continues the previous picture (no cut, no repeat),
+    4. only a Short with no picture at all gets one stock clip (the gate holds it for review)."""
     items = no_repeats(list(items) + [None] * max(0, n_beats - len(items)))
     folder.mkdir(parents=True, exist_ok=True)
     looks = [h for it in items if it for p in [it] + (it.get("alts") or [])
@@ -1664,9 +1664,13 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
             it["alts"].append(extra)
         if it["alts"]:
             it["alt"] = it["alts"][0]
-    pool = [c for q in FALLBACK_BROLL for c in pixabay_videos(q)]
+    # Stock footage nobody looked at is the very last resort: only when the Short has NO
+    # picture at all (never a blank video). Pixabay has no NBA footage: every unjudged stock
+    # clip ever used was an amateur, a rusty hoop or a 3D ball. Otherwise an empty beat simply
+    # continues the previous picture. (The gate holds any unjudged clip for review.)
+    pool = [c for q in FALLBACK_BROLL for c in pixabay_videos(q)] if not any(items) else []
     for i, it in enumerate(items):
-        if it:
+        if it or (i > 0 and any(items)):
             continue
         for c in pool:
             if c["id"] in used:

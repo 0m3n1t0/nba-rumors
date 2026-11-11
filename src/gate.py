@@ -73,6 +73,11 @@ def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:
                 and not any(full_name_in(x.get("title", ""), w) for w in who):
             verdict = C.worst(verdict, C.REVIEW)
             notes.append(f"picture not judged and not named after the story's people: {(x.get('title') or '')[:50]}")
+        # a clip Claude never judged (last-resort stock footage) may show anything: an amateur,
+        # a rusty hoop, a 3D ball
+        if x.get("match") is None and x.get("kind") == "video":
+            verdict = C.worst(verdict, C.REVIEW)
+            notes.append(f"clip not judged (stock footage): {(x.get('title') or '')[:50]}")
     for x in shown:
         label = x.get("title") or x.get("page") or x.get("file", "")
         if not licence_accepted(x.get("license", "")):

@@ -62,7 +62,12 @@ def check_limit(stdout: str, stderr: str) -> None:
         raise UsageLimit(f"{stdout} {stderr}".strip()[:200])
 
 
-MAX_ARTICLES = 3
+MAX_ARTICLES = 5      # owner, 2026-11-11: five articles (was 3) for more facts and context
+READ_TIMEOUT = 300    # NOT a reading limit (owner, 2026-11-11: reading gets all the time it
+                      # needs): a site that keeps sending is read to the end, however slowly.
+                      # This only ends a site that sends NOTHING for 5 minutes (a dead server);
+                      # the network library counts silence between pieces, not total time.
+READ_TRIES = 2        # a silent site gets a second chance before the next article
 WPM = 135           # measured speed of our voice (#11 at 1.15x)
 SPOKEN_WPM = 165    # how fast the finished narration really runs (80 words = 29 s): the summary's estimate
 MAX_WORDS = 92      # hook + the 72-word allowance: about 37 s; the niche's top Shorts run 25-35s
@@ -70,7 +75,8 @@ BEAT_WORDS_MAX = 72  # 45-65 words after the hook, up to 72 when must-know conte
                      # reason needs the room (owner's choice "გ", 2026-11-11); trim only above that
 MIN_MATERIAL = 600   # characters of real article text; less = the story is only a headline
 ARTICLE_CHARS = 3500
-TIMEOUT = 300
+TIMEOUT = 1200     # one Claude answer (the script, its analysis) may take up to 20 minutes
+                   # (was 5): never cut while it is still writing (owner, 2026-11-11)
 NO_TOOLS = "Bash,Edit,Write,Read,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task"
 
 PROMPT = """You write YouTube Shorts scripts for the NBA Rumors channel.
@@ -258,6 +264,10 @@ S. STRATEGY FIRST (the content strategist's job, before a single line is written
      Giannis now plays for Miami).
    If the sources do not give a piece of context, leave that person or game out rather than
    leave the viewer guessing; never fill it from memory.
+   QUESTIONS: only the hook and the closing question ask. A middle beat never asks the hook's
+   question again (it states the fact that sharpens it). The closing question names someone
+   the hook names (so a replay flows into the hook) and never brings in a person the Short has
+   not introduced.
    STORY STAGES (this is what keeps people watching): mark every beat's "stage", in order:
    "setup" (where we are, in one line), "conflict" (the clash itself), "escalation" (it gets
    bigger or more personal), "twist" (the turn nobody expected; at most one, and only if the
@@ -402,6 +412,8 @@ YOU ARE ALSO THE CRITICAL EDITOR. Before returning, check and fix:
 - the closing question asks the strategy's "central_question" as a pick-a-side (naming the
   hook's people), never a generic "who's right, A or B?" that misses what the story is about;
 - no quote is spoken twice (hook and beat, or two beats), and the exit never re-says the twist;
+- QUESTIONS: a middle beat re-asks the hook's question (make it a statement), or the closing
+  question names someone the Short never introduced or no one from the hook (fix it);
 - MUST-KNOW CONTEXT: a cold viewer would ask "who is that?" or "why is he in this?", a trade is
   mentioned without who went where, or a game without who won: add it from the sources in a
   few words (cut a weaker line for the room), and a person's role stays exactly as the sources
@@ -487,17 +499,32 @@ def closeness(title: str, headline: str) -> float:
     return len(a & b) / min(len(a), len(b))
 
 
+def _read_config():
+    from copy import deepcopy
+    from trafilatura.settings import DEFAULT_CONFIG
+    cfg = deepcopy(DEFAULT_CONFIG)
+    cfg.set("DEFAULT", "DOWNLOAD_TIMEOUT", str(READ_TIMEOUT))
+    return cfg
+
+
+READ_CONFIG = _read_config()
+
+
 def read_article(it: dict, real: dict) -> bool:
     """Fetch and keep the article's text (a Google News redirect needs its decoded address)."""
     url = real.get(it["link"], it["link"])
     if "news.google.com" in url:
         return False
-    try:
-        html = trafilatura.fetch_url(url)
-        text = trafilatura.extract(html) if html else None
-    except Exception as exc:  # one bad site must not stop the video
-        print(f"[!] could not read {it['link']}: {exc}")
-        text = None
+    text = None
+    for _ in range(READ_TRIES):            # a slow site gets the time it needs, and a 2nd try
+        try:
+            html = trafilatura.fetch_url(url, config=READ_CONFIG)
+            text = trafilatura.extract(html) if html else None
+        except Exception as exc:  # one bad site must not stop the video
+            print(f"[!] could not read {it['link']}: {exc}")
+            text = None
+        if text:
+            break
     if not text:
         return False
     it["text"] = text[:ARTICLE_CHARS]
@@ -537,7 +564,7 @@ def gather_sources(topic: dict, editor: dict, topic_id: int) -> list[dict]:
         it["text"], it["main"] = "", False
 
     # Google News links are redirects: decode them to the real article (googlenewsdecoder, MIT)
-    real = decode_google([it["link"] for it in out if "news.google.com" in it["link"]][:8])
+    real = decode_google([it["link"] for it in out if "news.google.com" in it["link"]][:12])
     fetched = 0
     for it in main_like:             # one copy of the pick's own article, the first that reads
         if read_article(it, real):
@@ -1255,6 +1282,49 @@ def borrowed_take(beats: list[dict]) -> bool:
     return bool(pay) and all(AGREE_ONLY.search(p) for p in pay)
 
 
+QUESTION_START = {"so", "is", "was", "did", "does", "do", "who", "what", "why", "how", "should", "could",
+                  "would", "will", "can", "are", "were", "has", "have", "but", "and", "or", "the", "then",
+                  "now", "which", "when", "where", "if", "i", "he", "she", "they", "it", "that", "this"}
+
+
+NAME_WORD = re.compile(r"\b[A-Z][a-z\u00c0-\u024f-]{2,}(?=(?:['\u2019]s)?\b)")   # "Doc's" -> "Doc"
+
+
+def names_of(text: str) -> set[str]:
+    """Capitalised words (a person, team or city), without the words that start a sentence."""
+    return {w.lower() for w in NAME_WORD.findall(text or "")} - QUESTION_START
+
+
+def new_names_at_exit(hook: str, beats: list[dict]) -> list[str]:
+    """Run 43066151290: "Is Payton Pritchard right that there was never beef...?" Pritchard was
+    never introduced, so the viewer did not know who he is. Names the closing question brings
+    in that neither the hook nor an earlier beat said."""
+    if not beats:
+        return []
+    before = names_of(hook) | names_of(" ".join(b.get("say", "") for b in beats[:-1]))
+    last = beats[-1].get("say", "")
+    found = NAME_WORD.findall(last)
+    return [w for w in dict.fromkeys(found) if w.lower() not in before and w.lower() not in QUESTION_START]
+
+
+def re_asked(hook: str, beats: list[dict]) -> list[int]:
+    """Run 43066151290: the hook asked "so was he really not paying attention?" and a middle beat
+    asked "So how was he not paying attention?" again. Middle beats (not the closing question)
+    whose question is mostly the hook's question: 2+ shared content words that make up 60%+ of
+    the beat's question ("paying attention" = 2 of 2)."""
+    hook_q = " ".join(re.findall(r"[^?]*\?", hook)) or hook
+    want = {w for w in re.findall(r"[a-z]{4,}", compliance.fold(hook_q))} - COMMON
+    out = []
+    for k, b in enumerate(beats[:-1]):
+        for q in re.findall(r"[^.?!]*\?", b.get("say", "")):
+            mine = {w for w in re.findall(r"[a-z]{4,}", compliance.fold(q))} - COMMON
+            shared = want & mine
+            if len(shared) >= 2 and len(shared) >= 0.6 * len(mine):
+                out.append(k)
+                break
+    return out
+
+
 def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[dict] | None = None) -> list[str]:
     """What a repair pass should fix, in plain words (empty = nothing to repair)."""
     problems = [f"beat {k + 1} repeats the hook's words (the hook already said them): confirm it in "
@@ -1268,6 +1338,18 @@ def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[d
         problems.append("the payoff only agrees with someone else's view (\"I think that's right\"): "
                         "give her OWN reason or a point that view did not make, in one sentence, "
                         "built from facts in the sources")
+    if beats and hook:
+        new = new_names_at_exit(hook, beats)
+        if new:
+            problems.append(f"the closing question brings in {', '.join(new)}, never introduced before: "
+                            "introduce them earlier in a few words (who they are in this story, from "
+                            "the sources), or ask about the people the Short already introduced")
+        if not loops_back(hook, beats[-1].get("say", "")):
+            problems.append("the closing question does not come back to the hook: it must name someone "
+                            "the hook names, so a replay flows straight into the hook")
+        for k in re_asked(hook, beats):
+            problems.append(f"beat {k + 1} asks the hook's question again: state the fact that sharpens "
+                            "it instead (only the hook and the closing question ask)")
     if sources is not None:
         # the beats only: the hook is fixed here (a detail in it is held by the gate instead)
         said = " ".join([b.get("say", "") for b in beats] + [b.get("on_screen", "") for b in beats])
@@ -1362,7 +1444,7 @@ def one_promise(hook: str, title: str, thumb: str) -> bool:
 def loops_back(hook: str, last: str) -> bool:
     """The closing question names someone from the hook, so a replay flows into the hook."""
     def names_in(t: str) -> set[str]:
-        return {w.lower() for w in re.findall(r"\b[A-Z][a-z'\u00c0-\u024f-]{2,}", t)} - {"did", "is", "was", "so", "who"}
+        return {w.lower() for w in NAME_WORD.findall(t)} - {"did", "is", "was", "so", "who"}
     return bool(names_in(hook) & names_in(last.split("?")[-2] if "?" in last else last))
 
 

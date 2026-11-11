@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 TOP_N = 40          # how many collector topics the editor reads
-TIMEOUT = 300       # seconds
+TIMEOUT = 1200      # seconds: the editor's judgement is never cut while it is still writing (was 300)
 
 # ---- Claude Pro budget: model choice + clean stop when the plan's usage limit is reached ----
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")             # writing, judging, looking at pictures

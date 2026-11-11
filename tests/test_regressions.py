@@ -32,6 +32,10 @@ the "Safety tests" step before anything is installed or made.
      back, the repair pass fixes the beats, the gate holds what is left (run 43011651547)
  21. length: 45-65 words after the hook, up to 72 only when must-know context or her own reason
      needs it (owner's choice "გ"); the longest Short still counts as ready
+ 22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
+     try), Claude's answer up to 20 min (owner, 2026-11-11); questions: no
+     middle beat re-asks the hook's question, the closing question loops to the hook and brings
+     in no one the Short never introduced (run 43066151290)
  (12 also: a crop named after the person, "...-036 (White).jpg", is the same picture, run 43027675858)
 """
 
@@ -1020,7 +1024,7 @@ class OwnArticleFirst(unittest.TestCase):
         self.assertEqual(tried[0], "https://a/own")
         self.assertEqual(tried[1], "https://a/merged")     # the merged story's own headline next
         self.assertTrue(src[0]["main"])
-        self.assertEqual(sum(bool(s["text"]) for s in src), script.MAX_ARTICLES)   # cost unchanged
+        self.assertEqual(sum(bool(s["text"]) for s in src), 4)   # every readable one, up to MAX_ARTICLES
         self.assertIn("read in full, source [1]", script.main_note(src, self.HEAD))
 
     def test_same_article_from_another_outlet(self):
@@ -1083,6 +1087,10 @@ class OwnTake(unittest.TestCase):
         return [{"say": "Brown snubbed Tatum.", "stage": "setup"}, {"say": say, "stage": "payoff"},
                 {"say": "So who was he mad at, Tatum or Boston?", "stage": "exit"}]
 
+    def doc(self, say):
+        return [{"say": "Doc Rivers questioned Giannis's IQ, then apologized.", "stage": "setup"},
+                {"say": say, "stage": "payoff"}, {"say": "So is Doc's apology enough?", "stage": "exit"}]
+
     def test_agreement_only_goes_to_repair(self):
         import script
         for say in (self.REAL, "The Times says it's Boston. I agree.", "Honestly, they're not wrong.",
@@ -1102,7 +1110,7 @@ class OwnTake(unittest.TestCase):
                     "I think Doc is wrong.", "Honestly, Doc is wrong.", "Doc was half right and fully clumsy."):
             self.assertFalse(script.borrowed_take(self.pay(say)), say)
         self.assertEqual(script.repair_needed("Did Doc apologize?",
-                                              self.pay("I think the apology fixed the wording, not the pattern."), {}), [])
+                                              self.doc("I think the apology fixed the wording, not the pattern."), {}), [])
 
     def test_writer_critic_repair_told(self):
         import script
@@ -1213,6 +1221,65 @@ class FlexibleLength(unittest.TestCase):
         self.assertIn("Never pad", script.PROMPT)
         self.assertIn("Never cut must-know context", script.TRIM)
         self.assertIn("72 spoken words or fewer", script.TRIM)
+
+
+class ReadingAndQuestions(unittest.TestCase):
+    """Owner, 2026-11-11: read five articles, give every site the time it needs. Run 43066151290:
+    "So how was he not paying attention?" re-asked the hook; "Is Payton Pritchard right...?"
+    brought in someone never introduced, and did not come back to the hook."""
+
+    HOOK = "Jaylen Brown ignored Jayson Tatum twice in one night, so was he really not paying attention?"
+    BEATS = [{"say": "Brown got traded to Philly for Paul George, and Tuesday was his first game vs Tatum.", "stage": "setup"},
+             {"say": "Tatum tapped his chest at tip-off, but Brown skipped him after Boston's win.", "stage": "conflict"},
+             {"say": "Yahoo reported Brown said beforehand he didn't intend to speak with Tatum. So how was he not paying attention?", "stage": "escalation"},
+             {"say": "I think you can't announce a plan, then say you missed it.", "stage": "payoff"},
+             {"say": "Is Payton Pritchard right that there was never beef, or was this planned?", "stage": "exit"}]
+
+    def test_reading_limits(self):
+        import script
+        self.assertEqual(script.MAX_ARTICLES, 5)
+        self.assertEqual(script.READ_CONFIG.get("DEFAULT", "DOWNLOAD_TIMEOUT"), "300")
+        self.assertFalse(hasattr(script, "READ_BUDGET"))          # no limit on a story's reading
+        self.assertGreaterEqual(script.TIMEOUT, 1200)              # Claude's analysis is never cut
+        self.assertEqual(script.READ_TRIES, 2)
+
+    def test_slow_site_gets_a_second_try(self):
+        import script
+        saved = (script.trafilatura.fetch_url, script.trafilatura.extract)
+        calls = []
+
+        def fetch(url, config=None):
+            calls.append(config.get("DEFAULT", "DOWNLOAD_TIMEOUT"))
+            return None if len(calls) == 1 else "<html>x</html>"
+        script.trafilatura.fetch_url, script.trafilatura.extract = fetch, (lambda html: "article text " * 60)
+        try:
+            it = {"link": "https://a/1"}
+            self.assertTrue(script.read_article(it, {}))
+            self.assertEqual(calls, ["300", "300"])
+        finally:
+            script.trafilatura.fetch_url, script.trafilatura.extract = saved
+
+    def test_the_run_is_caught(self):
+        import script
+        self.assertEqual(script.re_asked(self.HOOK, self.BEATS), [2])
+        self.assertEqual(script.new_names_at_exit(self.HOOK, self.BEATS), ["Payton", "Pritchard"])
+        self.assertFalse(script.loops_back(self.HOOK, self.BEATS[-1]["say"]))
+        problems = script.repair_needed(self.HOOK, self.BEATS, {})
+        for need in ("brings in Payton, Pritchard", "does not come back to the hook", "beat 3 asks the hook's question"):
+            self.assertTrue(any(need in p for p in problems), (need, problems))
+
+    def test_good_endings_left_alone(self):
+        import script
+        good = [dict(b) for b in self.BEATS]
+        good[2]["say"] = "Yahoo reported Brown said beforehand he didn't intend to speak with Tatum."
+        good[-1]["say"] = "So was Brown really not paying attention to Tatum, or was this planned?"
+        self.assertEqual(script.re_asked(self.HOOK, good), [])
+        self.assertEqual(script.new_names_at_exit(self.HOOK, good), [])
+        self.assertTrue(script.loops_back(self.HOOK, good[-1]["say"]))
+        # a possessive is the same name: "Doc's apology" loops to "Doc Rivers"
+        self.assertTrue(script.loops_back("Did Doc Rivers just apologize to Giannis?", "So is Doc's apology enough?"))
+        self.assertIn("QUESTIONS:", script.PROMPT)
+        self.assertIn("QUESTIONS:", script.HUMANIZE)
 
 
 if __name__ == "__main__":

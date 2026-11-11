@@ -35,7 +35,8 @@ env:
 jobs:
   pipeline:
     runs-on: ubuntu-24.04      # pinned: "ubuntu-latest" is moving to Ubuntu 26, which could change ffmpeg/espeak
-    timeout-minutes: 120     # Chatterbox voices on a CPU: a few extra minutes per Short
+    timeout-minutes: 300     # room for slow sites and long Claude answers (a normal run: ~25 min);
+                             # only a truly stuck run is ever stopped (GitHub's maximum is 360)
     steps:
       - uses: actions/checkout@v5
 

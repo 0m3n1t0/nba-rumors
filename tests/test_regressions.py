@@ -1459,8 +1459,8 @@ class HistoricBeefs(unittest.TestCase):
         news = {"Kobe Bryant": 3, "Michael Jordan": 1, "Kevin Durant": 2}
 
         def fake(a, b, tier1=()):
-            return [{"title": f"{a} and {b} story {k}", "link": f"https://x/{a}{k}", "publisher": "P", "tier": 2}
-                    for k in range(news[a])]
+            return [{"title": f"{a} recalls the {b} story {k}", "link": f"https://x/{a}{k}", "publisher": "P",
+                     "tier": 2, "about": True} for k in range(news[a])]
         evergreen.fresh_news = fake
         evergreen.wikipedia_item = lambda a, b: {"title": "Feud (Wikipedia)", "link": "https://en.wikipedia.org/wiki/F",
                                                  "publisher": "Wikipedia", "tier": 1}
@@ -1482,6 +1482,16 @@ class HistoricBeefs(unittest.TestCase):
         import datetime as dt
         later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=e.REUSE_DAYS + 1)
         self.assertIn(got[0]["key"], [c["key"] for c in e.candidates(now=later)])
+
+    def test_about_them_not_just_named(self):
+        e = self.e
+        self.assertTrue(e.about_them("Derek Fisher on the Shaq and Kobe relationship: iron sharpening iron"))
+        self.assertTrue(e.about_them("Kyrie Irving explains why he will not follow LeBron James path"))
+        self.assertFalse(e.about_them("Thunder's Shai Gilgeous-Alexander Threatens Kevin Durant, Russell Westbrook Record"))
+        only_named = [{"title": "SGA threatens Durant and Westbrook record", "link": "https://x/1", "tier": 2, "about": False},
+                      {"title": "Durant and Westbrook record in danger", "link": "https://x/2", "tier": 2, "about": False}]
+        e.fresh_news = lambda a, b, tier1=(): only_named if a == "Kevin Durant" else []
+        self.assertEqual(e.candidates(), [])                     # named in passing only: not chosen
 
     def test_fills_only_the_empty_slot(self):
         import script

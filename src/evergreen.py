@@ -26,6 +26,17 @@ GOOGLE = "https://news.google.com/rss/search?q={q}+when:{days}d&hl=en-US&gl=US&c
 FRESH_DAYS = 30
 FRESH_MIN = 2          # articles naming both people in the last FRESH_DAYS days
 REUSE_DAYS = 90
+# B20 step 2a: an article ABOUT the two of them (what one says of the other, the history, the
+# feud), not one that only names both ("Shai threatens Durant and Westbrook's record").
+ABOUT_THEM = re.compile(
+    r"\b(says?|said|recalls?|remembers?|reveals?|revealed|responds?|fires? back|admits?|explains?|"
+    r"opens? up|claims?|blasts?|rips?|slams?|calls? out|praises?|defends?|apologi[sz]es?|"
+    r"feud|beef|rivalry|rift|relationship|friendship|fallout|falling out|tension|clash|"
+    r"history|reunion|regrets?|story|stories|truth|why|on (?:his|their|the) relationship)\b", re.I)
+
+
+def about_them(title: str) -> bool:
+    return bool(ABOUT_THEM.search(title or ""))
 
 # (person A, person B, neutral label used as the story's working headline)
 BANK = [
@@ -123,7 +134,9 @@ def fresh_news(a: str, b: str, tier1: tuple[str, ...] = ()) -> list[dict]:
             continue
         seen.add(fold(title))
         tier = 1 if any(p in publisher.lower() for p in tier1) else 2
-        out.append({"title": title, "link": link, "publisher": publisher, "tier": tier, "summary": ""})
+        out.append({"title": title, "link": link, "publisher": publisher, "tier": tier, "summary": "",
+                    "about": about_them(title)})
+    out.sort(key=lambda it: not it["about"])      # articles about the two of them first (stable)
     return out
 
 
@@ -158,12 +171,12 @@ def candidates(tier1: tuple[str, ...] = (), now: dt.datetime | None = None, limi
         if recently_used(key, now):
             continue
         news = fresh_news(a, b, tier1)
-        if len(news) < FRESH_MIN:
-            continue
+        if len(news) < FRESH_MIN or not any(it.get("about") for it in news):
+            continue      # not back in the news, or only named in passing
         found.append({"key": key, "people": [a, b], "news": news, "label": label})
         if len(found) >= limit:
             break
-    found.sort(key=lambda x: -len(x["news"]))
+    found.sort(key=lambda x: (-sum(bool(it.get("about")) for it in x["news"]), -len(x["news"])))
     out = []
     for f in found:
         wiki = wikipedia_item(*f["people"])

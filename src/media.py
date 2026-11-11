@@ -5,8 +5,9 @@
 2. EVERY source is searched for EVERY beat (not only as a fallback):
      photos   Wikimedia Commons + Openverse (Flickr and 600M+ other openly licensed works)
      footage  REAL clips first: Wikimedia Commons video (fan-shot games, press events, White
-              House / Voice of America, public domain) and DVIDS (US Department of Defense,
-              public domain: NBA players at Hoops for Troops, base visits); then Pixabay stock
+              House / Voice of America, public domain); then Pixabay stock. (DVIDS, the US
+              Department of Defense archive, was tried and removed: base-visit videos are
+              off-topic for the channel.)
 3. Claude LOOKS at the candidates (contact sheets: photos, and 3 frames from each clip) and
    picks the best one per beat: the right person, clear face, fits the line, no logos,
    no watermarks, no text. For the pick it also gives the focus point (where to crop for the
@@ -873,56 +874,6 @@ def commons_videos(search: str, person: str = "") -> list[dict]:
     return found
 
 
-# ---------- DVIDS: US Department of Defense media, public domain ----------
-# NBA players at Hoops for Troops events, base visits, clinics and games with service members.
-
-DVIDS = "https://api.dvidshub.net/"
-DVIDS_KEY = os.environ.get("DVIDS_API_KEY", "")
-_dvids_cache: dict[str, list[dict]] = {}
-
-
-def dvids_videos(person: str) -> list[dict]:
-    if not DVIDS_KEY or not person:
-        return []
-    if person in _dvids_cache:
-        return _dvids_cache[person]
-    found: list[dict] = []
-    first, last = (person.lower().split() + ["", ""])[:2]
-    try:
-        q = urllib.parse.urlencode({"api_key": DVIDS_KEY, "q": f'"{person}"', "type": "video", "max_results": "15"})
-        hits = json.loads(get(DVIDS + "search?" + q)).get("results", [])
-    except Exception as exc:
-        print(f"[!] DVIDS search failed for {person}: {exc}")
-        hits = []
-    for hit in hits:
-        text = f"{hit.get('title', '')} {hit.get('description', '')}".lower()
-        if first not in text or last not in text or len(found) >= 3:
-            continue
-        try:
-            q = urllib.parse.urlencode({"api_key": DVIDS_KEY, "id": hit["id"]})
-            asset = json.loads(get(DVIDS + "asset?" + q)).get("results", {})
-        except Exception as exc:
-            print(f"[!] DVIDS asset failed {hit.get('id')}: {exc}")
-            continue
-        files = sorted([f for f in asset.get("files") or [] if "mp4" in f.get("type", "")],
-                       key=lambda f: f.get("height") or 0)
-        small = next((f["src"] for f in files if (f.get("height") or 0) >= 240), None)
-        big = next((f["src"] for f in reversed(files) if (f.get("height") or 0) <= 1080
-                    and (f.get("size") or 0) < 150e6), None)
-        if not small or not big:
-            continue
-        found.append({
-            "kind": "video", "url": big, "preview": small, "id": hit["id"],
-            "title": hit.get("title", ""), "page": hit.get("url") or asset.get("url", ""),
-            "author": asset.get("credit") or hit.get("credit") or "U.S. Department of Defense",
-            "license": "Public domain (U.S. government work)", "license_url": "",
-            "source": "DVIDS", "duration": int(asset.get("duration") or hit.get("duration") or 30),
-            "real": True,
-        })
-    _dvids_cache[person] = found
-    return found
-
-
 # ---------- Pixabay b-roll ----------
 
 _pix_cache: dict[str, list[dict]] = {}
@@ -1047,7 +998,7 @@ def candidates(p: dict, work: Path, i: int, used: set, main_person: str = "",
     cands: list[dict] = []
     real: list[dict] = []
     for who in dict.fromkeys(x for x in (p.get("person"), main_person) if x):
-        real += commons_videos(f'"{who}"', who)   # (DVIDS off: military-base videos are off-topic)
+        real += commons_videos(f'"{who}"', who)
     real += commons_videos("basketball game") + commons_videos("NBA basketball")  # real players, real games
     real = list({c["id"]: c for c in real}.values())
     for c in [c for c in real if c["id"] not in used][:5]:

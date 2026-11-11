@@ -171,7 +171,6 @@ jobs:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
           OPENVERSE_CLIENT_SECRET: ${{ secrets.OPENVERSE_CLIENT_SECRET }}
-          DVIDS_API_KEY: ${{ secrets.DVIDS_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/stage_summary.md"; : > "$GITHUB_STEP_SUMMARY"   # full report: private only

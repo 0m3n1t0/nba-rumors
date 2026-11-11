@@ -16,7 +16,8 @@ import unicodedata
 
 PASS, REVIEW, REJECT = "PASS", "REVIEW", "REJECT"
 RANK = {PASS: 0, REVIEW: 1, REJECT: 2}
-STATUSES = ("CONFIRMED", "REPORTED", "RUMOR", "UNVERIFIED")
+STATUSES = ("CONFIRMED", "REPORTED", "ANONYMOUS", "RUMOR", "SPECULATION", "UNVERIFIED")
+HEDGED = ("ANONYMOUS", "RUMOR", "SPECULATION")   # must be voiced as such in their own sentence
 
 
 def worst(*verdicts: str) -> str:
@@ -98,6 +99,40 @@ HEDGE = re.compile(r"\b(per|according to|reportedly|report(s|ed)?|says|said|told
                    r"expected to|in talks|wants?|would|if)\b", re.I)
 
 
+# The words that make a sentence a report, a rumor or someone's opinion rather than a plain
+# fact: attribution to a person ("Bomani says...", "Windhorst thinks...") counts.
+SENTENCE_HEDGE = re.compile(
+    r"\b(per|according to|says|said|told|tells|claims?|argues?|insists?|reportedly|report(s|ed|edly)?|rumou?r(s|ed)?|sources?|insiders?|people close|"
+    r"could|might|may|expected to|in talks|linked|eyeing|interested|considering|thinks?|believes?|"
+    r"predicts?|expects?|suggest(s|ed)?|speculat\w*|whispers?|buzz|hears?|heard|apparently|allegedly)\b",
+    re.I)
+CONTENT_WORD = re.compile(r"[a-z]{4,}")
+
+
+def bare_claims(claims: list[dict], spoken: str) -> list[str]:
+    """C2 (owner's plan): an anonymous-source report, a rumor or a speculation must sound like
+    one IN ITS OWN SENTENCE ("sources say...", "reportedly", "he thinks..."); one "reportedly"
+    elsewhere no longer covers it. Returns the claims spoken as plain fact. A REPORTED claim is
+    left to the whole-script check: many of them are plain facts no league office announced."""
+    # a question asserts nothing ("Did the Lakers just shop Reaves?"): only statements count
+    sentences = [x for x in re.split(r"(?<=[.?!])\s+", spoken or "") if x.strip() and not x.strip().endswith("?")]
+    out = []
+    for c in claims or []:
+        if str(c.get("status", "")).upper() not in HEDGED:
+            continue
+        want = set(CONTENT_WORD.findall(fold(c.get("text", ""))))
+        if len(want) < 2:
+            continue
+        best, best_n = None, 0
+        for x in sentences:
+            n = len(want & set(CONTENT_WORD.findall(fold(x))))
+            if n > best_n:
+                best, best_n = x, n
+        if best and best_n >= max(2, len(want) // 2) and not SENTENCE_HEDGE.search(best):
+            out.append(c.get("text", ""))
+    return out
+
+
 def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[str, list[str], list[dict]]:
     """Every important claim carries CONFIRMED / REPORTED / RUMOR / UNVERIFIED, written by the
     script writer and CHECKED here against the sources. A status is downgraded when the evidence
@@ -133,9 +168,12 @@ def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[
         if status == "UNVERIFIED":
             verdict = worst(verdict, REVIEW)
             notes.append(f"UNVERIFIED claim: {c.get('text', '')[:80]}")
-    if any(c["status"] in ("REPORTED", "RUMOR") for c in out) and not HEDGE.search(spoken):
+    if any(c["status"] in ("REPORTED",) + HEDGED for c in out) and not HEDGE.search(spoken):
         verdict = worst(verdict, REJECT)
         notes.append("a report or rumor is told as fact: no attribution in the narration")
+    for text in bare_claims(out, spoken):
+        verdict = worst(verdict, REVIEW)
+        notes.append(f"a rumor / anonymous report / opinion sounds like a fact: {text[:80]}")
     return verdict, notes, out
 
 

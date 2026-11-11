@@ -321,8 +321,14 @@ TWO VERSIONS (the channel lives on them): before choosing the angle, search the 
    each fact the Short rests on, with its source number and its status:
    CONFIRMED = official (team, league, the player himself on record) or proven by direct evidence;
    REPORTED = published by a named, credible journalist or outlet, not officially confirmed;
-   RUMOR = circulating speculation, unconfirmed;
+   ANONYMOUS = it rests on unnamed people ("sources say", "people close to him", "a teammate");
+   RUMOR = circulating talk, unconfirmed;
+   SPECULATION = someone's prediction or opinion ("he could be traded by February", "X thinks");
    UNVERIFIED = unclear where it comes from.
+   HOW EACH SOUNDS (the channel's credibility and monetization depend on it): an ANONYMOUS,
+   RUMOR or SPECULATION claim is voiced as exactly that IN ITS OWN SENTENCE ("sources told
+   ESPN...", "reportedly...", "Windhorst thinks..."), never as plain fact; the intrigue stays
+   ("the word around the league is...") but the viewer always knows it is not confirmed.
    Several sites repeating one insider's report is still ONE report: never upgrade a claim for
    that. "reported_by" = the journalist or outlet that first reported it, if the material says.
 7. SEO (yt-seo): write the 3 search queries this Short should win (from the live search
@@ -1337,7 +1343,8 @@ def re_asked(hook: str, beats: list[dict]) -> list[int]:
     return out
 
 
-def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[dict] | None = None) -> list[str]:
+def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[dict] | None = None,
+                  claims: list[dict] | None = None) -> list[str]:
     """What a repair pass should fix, in plain words (empty = nothing to repair)."""
     problems = [f"beat {k + 1} repeats the hook's words (the hook already said them): confirm it in "
                 f"a few words of your own and move on" for k in hook_repeats(hook, beats)]
@@ -1362,6 +1369,11 @@ def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[d
         for k in re_asked(hook, beats):
             problems.append(f"beat {k + 1} asks the hook's question again: state the fact that sharpens "
                             "it instead (only the hook and the closing question ask)")
+    if claims:
+        said = " ".join(b.get("say", "") for b in beats)
+        for text in compliance.bare_claims(claims, said):
+            problems.append(f"this rumor / anonymous report / opinion sounds like a fact: \"{text[:90]}\": "
+                            "say in the same sentence what it is (reportedly, sources say, he thinks)")
     if sources is not None:
         # the beats only: the hook is fixed here (a detail in it is held by the gate instead)
         said = " ".join([b.get("say", "") for b in beats] + [b.get("on_screen", "") for b in beats])
@@ -1612,7 +1624,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     # every fact and quote still checks out. Otherwise the original stays (and is held).
     repaired: list[str] = []
     if hooks and beats:
-        problems = repair_needed(hooks[0]["text"], beats, retention, sources)
+        problems = repair_needed(hooks[0]["text"], beats, retention, sources, draft.get("claims"))
         if problems:
             try:
                 fixed = ask_claude(REPAIR.format(
@@ -1635,7 +1647,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
                 split_payoff(cand)
                 cand_soft = soften_quotes(cand, sources)
                 cand_ret = retention_check(cand)
-                left = repair_needed(hooks[0]["text"], cand, cand_ret, sources)
+                left = repair_needed(hooks[0]["text"], cand, cand_ret, sources, draft.get("claims"))
 
                 def spoken_of(bs: list[dict]) -> str:
                     return " ".join([hooks[0]["text"]] + [b.get("say", "") for b in bs]

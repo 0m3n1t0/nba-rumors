@@ -37,6 +37,8 @@ the "Safety tests" step before anything is installed or made.
      derivative ("File:X.jpg ... derivative work") is the same picture as X
  25. TWO VERSIONS (C1): the editor names where two accounts clash, the writer puts both sides
      in (attributed), the critic checks it; never invented
+ 26. RUMOR LABELS (C2): an anonymous report, a rumor or a speculation is voiced as such in its
+     own sentence; a fact stated plainly is never forced to sound like a rumor
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1381,6 +1383,46 @@ class TwoVersions(unittest.TestCase):
         self.assertIn("Never manufacture a contradiction", script.PROMPT)
         self.assertIn("TWO VERSIONS", script.HUMANIZE)
         self.assertIn("never invented", script.HUMANIZE)
+
+
+class RumorLabels(unittest.TestCase):
+    """C2 (owner's plan, 2026-11-11): one "reportedly" somewhere used to cover every rumor."""
+
+    SPOKEN = ("Did the Lakers just put Austin Reaves on the table? Sources told ESPN the Lakers are "
+              "shopping Reaves. The Kings want a guard before February. Windhorst thinks Reaves "
+              "stays. So does LeBron keep his guard?")
+
+    def claims(self, *pairs):
+        return [{"text": t, "status": st, "source": 1} for st, t in pairs]
+
+    def test_bare_rumor_caught_hedged_ones_pass(self):
+        import compliance as C
+        cl = self.claims(("ANONYMOUS", "The Lakers are shopping Austin Reaves"),
+                         ("RUMOR", "The Kings want a guard before February"),
+                         ("SPECULATION", "Windhorst thinks Reaves stays with the Lakers"))
+        self.assertEqual(C.bare_claims(cl, self.SPOKEN), ["The Kings want a guard before February"])
+
+    def test_facts_and_reports_untouched(self):
+        import compliance as C
+        cl = self.claims(("CONFIRMED", "Brown was traded to the 76ers for Paul George"),
+                         ("REPORTED", "Brown said he did not intend to speak with Tatum"))
+        self.assertEqual(C.bare_claims(cl, "Brown got traded to Philly for Paul George. Brown "
+                                           "said beforehand he wouldn't speak with Tatum."), [])
+
+    def test_gate_and_repair(self):
+        import compliance as C
+        import script
+        cl = self.claims(("RUMOR", "The Kings want a guard before February"))
+        v, notes, _ = C.check_claims(cl, [{"title": "x", "tier": 1, "text": "x"}], self.SPOKEN)
+        self.assertEqual(v, C.REVIEW)
+        self.assertTrue(any("sounds like a fact" in n for n in notes))
+        beats = [{"say": "The Kings want a guard before February.", "stage": "setup"},
+                 {"say": "I think the Lakers blink first, because Reaves is their second scorer.", "stage": "payoff"},
+                 {"say": "So does LeBron keep his guard?", "stage": "exit"}]
+        problems = script.repair_needed("Did LeBron's Lakers just shop Austin Reaves?", beats, {}, None, cl)
+        self.assertTrue(any("sounds like a fact" in p for p in problems), problems)
+        for word in ("ANONYMOUS", "SPECULATION", "IN ITS OWN SENTENCE"):
+            self.assertIn(word, script.PROMPT)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,8 @@ the "Safety tests" step before anything is installed or made.
      promise what it says (run 43027675858: "Brown explains why..." never said why)
  17. must-know context: who each person is in the story, who went where in a trade, who won the
      game, roles exactly as the sources give them (run 43027675858)
+ 18. her analysis is her own: a payoff that only agrees with an outlet ("...and I think that's
+     right") goes to the repair pass (run 43027675858)
 """
 
 from __future__ import annotations
@@ -1049,6 +1051,45 @@ class MustKnowContext(unittest.TestCase):
         self.assertIn("MUST-KNOW", script.PROMPT.format(**{k: "x" for k in (
             "skill_script", "skill_package", "skill_seo", "voice", "formulas", "rules", "headline",
             "main_note", "why", "story_type", "niche", "search", "history", "sources")}))
+
+
+class OwnTake(unittest.TestCase):
+    """Run 43027675858's payoff: "The New York Times argues Brown's real fight is with Boston,
+    and I think that's right." Agreement is not analysis."""
+
+    REAL = ("Derrick White said \"No beef.\" The New York Times argues Brown's real fight is with "
+            "Boston, and I think that's right.")
+
+    def pay(self, say):
+        return [{"say": "Brown snubbed Tatum.", "stage": "setup"}, {"say": say, "stage": "payoff"},
+                {"say": "So who was he mad at, Tatum or Boston?", "stage": "exit"}]
+
+    def test_agreement_only_goes_to_repair(self):
+        import script
+        for say in (self.REAL, "The Times says it's Boston. I agree.", "Honestly, they're not wrong.",
+                    "Bomani says he blames others, and honestly, Bomani is right.", "I buy it."):
+            self.assertTrue(script.borrowed_take(self.pay(say)), say)
+        problems = script.repair_needed("Did Brown snub Tatum?", self.pay(self.REAL), {})
+        self.assertTrue(any("her OWN reason" in p for p in problems), problems)
+
+    def test_her_own_takes_stay(self):
+        """Every real payoff of the earlier runs, and agreement WITH a reason, is left alone."""
+        import script
+        for say in ("I think the apology fixed the wording, not the pattern.",
+                    "I think that snub backfired, the scoreboard got the last word.",
+                    "Bomani Jones said parts were correct, but an apology fixes the wording, not the point.",
+                    "One fan said he only has value in Golden State. I think the passing says otherwise.",
+                    "The Times says it's Boston, and I think that's right, because he went quiet that night.",
+                    "I think Doc is wrong.", "Honestly, Doc is wrong.", "Doc was half right and fully clumsy."):
+            self.assertFalse(script.borrowed_take(self.pay(say)), say)
+        self.assertEqual(script.repair_needed("Did Doc apologize?",
+                                              self.pay("I think the apology fixed the wording, not the pattern."), {}), [])
+
+    def test_writer_critic_repair_told(self):
+        import script
+        self.assertIn("Agreeing with an outlet", script.PROMPT)
+        self.assertIn("never only agreeing with someone else's view", script.HUMANIZE)
+        self.assertIn("never only agreeing with someone else's view", script.REPAIR)
 
 
 if __name__ == "__main__":

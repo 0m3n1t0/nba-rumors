@@ -261,7 +261,10 @@ S. STRATEGY FIRST (the content strategist's job, before a single line is written
    "exit" (the last beat, ending with the question). THE PAYOFF is her own answer in her own
    words: what it means, who it costs, why it matters (role "analysis"), built from the sources
    and delivering the strategy's "headline_gap". A stat or a plain fact alone is never the
-   payoff ("he dropped 32 in the win" is a fact, not an answer). THE CLOSING QUESTION asks the
+   payoff ("he dropped 32 in the win" is a fact, not an answer). Agreeing with an outlet or a
+   pundit is never her answer either ("the Times says X, and I think that's right"): she gives
+   her OWN reason or a point they did not make ("...and the proof is that he went quiet the
+   one night Boston was watching"), built on facts from the sources. THE CLOSING QUESTION asks the
    strategy's "central_question" as a pick-a-side, in a few spoken words, naming the hook's
    people: it is what this Short is really about, never a generic "who's right, A or B?" when
    the story is about something more specific (an apology, a punishment, a trade). THE LOOP: the closing question comes
@@ -389,7 +392,8 @@ YOU ARE ALSO THE CRITICAL EDITOR. Before returning, check and fix:
 - the closing question is a specific pick-a-side question about THIS story (it names the sides
   or the exact choice), never a generic "What do you think?" or "Let me know in the comments";
 - the "headline_gap" in the strategy: the payoff must deliver it in plain words, as her own
-  answer (what it means), never only a stat;
+  answer (what it means), never only a stat, and never only agreeing with someone else's view
+  ("...and I think that's right"): her own reason or a point they did not make;
 - the closing question asks the strategy's "central_question" as a pick-a-side (naming the
   hook's people), never a generic "who's right, A or B?" that misses what the story is about;
 - no quote is spoken twice (hook and beat, or two beats), and the exit never re-says the twist;
@@ -1209,6 +1213,26 @@ def weak_payoff(beats: list[dict]) -> bool:
     return not any(answer(b.get("say", "")) for b in beats if stage_of(b) == "payoff")
 
 
+AGREE_ONLY = re.compile(
+    r"(?:^|[,.;!?]\s*|\band\s+|\bbut\s+|\bso\s+)(?:"
+    # "I think that's right", "honestly, they're not wrong"
+    r"(?:i\s+(?:think|believe|'d\s+say|would\s+say)|honestly),?\s+(?:that's|that\s+is|it's|they're|he's|"
+    r"she's|they\s+are|(?:the\s+)?\w+\s+is|\w+\s+(?:are|is))\s+(?:right|correct|true|spot\s+on|fair|"
+    r"not\s+wrong|onto\s+something)"
+    # "I agree", "I agree with that", "I buy it"
+    r"|i\s+(?:totally\s+|fully\s+)?agree(?:\s+with\s+(?:that|them|him|her|it))?|i\s+buy\s+(?:it|that)"
+    r")\s*[.!]?\s*$", re.I)
+
+
+def borrowed_take(beats: list[dict]) -> bool:
+    """Run 43027675858: "The New York Times argues Brown's real fight is with Boston, and I think
+    that's right." Her "analysis" was only agreeing with an outlet. A payoff that ENDS in bare
+    agreement, with no reason of her own, is not her answer ("I think that's right, because..."
+    or a point of her own is)."""
+    pay = [b.get("say", "").strip() for b in beats if stage_of(b) == "payoff"]
+    return bool(pay) and all(AGREE_ONLY.search(p) for p in pay)
+
+
 def repair_needed(hook: str, beats: list[dict], retention: dict) -> list[str]:
     """What a repair pass should fix, in plain words (empty = nothing to repair)."""
     problems = [f"beat {k + 1} repeats the hook's words (the hook already said them): confirm it in "
@@ -1218,6 +1242,10 @@ def repair_needed(hook: str, beats: list[dict], retention: dict) -> list[str]:
     if weak_payoff(beats):
         problems.append("the payoff is only a stat or a fragment: make it her own answer in one or two "
                         "sentences (what it means, who it costs, why it matters), from the sources")
+    elif borrowed_take(beats):
+        problems.append("the payoff only agrees with someone else's view (\"I think that's right\"): "
+                        "give her OWN reason or a point that view did not make, in one sentence, "
+                        "built from facts in the sources")
     return problems
 
 
@@ -1236,7 +1264,7 @@ RULES:
   that the sources do not say. Never invent a quote, a source or a reaction.
 - Never cut a fact or her analysis to save time: cut only what is said twice.
 - The payoff is her own answer (what it means, who it costs, why it matters), delivering the
-  strategy's headline_gap, never only a stat.
+  strategy's headline_gap, never only a stat, never only agreeing with someone else's view.
 - The last beat ends with the closing question: the strategy's central_question as a
   pick-a-side, naming the hook's people. Nothing after it.
 - Same voice: a 25-year-old woman obsessed with the NBA telling a friend; full connected

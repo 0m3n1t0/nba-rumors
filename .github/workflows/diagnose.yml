@@ -1,0 +1,34 @@
+name: Diagnose Commons (read-only)
+
+# Manual only. Shows what Wikipedia and Commons say about a few players and why their Commons
+# category is or is not read. No secrets, no Claude, nothing saved or changed.
+on:
+  workflow_dispatch:
+    inputs:
+      names:
+        description: "Players, separated by commas"
+        required: false
+        default: "Luka Doncic, Devin Booker, Jayson Tatum, Doc Rivers"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install what the search code needs
+        run: pip install -r requirements.txt
+      - name: Diagnose
+        env:
+          NAMES: ${{ inputs.names }}
+        run: |
+          IFS=',' read -ra LIST <<< "$NAMES"
+          ARGS=()
+          for n in "${LIST[@]}"; do ARGS+=("$(echo "$n" | xargs)"); done
+          python src/diagnose_commons.py "${ARGS[@]}"

@@ -35,6 +35,8 @@ the "Safety tests" step before anything is installed or made.
  23. photos: a photo taken before his NBA career ("PRE-NBA", run 43066151290: Brown at a 2015
      high school game) goes last and Claude is told; off-court events score low; a Commons
      derivative ("File:X.jpg ... derivative work") is the same picture as X
+ 24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
+     43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
      try), Claude's answer up to 20 min (owner, 2026-11-11); questions: no
      middle beat re-asks the hook's question, the closing question loops to the hook and brings
@@ -1320,6 +1322,45 @@ class PhotoEra(CurrentTeam):
         shown = set()
         mark_shown(der, shown)
         self.assertFalse(already_shown(_commons("Pacers Paul George (cropped).jpg"), shown))
+
+
+class OpenverseRetries(unittest.TestCase):
+    """24. Openverse answers 504 to a search it has not seen, finishes it behind the scenes, and
+    answers the same search fast a little later. Three quick tries lost every search."""
+
+    def test_504s_then_the_answer(self):
+        import time
+        import urllib.error
+        import urllib.request
+        import media
+        saved = (urllib.request.urlopen, time.sleep, media.OPENVERSE_BUDGET[0], media.openverse_token,
+                 media.namesake, dict(media.PHOTO_STATS))
+        slept, tries = [], []
+
+        class Reply:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def read(s): return json.dumps({"results": [{"title": "Paul George Celtics", "url": "https://x/1.jpg",
+                                                         "width": 1200, "height": 1600, "license": "by",
+                                                         "license_version": "2.0", "creator": "A"}]}).encode()
+
+        def fake(req, timeout=30):
+            tries.append(timeout)
+            if len(tries) <= 4:
+                raise urllib.error.HTTPError(req.full_url, 504, "Gateway Timeout", {}, None)
+            return Reply()
+        urllib.request.urlopen, time.sleep = fake, slept.append
+        media.OPENVERSE_BUDGET[0], media.openverse_token, media.namesake = 50, (lambda: ""), (lambda p, t: False)
+        try:
+            got = media.openverse_photos("Paul George")
+        finally:
+            (urllib.request.urlopen, time.sleep, media.OPENVERSE_BUDGET[0], media.openverse_token,
+             media.namesake) = saved[:5]
+            media.PHOTO_STATS.clear(); media.PHOTO_STATS.update(saved[5])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(len(tries), 5)
+        self.assertEqual(slept, [5, 10, 20, 30])
+        self.assertEqual(sum(media.OPENVERSE_WAITS), 125)        # about two minutes at most
 
 
 if __name__ == "__main__":

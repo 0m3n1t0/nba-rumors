@@ -66,6 +66,7 @@ FLICKR_LICENCES = {"4": "CC BY 2.0", "5": "CC BY-SA 2.0", "9": "CC0 1.0", "10": 
                    "11": "CC BY 4.0", "12": "CC BY-SA 4.0"}
 # anonymous Openverse allows ~5 calls/hour (runs are 6 h apart); a free registered key allows 100/min
 OPENVERSE_BUDGET = [80 if OV_ID else 6]
+OPENVERSE_WAITS = (0, 5, 10, 20, 30, 60)   # seconds before each try (a 504 is retried)
 _OV_TOKEN: list[str] = []
 # Share-alike photos (CC BY-SA) are allowed: far more photos of every player. A Short that
 # uses one is itself released under CC BY-SA 4.0 (said in its description, as the licence asks).
@@ -818,19 +819,23 @@ def openverse_photos(person: str) -> list[dict]:
         req = urllib.request.Request(OPENVERSE + "images/?" + urllib.parse.urlencode(params),
                                      headers={"User-Agent": UA, **({"Authorization": f"Bearer {token}"} if token else {})})
         data = None
-        for wait in (0, 5, 15):          # Openverse often answers 504 for a moment: try again
+        # Openverse answers 504 when a search is new to it (its gateway gives up after ~10 s),
+        # but finishes the search behind it: asked again a little later, the same search comes
+        # back in a fraction of a second (measured 2026-11-11: 504, then 200 in 0.3 s). Runs
+        # 43027675858 and 43066151290 gave up after 3 quick tries; now 6 tries over ~2 minutes.
+        for wait in OPENVERSE_WAITS:
             if wait:
                 import time
                 time.sleep(wait)
             try:
-                with urllib.request.urlopen(req, timeout=30) as r:
+                with urllib.request.urlopen(req, timeout=60) as r:
                     data = json.loads(r.read())
                 break
             except urllib.error.HTTPError as exc:
-                if exc.code < 500 or wait == 15:
+                if exc.code < 500 or wait == OPENVERSE_WAITS[-1]:
                     raise
             except (urllib.error.URLError, TimeoutError):
-                if wait == 15:
+                if wait == OPENVERSE_WAITS[-1]:
                     raise
     except Exception as exc:
         print(f"[!] Openverse search failed for {person}: {exc}")

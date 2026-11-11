@@ -7,7 +7,7 @@ AI/human), the pace and the visuals.
 
 Collection is ours (YouTube Data API, the same read-only token as signals.py, about
 650 quota units per run). The outlier analysis is youtube-agent-skill's yt-viral
-(vendor/yt_skills/swipe.py): each Short is ranked by how far it beat its own channel.
+(vendor/youtube-agent-skill/skills/yt-viral/swipe.py): each Short is ranked by how far it beat its own channel.
 
 Output: data/benchmark.csv and a report on the Actions page.
 """

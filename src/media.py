@@ -318,6 +318,8 @@ def real_people(names_list: list[str]) -> list[str] | None:
         for n in part:
             page = alias.get(alias.get(n, n), alias.get(n, n))
             _person_cache[n] = page in good
+            if page in good:
+                _wiki_title[n] = page     # "Luka Dončić": the exact name of his Commons category
             if page in good and page in born:
                 _birth_year[n] = born[page]
     return [n for n in names_list if _person_cache.get(n)]
@@ -325,6 +327,7 @@ def real_people(names_list: list[str]) -> list[str] | None:
 
 BORN = re.compile(r"\bborn\W{0,3}(?:in\W{1,3})?((?:18|19|20)\d\d)\b", re.I)
 _birth_year: dict[str, str] = {}
+_wiki_title: dict[str, str] = {}   # the person's English Wikipedia page title (accents kept)
 
 
 def birth_year(person: str) -> str:
@@ -505,12 +508,19 @@ def category_files(person: str) -> list[dict]:
 
     last = fold(person).split()[-1] if person.strip() else ""
     base = [f"Category:{person} (basketball)", f"Category:{person}"]
+    # The person's Wikipedia page title ("Luka Dončić"; the Wikipedia check found it). Commons
+    # names a person's category exactly like his Wikipedia page, and a namesake gets an extra
+    # word ("Devin Booker (basketball, born 1991)"; "Robert Williams III" is not "Robert
+    # Williams"), so a category with exactly this name is his.
+    wiki = f"Category:{_wiki_title[person]}" if _wiki_title.get(person) else ""
 
     def tried():
-        # the plain spelling first (unchanged); only when it has nothing, the category under
-        # its real name ("Luka Dončić", not "Luka Doncic": Commons titles keep the accents)
+        # the plain spelling first (unchanged); then his Wikipedia name; then the search under
+        # the real name ("Luka Dončić", not "Luka Doncic": Commons titles keep the accents)
         yield from base
-        yield from (c for c in category_titles(person) if c not in base)
+        if wiki and wiki not in base:
+            yield wiki
+        yield from (c for c in category_titles(person) if c not in base and c != wiki)
     for cat in tried():
         try:
             files = files_in(cat)
@@ -520,11 +530,18 @@ def category_files(person: str) -> list[dict]:
             return []
         if not files and not subs:
             continue
-        if not cat.endswith("(basketball)") and not any(
-                BASKETBALL.search(f.get("title", "") + " " + clean(((f.get("imageinfo") or [{}])[0]
-                                  .get("extmetadata") or {}).get("ImageDescription", {}).get("value", "")))
-                for f in files) and not any(BASKETBALL.search(c) for c in subs):
-            return []      # a namesake's category (a politician called Robert Williams): not ours
+        def about(f: dict) -> str:
+            return f.get("title", "") + " " + clean(((f.get("imageinfo") or [{}])[0]
+                                                     .get("extmetadata") or {}).get("ImageDescription", {}).get("value", ""))
+        # "Luka Dončić, Lakers" or "Devin Booker of the Phoenix Suns" never says "basketball":
+        # an NBA team name proves it too
+        hoops = any(BASKETBALL.search(about(f)) or NBA_PROOF.search(fold(about(f))) for f in files) \
+            or any(BASKETBALL.search(c) or NBA_PROOF.search(fold(c)) for c in subs)
+        if cat != wiki and not cat.endswith("(basketball)") and not hoops:
+            # a namesake's category (a politician called Robert Williams): not ours. The next
+            # candidate is still tried (it used to stop here and miss the right category).
+            print(f"[i] {person}: skipped {cat} (nothing in it says basketball)")
+            continue
         # newest first: "... in 2026" before "... in 2019"
         subs.sort(key=lambda c: max([int(y) for y in re.findall(r"\b(20\d\d)\b", c)] or [0]), reverse=True)
         for sub in subs[:CATEGORY_SUBCATS]:

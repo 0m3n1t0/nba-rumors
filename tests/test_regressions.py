@@ -32,6 +32,9 @@ the "Safety tests" step before anything is installed or made.
      back, the repair pass fixes the beats, the gate holds what is left (run 43011651547)
  21. length: 45-65 words after the hook, up to 72 only when must-know context or her own reason
      needs it (owner's choice "გ"); the longest Short still counts as ready
+ 23. photos: a photo taken before his NBA career ("PRE-NBA", run 43066151290: Brown at a 2015
+     high school game) goes last and Claude is told; off-court events score low; a Commons
+     derivative ("File:X.jpg ... derivative work") is the same picture as X
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
      try), Claude's answer up to 20 min (owner, 2026-11-11); questions: no
      middle beat re-asks the hook's question, the closing question loops to the hook and brings
@@ -1280,6 +1283,43 @@ class ReadingAndQuestions(unittest.TestCase):
         self.assertTrue(script.loops_back("Did Doc Rivers just apologize to Giannis?", "So is Doc's apology enough?"))
         self.assertIn("QUESTIONS:", script.PROMPT)
         self.assertIn("QUESTIONS:", script.HUMANIZE)
+
+
+class PhotoEra(CurrentTeam):
+    """23. Run 43066151290: Brown's 2015 high school all-star photos in Paul George's Short, a
+    2018 youth clinic in Jakarta as the hook, and a Commons derivative next to its original."""
+
+    def test_before_his_nba_career(self):
+        m = self.m
+        m._nba_debut.clear()
+        self.assertEqual(m.photo_team("Jaylen Brown", "20150401 MCDAAG Jaylen Brown dunk", 2015), "pre-nba")
+        self.assertEqual(m.photo_team("Jaylen Brown", "Celtics at Wizards 2024-12-054", 2024), "former")
+        self.assertEqual(m.photo_team("Jaylen Brown", "Jaylen Brown 76ers 2026", 2026), "current")
+        self.assertEqual(m.photo_team("Jaylen Brown", "Jaylen Brown", None), "")   # no year: unchanged
+        self.assertEqual(sorted(["pre-nba", "former", "", "current"], key=m.TEAM_ORDER.get),
+                         ["current", "", "former", "pre-nba"])
+
+    def test_claude_is_told(self):
+        m = self.m
+        self.assertEqual(m.photo_era({"date": "2015-04-01", "team": "pre-nba"}), "2015 PRE-NBA")
+        self.assertEqual(m.photo_era({"date": "2014-03-05", "team": "former"}), "2014 OLD TEAM")
+        self.assertEqual(m.photo_era({"date": "2026-04-02", "team": "current"}), "2026")
+        self.assertEqual(m.photo_era({}), "")
+        for rule in ("PRE-NBA", "score it 3 at most", "OFF COURT", "score it 4 at most", "OLD TEAM"):
+            self.assertIn(rule, m.PICK_PROMPT, rule)
+
+    def test_derivative_is_the_same_picture(self):
+        from picture_ids import already_shown, mark_shown
+        orig = _commons("Anthony Tolliver defending Paul George.jpg")
+        der = {**_commons("Paul George Pacers.jpg"),
+               "author": "File:Anthony Tolliver defending Paul George.jpg: joshuak8 derivative work: Chrishmt0423"}
+        for first, second in ((orig, der), (der, orig)):
+            shown = set()
+            mark_shown(first, shown)
+            self.assertTrue(already_shown(second, shown))
+        shown = set()
+        mark_shown(der, shown)
+        self.assertFalse(already_shown(_commons("Pacers Paul George (cropped).jpg"), shown))
 
 
 if __name__ == "__main__":

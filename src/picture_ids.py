@@ -12,6 +12,10 @@ A crop can also be named after the person cut out of it: "Celtics at Wizards 202
 "(words)" counts as a crop mark only when what is left is a numbered series file (ends in a
 digit): "Doc Rivers (coach)" or "Jayson Tatum (2018)" stay their own pictures.
 
+A derivative names its original only in its author field: "Paul George Pacers.jpg" by
+"File:Anthony Tolliver defending Paul George.jpg: joshuak8 derivative work: Chrishmt0423"
+(run 43066151290 showed both). Such a file counts as a crop of the file it names.
+
 Only Commons photos take part, and only a crop matches: Flickr titles are not unique (many
 different photos are simply called "Jaylen Brown"), and two different Commons files without a
 crop marker never match by name.
@@ -23,6 +27,7 @@ import re
 
 COMMONS = "Wikimedia Commons"
 EXTENSION = re.compile(r"\.(jpe?g|png|webp|tiff?|gif)$", re.I)
+DERIVED_FROM = re.compile(r"\bFile:\s*([^|\]\n:]+?\.(?:jpe?g|png|webp|tiff?|gif))", re.I)
 NAMED_CROP = re.compile(r"\s*\(\s*([^()\d]+?)\s*\)$")   # "(White)", "(Tatum and Brown)"
 CROP_MARK = re.compile(r"[\s_\-]*[\(\[]\s*cropped(?:[\s_\-]*\d+)?\s*[\)\]]|[\s_\-]+cropped(?:[\s_\-]*\d+)?$", re.I)
 
@@ -47,8 +52,16 @@ def crop_keys(item: dict) -> tuple[set[str], set[str]]:
     if not name:
         return set(), set()
     if cropped:
-        return {f"crop:{name}"}, {f"base:{name}", f"crop:{name}"}
-    return {f"base:{name}"}, {f"crop:{name}"}
+        marks, avoid = {f"crop:{name}"}, {f"base:{name}", f"crop:{name}"}
+    else:
+        marks, avoid = {f"base:{name}"}, {f"crop:{name}"}
+    origin = DERIVED_FROM.search(item.get("author") or "")
+    if origin:
+        src = base_name(origin.group(1))[0]
+        if src and src != name:
+            marks |= {f"crop:{src}"}
+            avoid |= {f"base:{src}", f"crop:{src}"}
+    return marks, avoid
 
 
 def already_shown(item: dict, shown: set, key: str | None = None) -> bool:

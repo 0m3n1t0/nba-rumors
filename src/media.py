@@ -204,7 +204,14 @@ Draymond 8, a photo of Brooks 7, a stock podcast microphone 0 (an object, not ba
 UNIFORMS: the story line says which team each person plays for NOW. A photo of the person in
 his CURRENT team's uniform fits better than one in a former team's uniform: score a
 former-team photo 1 lower, unless the line is about his time with that team ("ten years in
-Boston" may show him as a Celtic). A suit, a practice or an off-court photo is neither.
+Boston" may show him as a Celtic). A suit, a practice or an off-court photo is neither. A tile
+marked "OLD TEAM" is such a former-team photo.
+BEFORE THE NBA: a tile marked "PRE-NBA" was taken before his NBA career (high school, college,
+a youth all-star game). Unless the line is about those days, score it 3 at most: a teenager in
+a school jersey is not the man in this NBA story.
+OFF COURT: a clinic, camp, school visit, charity or promo event (kids or students around him, a
+gym with no game, a stage) is not a game or a feud photo. When the line is about a game, a
+clash or a trade, score it 4 at most; it fits only a line about that event.
 Score honestly and never inflate a clip: the pipeline already prefers clips when they are
 about as relevant. Between equal clips: REAL CLIP > STOCK CLIP. A wrong person always scores 0.
 Nothing may repeat: never pick a candidate already picked for an earlier beat.
@@ -377,6 +384,7 @@ NBA_TEAMS = {
 }
 _teams: dict[str, tuple[str, set[str]]] = {}     # Wikidata item -> (current team, former teams)
 _team_since: dict[str, int] = {}                  # Wikidata item -> year his current spell began
+_nba_debut: dict[str, int] = {}                   # Wikidata item -> year his first NBA spell began
 
 
 def teams_of(person: str) -> tuple[str, set[str]]:
@@ -414,6 +422,9 @@ def teams_of(person: str) -> tuple[str, set[str]]:
         since = re.match(r"\+?(\d{4})", open_spells[0][1]) if open_spells else None
         if since:
             _team_since[q] = int(since.group(1))
+        starts = [int(m.group(1)) for _, start, _ in nba if (m := re.match(r"\+?(\d{4})", start or ""))]
+        if starts:
+            _nba_debut[q] = min(starts)
     except Exception as exc:
         print(f"[!] Wikidata teams failed for {person}: {exc}")
     return _teams[q]
@@ -427,10 +438,15 @@ def photo_team(person: str, text: str, year: int | None = None) -> str:
     """"current": the photo names his current team; "former": it names only a former team of his
     ("Celtics at Wizards" for Jaylen Brown, now a 76er); "" when it says nothing about his team
     (then nothing changes for it). A photo taken BEFORE his current spell began cannot show
-    today's uniform ("Celtics at 76ers 2023" names the 76ers, but Brown was a Celtic then)."""
+    today's uniform ("Celtics at 76ers 2023" names the 76ers, but Brown was a Celtic then).
+    "pre-nba": taken before his first NBA season (run 43066151290 showed Brown at a 2015 high
+    school all-star game in a Short about his NBA feud)."""
     current, former = teams_of(person)
     if not current and not former:
         return ""
+    debut = _nba_debut.get(_wikidata.get(person, ""), 0)
+    if year and debut and year < debut:
+        return "pre-nba"
     t = fold(text or "")
 
     def named(team: str) -> bool:
@@ -443,7 +459,15 @@ def photo_team(person: str, text: str, year: int | None = None) -> str:
     return ""
 
 
-TEAM_ORDER = {"current": 0, "": 1, "former": 2}   # among the person's photos: today's uniform first
+def photo_era(c: dict) -> str:
+    """What the contact sheet tells Claude about a photo's time: "2015 PRE-NBA", "2014 OLD
+    TEAM", "2026" (Claude sees only the picture otherwise and cannot know when it was taken)."""
+    year = (c.get("date") or "")[:4]
+    tag = {"pre-nba": "PRE-NBA", "former": "OLD TEAM"}.get(c.get("team", ""), "")
+    return " ".join(x for x in (year if year.isdigit() else "", tag) if x)
+
+
+TEAM_ORDER = {"current": 0, "": 1, "former": 2, "pre-nba": 3}   # today's uniform first, school days last
 
 
 def birth_year(person: str) -> str:
@@ -883,7 +907,7 @@ def flickr_photos(person: str) -> list[dict]:
             "license_url": "", "source": "Flickr", "license_verified": True,
             "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4) + (1000 if hoops else 0),
             "hoops": hoops,
-            "team": photo_team(person, text),
+            "team": photo_team(person, text, year if year > 2000 else None),
         })
     if sum(f["hoops"] for f in out) >= 2:      # enough real basketball photos: drop the namesakes
         out = [f for f in out if f["hoops"]]
@@ -1063,7 +1087,7 @@ def contact_sheet(cands: list[dict], path: Path, title: str) -> None:
     for n, c in enumerate(cands, 1):
         if c["kind"] == "photo":
             tile = ImageOps.contain(Image.open(c["thumb"]).convert("RGB"), (420, 420))
-            label = f"{n}  PHOTO"
+            label = f"{n}  PHOTO {photo_era(c)}".rstrip()
         else:
             fr = [ImageOps.contain(Image.open(p).convert("RGB"), (300, 300)) for p in c["frames"]]
             tile = Image.new("RGB", (sum(i.width for i in fr) + 10 * len(fr), max(i.height for i in fr)), "#222")

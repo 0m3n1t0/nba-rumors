@@ -22,6 +22,8 @@ the "Safety tests" step before anything is installed or made.
      43011651547 showed 9 of 13 photos from "Celtics at Wizards", 15 Dec 2024)
  16. the story's own article is read first; when it cannot be read, the script is told not to
      promise what it says (run 43027675858: "Brown explains why..." never said why)
+ 17. must-know context: who each person is in the story, who went where in a trade, who won the
+     game, roles exactly as the sources give them (run 43027675858)
 """
 
 from __future__ import annotations
@@ -1022,6 +1024,31 @@ class OwnArticleFirst(unittest.TestCase):
                                 script.NEAR)
         self.assertLess(script.closeness("Kevin O'Connor calls out 76ers' Jaylen Brown", self.HEAD), script.NEAR)
         self.assertEqual(script.closeness("Jaylen Brown Tatum", self.HEAD), 0.0)   # too short to tell
+
+
+class MustKnowContext(unittest.TestCase):
+    """Run 43027675858: Paul George's 36 points without "the player Boston got for Brown", no
+    game result, no "Giannis now plays for Miami", and "Heat radio host" for a podcast host.
+    The writer is told, and the critic checks it again."""
+
+    def test_writer_and_critic_both_have_the_rule(self):
+        import script
+        w, c = script.PROMPT, script.HUMANIZE
+        self.assertIn("MUST-KNOW CONTEXT", w)
+        self.assertIn("MUST-KNOW CONTEXT", c)
+        for need in ("who they are in THIS story", "who went where", "its result (who won",
+                     "current team", "never fill it from memory", "as the sources\n     give it"):
+            self.assertIn(need, w, need)
+        for need in ("who is that?", "without who went where", "without who won",
+                     "exactly as the sources"):
+            self.assertIn(need, c, need)
+
+    def test_prompts_still_format(self):
+        import script
+        script.HUMANIZE.format(voice="v", sources="s", draft="d")
+        self.assertIn("MUST-KNOW", script.PROMPT.format(**{k: "x" for k in (
+            "skill_script", "skill_package", "skill_seo", "voice", "formulas", "rules", "headline",
+            "main_note", "why", "story_type", "niche", "search", "history", "sources")}))
 
 
 if __name__ == "__main__":

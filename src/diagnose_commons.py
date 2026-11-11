@@ -39,11 +39,13 @@ def main() -> None:
     print(f"Wikipedia check: {real}")
     for person in names:
         print(f"\n===== {person} =====")
-        print(f"Wikipedia page: {media._wiki_title.get(person)!r}, born: {media._birth_year.get(person)!r}")
+        print(f"Wikipedia page: {media._wiki_title.get(person)!r}, born: {media._birth_year.get(person)!r}, "
+              f"Wikidata: {media._wikidata.get(person)!r} -> Commons category {media.commons_category(person)!r}")
         last = media.fold(person).split()[-1]
         wiki = f"Category:{media._wiki_title[person]}" if media._wiki_title.get(person) else ""
         seen = []
-        for cat in ([f"Category:{person} (basketball)", f"Category:{person}"] + ([wiki] if wiki else [])
+        wd = media.commons_category(person)
+        for cat in ([f"Category:{person} (basketball)", f"Category:{person}"] + [c for c in (wd, wiki) if c]
                     + media.category_titles(person)):
             if cat in seen:
                 continue
@@ -61,7 +63,7 @@ def main() -> None:
             print(f"- {cat}: {len(files)} files, {len(subs)} sub-categories ({len(own)} his)")
             if files or subs:
                 print(f"    old rule (a caption says basketball): {'PASS' if old_pass else 'FAIL -> category dropped, search stopped'}")
-                print(f"    new rule: {'his Wikipedia name' if cat == wiki else ('PASS' if old_pass or team else 'skipped, search goes on')}")
+                print(f"    new rule: {'his (Wikidata / Wikipedia name)' if cat in (wd, wiki) else ('PASS' if old_pass or team else 'skipped, search goes on')}")
                 for f in files[:6]:
                     print(f"    file: {caption(f)}")
                 for s in own[:6]:

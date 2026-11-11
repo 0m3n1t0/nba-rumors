@@ -297,7 +297,7 @@ def real_people(names_list: list[str]) -> list[str] | None:
     for i in range(0, len(todo), 40):
         part = todo[i:i + 40]
         q = urllib.parse.urlencode({"action": "query", "format": "json", "redirects": 1,
-                                    "prop": "pageprops", "ppprop": "wikibase-shortdesc|disambiguation",
+                                    "prop": "pageprops", "ppprop": "wikibase-shortdesc|disambiguation|wikibase_item",
                                     "titles": "|".join(part)})
         try:
             data = json.loads(get(f"https://en.wikipedia.org/w/api.php?{q}", 30)).get("query", {})
@@ -313,6 +313,8 @@ def real_people(names_list: list[str]) -> list[str] | None:
                 and PERSON_DESC.search((pg.get("pageprops") or {}).get("wikibase-shortdesc", ""))}
         # the short description usually holds the birth year ("American basketball player
         # (born 1996)"): it tells our Devin Booker from a namesake "born 1991"
+        item = {pg["title"]: (pg.get("pageprops") or {}).get("wikibase_item", "")
+                for pg in (data.get("pages") or {}).values()}
         born = {pg["title"]: m.group(1) for pg in (data.get("pages") or {}).values()
                 if (m := BORN.search((pg.get("pageprops") or {}).get("wikibase-shortdesc", "")))}
         for n in part:
@@ -320,6 +322,8 @@ def real_people(names_list: list[str]) -> list[str] | None:
             _person_cache[n] = page in good
             if page in good:
                 _wiki_title[n] = page     # "Luka Dončić": the exact name of his Commons category
+                if item.get(page):
+                    _wikidata[n] = item[page]
             if page in good and page in born:
                 _birth_year[n] = born[page]
     return [n for n in names_list if _person_cache.get(n)]
@@ -328,6 +332,27 @@ def real_people(names_list: list[str]) -> list[str] | None:
 BORN = re.compile(r"\bborn\W{0,3}(?:in\W{1,3})?((?:18|19|20)\d\d)\b", re.I)
 _birth_year: dict[str, str] = {}
 _wiki_title: dict[str, str] = {}   # the person's English Wikipedia page title (accents kept)
+_wikidata: dict[str, str] = {}     # his Wikidata item ("Q20031362")
+_commons_cat: dict[str, str] = {}
+
+
+def commons_category(person: str) -> str:
+    """The person's Commons category as Wikidata records it (property P373), e.g. Devin
+    Booker's is not "Devin Booker". One small request per person, cached; "" if unknown."""
+    q = _wikidata.get(person, "")
+    if not q:
+        return ""
+    if q not in _commons_cat:
+        _commons_cat[q] = ""
+        try:
+            data = json.loads(get("https://www.wikidata.org/w/api.php?" + urllib.parse.urlencode(
+                {"action": "wbgetclaims", "format": "json", "entity": q, "property": "P373"}), 30))
+            claims = data.get("claims", {}).get("P373") or []
+            if claims:
+                _commons_cat[q] = "Category:" + claims[0]["mainsnak"]["datavalue"]["value"]
+        except Exception as exc:
+            print(f"[!] Wikidata Commons category failed for {person}: {exc}")
+    return _commons_cat[q]
 
 
 def birth_year(person: str) -> str:
@@ -513,15 +538,22 @@ def category_files(person: str) -> list[dict]:
     # word ("Devin Booker (basketball, born 1991)"; "Robert Williams III" is not "Robert
     # Williams"), so a category with exactly this name is his.
     wiki = f"Category:{_wiki_title[person]}" if _wiki_title.get(person) else ""
+    sure = {wiki} - {""}      # categories that are certainly his (no namesake check needed)
 
     def tried():
-        # the plain spelling first (unchanged); then his Wikipedia name; then the search under
-        # the real name ("Luka Dončić", not "Luka Doncic": Commons titles keep the accents)
+        # the plain spelling first (unchanged); then the category Wikidata names for him (the
+        # surest: Devin Booker's is not "Devin Booker"); then his Wikipedia name; then the
+        # search under the real name ("Luka Dončić", not "Luka Doncic": Commons keeps accents)
         yield from base
-        if wiki and wiki not in base:
-            yield wiki
-        yield from (c for c in category_titles(person) if c not in base and c != wiki)
+        wd = commons_category(person)
+        if wd:
+            sure.add(wd)
+        for c in [wd, wiki] + category_titles(person):
+            if c and c not in base and c not in done:
+                yield c
+    done: list[str] = []
     for cat in tried():
+        done.append(cat)
         try:
             files = files_in(cat)
             subs = [c for c in subcats(cat) if last and last in fold(c)]
@@ -537,13 +569,21 @@ def category_files(person: str) -> list[dict]:
         # an NBA team name proves it too
         hoops = any(BASKETBALL.search(about(f)) or NBA_PROOF.search(fold(about(f))) for f in files) \
             or any(BASKETBALL.search(c) or NBA_PROOF.search(fold(c)) for c in subs)
-        if cat != wiki and not cat.endswith("(basketball)") and not hoops:
+        if cat not in sure and not cat.endswith("(basketball)") and not hoops:
             # a namesake's category (a politician called Robert Williams): not ours. The next
             # candidate is still tried (it used to stop here and miss the right category).
             print(f"[i] {person}: skipped {cat} (nothing in it says basketball)")
             continue
+        # A grouping sub-category ("Luka Dončić by year") holds no photos itself, only his
+        # yearly ones ("Luka Dončić in 2025"): open it one level, so the years are reached.
+        year_of = lambda c: max([int(y) for y in re.findall(r"\b(20\d\d)\b", c)] or [0])
+        for sub in [c for c in subs if not year_of(c)][:2]:
+            try:
+                subs += [c for c in subcats(sub) if last in fold(c) and c not in subs]
+            except Exception:
+                pass
         # newest first: "... in 2026" before "... in 2019"
-        subs.sort(key=lambda c: max([int(y) for y in re.findall(r"\b(20\d\d)\b", c)] or [0]), reverse=True)
+        subs.sort(key=year_of, reverse=True)
         for sub in subs[:CATEGORY_SUBCATS]:
             try:
                 files += files_in(sub)

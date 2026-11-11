@@ -30,6 +30,8 @@ the "Safety tests" step before anything is installed or made.
      answers, no line built on a name nobody knows (run 43027675858)
  20. details (venue, crowd, someone's job) only as the sources give them: a hook with one goes
      back, the repair pass fixes the beats, the gate holds what is left (run 43011651547)
+ 21. length: 45-65 words after the hook, up to 72 only when must-know context or her own reason
+     needs it (owner's choice "გ"); the longest Short still counts as ready
 """
 
 from __future__ import annotations
@@ -1177,6 +1179,27 @@ class DetailsFromSources(unittest.TestCase):
         beats[0]["say"] = "Brown snubbed Tatum before tip-off."
         self.assertEqual(script.repair_needed("Did Brown snub Tatum in front of his own crowd?", beats, {}, self.SNUB), [])
         self.assertEqual(script.repair_needed("Did Brown snub Tatum?", beats, {}), [])   # old call unchanged
+
+
+class FlexibleLength(unittest.TestCase):
+    """Every Short of the earlier runs hit the 65-word ceiling (63-66 words): with context and
+    her own reason required, the owner chose a flexible limit (2026-11-11, option "გ")."""
+
+    def test_limits(self):
+        import script
+        self.assertEqual(script.BEAT_WORDS_MAX, 72)
+        # the longest allowed Short (an 18-word hook + 72 words) is still "ready" (18-42 s)
+        self.assertLessEqual(round((18 + 72) / script.WPM * 60), 42)
+
+    def test_every_writer_knows_the_exception(self):
+        import script
+        for name in ("PROMPT", "HUMANIZE", "REPAIR"):
+            text = getattr(script, name)
+            self.assertIn("45-65 words", text, name)
+            self.assertIn("72", text, name)
+        self.assertIn("Never pad", script.PROMPT)
+        self.assertIn("Never cut must-know context", script.TRIM)
+        self.assertIn("72 spoken words or fewer", script.TRIM)
 
 
 if __name__ == "__main__":

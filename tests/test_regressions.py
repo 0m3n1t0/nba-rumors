@@ -20,6 +20,8 @@ the "Safety tests" step before anything is installed or made.
      is waited out (within a budget), and every other site is fetched exactly as before
  15. one game per Short at most 3 times while other fitting photos of the person exist (run
      43011651547 showed 9 of 13 photos from "Celtics at Wizards", 15 Dec 2024)
+ 16. the story's own article is read first; when it cannot be read, the script is told not to
+     promise what it says (run 43027675858: "Brown explains why..." never said why)
 """
 
 from __future__ import annotations
@@ -950,6 +952,76 @@ class SceneSpread(unittest.TestCase):
         sc = m.count_scenes(x for it in items for x in [it] + it["alts"])
         self.assertTrue(m.scene_full(self.ph("Celtics at Wizards 2024-12-044.jpg"), sc))
         self.assertFalse(m.scene_full(self.ph("Jaylen Brown 2022.jpg", "All-Pro Reels", "2022-01-23"), sc))
+
+
+class OwnArticleFirst(unittest.TestCase):
+    """Run 43027675858: 47 headlines, 3 articles read, the pick's own one ("Jaylen Brown explains
+    why he ignored...") 6th in line and never read. Offline: reading is faked."""
+
+    HEAD = "Jaylen Brown explains why he ignored Jayson Tatum\u2019s attempt at pre-game embrace before first-ever clash"
+
+    def _editor(self):
+        it = lambda t, tier, link: {"title": t, "tier": tier, "link": link, "publisher": "P"}
+        return {"ranked": [{"id": 0, "same_as": [1]}],
+                "topics": [{"headline": self.HEAD, "items": [
+                    it("Kevin O'Connor calls out 76ers' Jaylen Brown", 1, "https://a/1"),
+                    it("The Bounce: Jaylen Brown's real beef is with the Celtics", 1, "https://a/2"),
+                    it("Payton Pritchard on Jaylen Brown, Jayson Tatum relationship", 1, "https://a/3"),
+                    it("People Close to Jayson Tatum, Jaylen Brown Keep Saying the Same Thing", 1, "https://a/4"),
+                    it(self.HEAD, 1, "https://a/own"),
+                    it("Jaylen Brown explains why he ignored Jayson Tatum pregame", 2, "https://b/copy")]},
+                           {"headline": "Jayson Tatum responds to Jaylen Brown snub with runaway Celtics win", "items": [
+                    it("Jayson Tatum responds to Jaylen Brown snub with runaway Celtics win", 1, "https://a/merged")]}]}
+
+    def run_with(self, readable):
+        import script
+        saved = (script.read_article, script.decode_google)
+        tried = []
+
+        def fake(it, real):
+            tried.append(it["link"])
+            if it["link"] in readable:
+                it["text"] = "x" * 700
+                return True
+            return False
+        script.read_article, script.decode_google = fake, (lambda links: {})
+        try:
+            e = self._editor()
+            return script.gather_sources(e["topics"][0], e, 0), tried
+        finally:
+            script.read_article, script.decode_google = saved
+
+    def test_own_article_read_first(self):
+        import script
+        src, tried = self.run_with({"https://a/own", "https://a/1", "https://a/2", "https://a/merged"})
+        self.assertEqual(tried[0], "https://a/own")
+        self.assertEqual(tried[1], "https://a/merged")     # the merged story's own headline next
+        self.assertTrue(src[0]["main"])
+        self.assertEqual(sum(bool(s["text"]) for s in src), script.MAX_ARTICLES)   # cost unchanged
+        self.assertIn("read in full, source [1]", script.main_note(src, self.HEAD))
+
+    def test_same_article_from_another_outlet(self):
+        import script
+        src, tried = self.run_with({"https://b/copy", "https://a/1"})
+        self.assertEqual(tried[:2], ["https://a/own", "https://b/copy"])
+        self.assertEqual([s["link"] for s in src if s["main"]], ["https://b/copy"])
+
+    def test_unread_own_article_is_never_promised(self):
+        import script
+        src, _ = self.run_with({"https://a/1", "https://a/2"})
+        self.assertFalse(any(s["main"] for s in src))
+        note = script.main_note(src, self.HEAD)
+        self.assertIn("NOT READ", note)
+        self.assertIn("Never promise", note)
+        self.assertIn("{main_note}", script.PROMPT)
+
+    def test_closeness(self):
+        import script
+        self.assertEqual(script.closeness(self.HEAD, self.HEAD), 1.0)
+        self.assertGreaterEqual(script.closeness("Jaylen Brown explains why he ignored Jayson Tatum pregame", self.HEAD),
+                                script.NEAR)
+        self.assertLess(script.closeness("Kevin O'Connor calls out 76ers' Jaylen Brown", self.HEAD), script.NEAR)
+        self.assertEqual(script.closeness("Jaylen Brown Tatum", self.HEAD), 0.0)   # too short to tell
 
 
 if __name__ == "__main__":

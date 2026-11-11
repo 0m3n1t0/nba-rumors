@@ -94,6 +94,7 @@ rule wins: the names and the shot fired come first, never "you"):
 {rules}
 
 THE STORY: {headline}
+ITS OWN ARTICLE: {main_note}
 Editor note: {why}
 STORY TYPE: {story_type}
 
@@ -435,8 +436,58 @@ def decode_google(links: list[str]) -> dict:
         return {}
 
 
+HEADLINE_WORD = re.compile(r"[a-z0-9]{4,}")
+NEAR = 0.6          # share of the headline's words: the same article, maybe from another outlet
+MAIN = 0.9          # ... the pick's own headline article
+
+
+COMMON = {"with", "from", "that", "this", "after", "before", "about", "over", "into", "their",
+          "what", "when", "says", "said", "just", "will", "have", "been", "more", "than"}
+
+
+def closeness(title: str, headline: str) -> float:
+    """How much two headlines say the same thing, 0-1: the shared words (4+ letters, common words
+    left out) as a share of the SHORTER one, so an outlet's shortened copy of the same article
+    still counts ("Jaylen Brown explains why he ignored Jayson Tatum pregame"). Fewer than 4
+    such words is too little to tell: 0."""
+    import unicodedata
+
+    def words(t):
+        t = "".join(ch for ch in unicodedata.normalize("NFKD", t or "") if not unicodedata.combining(ch))
+        return set(HEADLINE_WORD.findall(t.lower().replace("\u2019", "'"))) - COMMON
+    a, b = words(title), words(headline)
+    if min(len(a), len(b)) < 4:
+        return 0.0
+    return len(a & b) / min(len(a), len(b))
+
+
+def read_article(it: dict, real: dict) -> bool:
+    """Fetch and keep the article's text (a Google News redirect needs its decoded address)."""
+    url = real.get(it["link"], it["link"])
+    if "news.google.com" in url:
+        return False
+    try:
+        html = trafilatura.fetch_url(url)
+        text = trafilatura.extract(html) if html else None
+    except Exception as exc:  # one bad site must not stop the video
+        print(f"[!] could not read {it['link']}: {exc}")
+        text = None
+    if not text:
+        return False
+    it["text"] = text[:ARTICLE_CHARS]
+    it["url"] = url          # the publisher's own address (not the Google News redirect)
+    return True
+
+
 def gather_sources(topic: dict, editor: dict, topic_id: int) -> list[dict]:
-    """The pick's own headlines plus those of topics the editor marked as the same story."""
+    """The pick's own headlines plus those of topics the editor marked as the same story.
+
+    The pick's OWN headline article is read first (run 43027675858: the story was "Brown explains
+    why he ignored Tatum", 47 headlines, 3 articles read, and the one with the explanation was
+    not among them, so the Short asked "why?" and never answered). If it cannot be read, the
+    same article from another outlet is tried. Then the merged stories' own headlines, then the
+    rest, best outlets first, up to MAX_ARTICLES in total (the cost does not change).
+    it["main"] marks the article that carries the pick's own news (see main_note)."""
     ranked = {r["id"]: r for r in editor["ranked"]}
     ids = [topic_id] + list(ranked.get(topic_id, {}).get("same_as", []))
     items = []
@@ -449,26 +500,41 @@ def gather_sources(topic: dict, editor: dict, topic_id: int) -> list[dict]:
             continue
         seen.add(it["link"])
         out.append(dict(it))
+    headline = topic.get("headline", "")
+    merged = [editor["topics"][i]["headline"] for i in ids[1:] if 0 <= i < len(editor["topics"])]
+    near = lambda it: closeness(it["title"], headline)
+    main_like = sorted([it for it in out if near(it) >= NEAR], key=lambda it: (-near(it), it["tier"]))
+    rest = sorted([it for it in out if near(it) < NEAR],
+                  key=lambda it: (0 if any(closeness(it["title"], h) >= MAIN for h in merged) else 1, it["tier"]))
+    out = main_like + rest           # [1] is the pick's own article when it exists
+    for it in out:
+        it["text"], it["main"] = "", False
 
     # Google News links are redirects: decode them to the real article (googlenewsdecoder, MIT)
     real = decode_google([it["link"] for it in out if "news.google.com" in it["link"]][:8])
     fetched = 0
-    for it in out:
-        it["text"] = ""
-        url = real.get(it["link"], it["link"])
-        if fetched >= MAX_ARTICLES or "news.google.com" in url:
-            continue
-        try:
-            html = trafilatura.fetch_url(url)
-            text = trafilatura.extract(html) if html else None
-        except Exception as exc:  # one bad site must not stop the video
-            print(f"[!] could not read {it['link']}: {exc}")
-            text = None
-        if text:
-            it["text"] = text[:ARTICLE_CHARS]
-            it["url"] = url          # the publisher's own address (not the Google News redirect)
+    for it in main_like:             # one copy of the pick's own article, the first that reads
+        if read_article(it, real):
+            it["main"] = True
+            fetched += 1
+            break
+    for it in rest:
+        if fetched >= MAX_ARTICLES:
+            break
+        if read_article(it, real):
             fetched += 1
     return out
+
+
+def main_note(sources: list[dict], headline: str) -> str:
+    """What the script may promise about the pick's own news (THE STORY line)."""
+    for n, s in enumerate(sources, 1):
+        if s.get("main"):
+            return f"read in full, source [{n}]: it carries this story's news; use it first."
+    return ("NOT READ: only the headline is known, not what the article says. Never promise, tease "
+            "or ask about what it reveals (no hook like 'why did he...?' or 'here is the reason' "
+            "when the reason is not in the read articles); build the Short only from what the read "
+            "articles actually say, and frame the story around that.")
 
 
 def format_sources(sources: list[dict]) -> str:
@@ -1264,6 +1330,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         formulas="\n".join(f"- {h['name']}: {h['shape']} Example: {h['example']}" for h in formulas["hooks"]),
         rules="\n".join(f"- {r}" for r in formulas["rules"]),
         headline=topic["headline"],
+        main_note=main_note(sources, topic["headline"]),
         why=judged.get("why", ""),
         story_type=story_type(judged),
         niche=niche_block(),
@@ -1472,7 +1539,8 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         "thumbnail_text": thumb,
         # "read": the article itself was read (not only its headline): the Summary shows it
         "sources": [{"publisher": s["publisher"], "title": s["title"], "link": s.get("url") or s["link"],
-                     "read": bool(s.get("text"))} for s in used],
+                     "read": bool(s.get("text")), "main": bool(s.get("main"))} for s in used],
+        "main_read": any(s.get("main") for s in sources),   # the pick's own article was read
         "description": description,
         "tags": tags,
         "seo": seo,
@@ -1599,6 +1667,7 @@ def write_summary(shorts: list[dict]) -> None:
         lines += [f"", f"**Description (first 2 lines):** {first}", f"**Tags:** {', '.join(s.get('tags', []))}"]
         read = sum(1 for src in s["sources"] if src.get("read"))
         lines += ["", f"**Thumbnail:** {s['thumbnail_text']}", "",
+                  f"**The story's own article:** {'✅ read' if s.get('main_read') else '⚠️ not read (the script was told not to promise its content)'}",
                   f"**Sources** ({read} of {len(s['sources'])} articles read in full; 📰 = headline only):"]
         for src in s["sources"]:
             mark = "" if src.get("read") else " 📰"

@@ -95,7 +95,20 @@ HOOPS_TAGS = re.compile(r"\b(basketball|dunk|slam dunk|hoop|layup|free throw|thr
 NOT_NBA_LEVEL = re.compile(r"\b(wom[ae]n'?s?|female|girls?|lad(y|ies)|wnba|femenin\w*|feminin\w*|"
                            r"femminil\w*|frauen|damen|dames|kobiet|ncaa|college|university|"
                            r"high ?school|youth|junior|u-?1\d|u-?2[0-3]|amateur|wheelchair|3x3|"
-                           r"streetball|kids?|children)\b", re.I)
+                           r"streetball|kids?|children|wnbl)\b", re.I)
+# Proof that a clip with no named person is the NBA: the league or an NBA team by name.
+# Full team names, and only nicknames that mean nothing else ("Heat", "Kings", "Magic", "Jazz",
+# "Nets", "Suns", "Bulls", "Hawks", "Thunder" alone could be anything).
+NBA_PROOF = re.compile(r"\bnba\b|\b(atlanta hawks|boston celtics|brooklyn nets|charlotte hornets|"
+                       r"chicago bulls|cleveland cavaliers|dallas mavericks|denver nuggets|detroit pistons|"
+                       r"golden state warriors|houston rockets|indiana pacers|(los angeles|la) clippers|"
+                       r"los angeles lakers|memphis grizzlies|miami heat|milwaukee bucks|"
+                       r"minnesota timberwolves|new orleans pelicans|new york knicks|"
+                       r"oklahoma city thunder|orlando magic|philadelphia 76ers|phoenix suns|"
+                       r"portland trail ?blazers|sacramento kings|san antonio spurs|toronto raptors|"
+                       r"utah jazz|washington wizards|celtics|lakers|knicks|76ers|sixers|mavericks|"
+                       r"nuggets|pistons|pacers|clippers|grizzlies|pelicans|timberwolves|raptors|"
+                       r"cavaliers|trail ?blazers)\b", re.I)
 UNRELATED = re.compile(r"\b(nurse|wheelchair|elderly|senior|patient|bab(y|ies)|child(ren)?|kids?|boys?|girls?|"
                        r"teen(ager)?s?|youth|junior|school|schoolyard|students?|street|streetball|park|"
                        r"playground|outdoor|backyard|amateur|aerial|drone|empty|colosseum|ruins|wedding|family|garden|nature|beach|cooking|"
@@ -298,9 +311,36 @@ def real_people(names_list: list[str]) -> list[str] | None:
         good = {pg["title"] for pg in (data.get("pages") or {}).values()
                 if "missing" not in pg and "disambiguation" not in (pg.get("pageprops") or {})
                 and PERSON_DESC.search((pg.get("pageprops") or {}).get("wikibase-shortdesc", ""))}
+        # the short description usually holds the birth year ("American basketball player
+        # (born 1996)"): it tells our Devin Booker from a namesake "born 1991"
+        born = {pg["title"]: m.group(1) for pg in (data.get("pages") or {}).values()
+                if (m := BORN.search((pg.get("pageprops") or {}).get("wikibase-shortdesc", "")))}
         for n in part:
-            _person_cache[n] = alias.get(alias.get(n, n), alias.get(n, n)) in good
+            page = alias.get(alias.get(n, n), alias.get(n, n))
+            _person_cache[n] = page in good
+            if page in good and page in born:
+                _birth_year[n] = born[page]
     return [n for n in names_list if _person_cache.get(n)]
+
+
+BORN = re.compile(r"\bborn\W{0,3}(?:in\W{1,3})?((?:18|19|20)\d\d)\b", re.I)
+_birth_year: dict[str, str] = {}
+
+
+def birth_year(person: str) -> str:
+    """The person's birth year, as Wikipedia gave it when the story's people were checked
+    (people() -> real_people). No extra request here; "" if unknown: then nothing is filtered."""
+    return _birth_year.get(person, "")
+
+
+def namesake(person: str, text: str) -> bool:
+    """A file of ANOTHER person with the same name: it says "born 1991" while our player was
+    born in 1996 ("Devin Booker (basketball, born 1991)" is a Euroleague player, not the Suns'
+    star). Only an explicit, different birth year counts; no year on the file or none known
+    for the player means it is kept, exactly as before."""
+    year = birth_year(person)
+    found = set(BORN.findall(text or ""))
+    return bool(year and found and year not in found)
 
 
 NOT_PERSON_FIRST = {"per", "via", "says", "said", "told", "reportedly", "according", "sources"}
@@ -543,6 +583,8 @@ def commons_photos(person: str) -> list[dict]:
             continue
         if "trademark" in meta.get("Restrictions", "").lower() or not commons_trusted(meta, title):
             continue
+        if namesake(person, text + " " + clean(meta.get("Categories", ""))):
+            continue      # another player with the same name ("..., born 1991")
         date = shot_date(meta.get("DateTimeOriginal", ""))
         # newest first: the year in the file name, else the day it was taken ("Jaylen Brown
         # (cropped).jpg" from 2024 before a 2018 youth-camp photo)
@@ -618,6 +660,8 @@ def openverse_photos(person: str) -> list[dict]:
         w, h = r.get("width") or 0, r.get("height") or 0
         if first not in text or last not in text or (w and h and min(w, h) < 700):
             continue
+        if namesake(person, text):
+            continue      # another player with the same name ("..., born 1991")
         code, ver = (r.get("license") or "").lower(), r.get("license_version") or ""
         lic = {"pdm": "Public Domain Mark", "cc0": f"CC0 {ver}".strip()}.get(code, f"CC {code.upper()} {ver}".strip())
         if not licence_ok(lic):
@@ -662,6 +706,8 @@ def flickr_photos(person: str) -> list[dict]:
         lic = FLICKR_LICENCES.get(str(r.get("license")), "")
         if first not in text or last not in text or not lic or not licence_ok(lic):
             continue
+        if namesake(person, text):
+            continue      # another player with the same name ("..., born 1991")
         size = next(((r[f"url_{k}"], int(r.get(f"width_{k}") or 0), int(r.get(f"height_{k}") or 0))
                      for k in ("k", "h", "l") if r.get(f"url_{k}")), None)
         if not size or min(size[1], size[2]) < 700:
@@ -736,9 +782,14 @@ def commons_videos(search: str, person: str = "") -> list[dict]:
         meta = {k: v.get("value", "") for k, v in (info.get("extmetadata") or {}).items()}
         title = page.get("title", "")
         text = fold(title + " " + clean(meta.get("ImageDescription", "")))
-        if person and (first not in text or last not in text):
+        cats = fold(clean(meta.get("Categories", "")))
+        if person and (first not in text or last not in text or namesake(person, text + " " + cats)):
             continue
-        if not person and (not BASKETBALL.search(text) or NOT_NBA_LEVEL.search(text)):
+        # A clip that is not of the story's person must PROVE it is the NBA (the word "NBA" or
+        # an NBA team in its title, description or Commons categories): "Canberra Capitals
+        # game" is an Australian women's team and says "women" nowhere.
+        if not person and (not BASKETBALL.search(text) or NOT_NBA_LEVEL.search(text + " " + cats)
+                           or not NBA_PROOF.search(text + " " + cats)):
             continue
         lic = clean(meta.get("LicenseShortName", ""))
         if not licence_ok(lic) or not commons_trusted(meta, title, video=True):

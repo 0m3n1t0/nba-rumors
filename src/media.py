@@ -47,6 +47,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from collect import names  # same name finder as the collector
 from picture_ids import already_shown, mark_shown  # one photo in two crops = one picture
+import wiki_http  # noqa: E402  Wikimedia: token when set, waits politely on 429
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -255,9 +256,7 @@ def log_claude_usage(stdout: str, where: str) -> None:
         pass
 
 def get(url: str, timeout: int = 30) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+    return wiki_http.fetch(url, UA, timeout)   # other sites: one plain request, as before
 
 
 def fold(s: str) -> str:

@@ -29,6 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from collect import names  # noqa: E402
+import wiki_http  # noqa: E402  Wikimedia: token when set, waits politely on 429
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -171,9 +172,8 @@ def wiki_fame(all_names: set[str]) -> dict[str, float]:
         q = urllib.parse.urlencode({"action": "query", "format": "json", "redirects": 1,
                                     "prop": "pageprops", "ppprop": "wikibase-shortdesc",
                                     "titles": "|".join(names_list[i:i + 50])})
-        req = urllib.request.Request(f"https://en.wikipedia.org/w/api.php?{q}", headers=WIKI_UA)
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.loads(r.read().decode("utf-8"))["query"]
+        data = json.loads(wiki_http.fetch(f"https://en.wikipedia.org/w/api.php?{q}",
+                                           WIKI_UA["User-Agent"], 30).decode("utf-8"))["query"]
         alias = {}
         for step in ("normalized", "redirects"):
             for m in data.get(step, []):
@@ -194,8 +194,8 @@ def wiki_fame(all_names: set[str]) -> dict[str, float]:
                    f"all-access/user/{urllib.parse.quote(title.replace(' ', '_'), safe='')}/daily/"
                    f"{start:%Y%m%d}00/{end:%Y%m%d}00")
             try:
-                with urllib.request.urlopen(urllib.request.Request(url, headers=WIKI_UA), timeout=20) as r:
-                    views[title] = sum(x["views"] for x in json.loads(r.read().decode("utf-8"))["items"])
+                raw = wiki_http.fetch(url, WIKI_UA["User-Agent"], 20)
+                views[title] = sum(x["views"] for x in json.loads(raw.decode("utf-8"))["items"])
             except Exception:
                 views[title] = 0
         v = views[title]

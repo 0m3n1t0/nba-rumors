@@ -50,6 +50,7 @@ jobs:
         env:
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          WIKIMEDIA_TOKEN: ${{ secrets.WIKIMEDIA_TOKEN }}   # optional: Wikimedia limits per account, not per shared IP
         run: |
           python src/collect.py
           python src/signals.py

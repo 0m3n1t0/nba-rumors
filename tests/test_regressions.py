@@ -16,6 +16,8 @@ the "Safety tests" step before anything is installed or made.
  11. the weekly plan and competitor scan come from the private repository (not this public one)
  12. one photo in two crops is ONE picture: never shown twice in a Short
  13. today's uniform: the player's current team (Wikidata) decides which of his photos come first
+ 14. Wikimedia: the account token goes only to Wikimedia's APIs, a refused token is dropped, a 429
+     is waited out (within a budget), and every other site is fetched exactly as before
 """
 
 from __future__ import annotations
@@ -748,6 +750,88 @@ class CurrentTeam(unittest.TestCase):
         self.m.get = down
         self.assertEqual(self.m.teams_of("Jaylen Brown"), ("", set()))
         self.assertEqual(self.m.people_line(["Jaylen Brown"]), "Jaylen Brown")
+
+
+class WikimediaPolite(unittest.TestCase):
+    """2026-11-11: Wikimedia answered 429 to a shared cloud IP before we sent anything. With a
+    token the limit is per account; without one nothing may change."""
+
+    def setUp(self):
+        import urllib.error
+        import urllib.request
+        import wiki_http
+        self.w, self.err, self.req = wiki_http, urllib.error, urllib.request
+        self.saved = (wiki_http.TOKEN[0], wiki_http.WAIT_BUDGET[0], wiki_http._sleep,
+                      urllib.request.urlopen)
+        self.calls, self.slept, self.answers = [], [], []
+        wiki_http._sleep = self.slept.append
+
+        class Reply:
+            def __init__(s, body): s.body = body
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def read(s): return s.body
+
+        def fake(req, timeout=30):
+            self.calls.append(dict(req.header_items()))
+            a = self.answers.pop(0)
+            if isinstance(a, int):
+                raise self.err.HTTPError(req.full_url, a, "x", {"Retry-After": "20"}, None)
+            return Reply(a)
+        urllib.request.urlopen = fake
+
+    def tearDown(self):
+        w = self.w
+        w.TOKEN[0], w.WAIT_BUDGET[0], w._sleep, self.req.urlopen = self.saved
+
+    API = "https://www.wikidata.org/w/api.php?action=wbgetclaims&entity=Q1"
+
+    def test_token_only_to_wikimedia_apis(self):
+        self.w.TOKEN[0] = "t0k"
+        self.assertEqual(self.w.headers(self.API, "UA").get("Authorization"), "Bearer t0k")
+        for url in ("https://upload.wikimedia.org/wikipedia/commons/a/a1/X.jpg",
+                    "https://api.openverse.org/v1/images/?q=x",
+                    "https://evil.example/w/api.php?wikipedia.org/",
+                    "https://en.wikipedia.org.evil.example/w/api.php"):
+            self.assertNotIn("Authorization", self.w.headers(url, "UA"), url)
+        self.w.TOKEN[0] = ""
+        self.assertNotIn("Authorization", self.w.headers(self.API, "UA"))
+
+    def test_429_waited_out_then_answer(self):
+        self.answers = [429, b"ok"]
+        self.assertEqual(self.w.fetch(self.API, "UA"), b"ok")
+        self.assertEqual(self.slept, [20.0])
+
+    def test_wait_budget_never_hangs_a_run(self):
+        self.w.WAIT_BUDGET[0] = 10.0
+        self.answers = [429]
+        with self.assertRaises(self.err.HTTPError):
+            self.w.fetch(self.API, "UA")
+        self.assertEqual(self.slept, [])
+
+    def test_refused_token_dropped_and_call_repeated(self):
+        self.w.TOKEN[0] = "old"
+        self.answers = [401, b"ok"]
+        self.assertEqual(self.w.fetch(self.API, "UA"), b"ok")
+        self.assertIn("Authorization", self.calls[0])
+        self.assertNotIn("Authorization", self.calls[1])
+        self.assertEqual(self.w.TOKEN[0], "")
+
+    def test_other_sites_exactly_as_before(self):
+        self.w.TOKEN[0] = "t0k"
+        self.answers = [429]
+        with self.assertRaises(self.err.HTTPError):
+            self.w.fetch("https://pixabay.com/api/?q=x", "UA")
+        self.assertEqual((len(self.calls), self.slept), (1, []))
+        self.assertNotIn("Authorization", self.calls[0])
+
+    def test_media_and_signals_use_it(self):
+        import media
+        import signals
+        self.assertIs(media.wiki_http, self.w)
+        self.assertIs(signals.wiki_http, self.w)
+        self.answers = [b"{}"]
+        self.assertEqual(media.get(self.API), b"{}")
 
 
 if __name__ == "__main__":

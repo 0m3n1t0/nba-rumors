@@ -1,7 +1,8 @@
 name: Diagnose Commons (read-only)
 
 # Manual only. Shows what Wikipedia and Commons say about a few players and why their Commons
-# category is or is not read. No secrets, no Claude, nothing saved or changed.
+# category is or is not read. Read-only: no Claude, nothing saved or changed. It uses the same
+# read-only search keys as the pipeline (Wikimedia token, Openverse key), so it sees what a run sees.
 on:
   workflow_dispatch:
     inputs:
@@ -9,6 +10,10 @@ on:
         description: "Players, separated by commas"
         required: false
         default: "Luka Doncic, Devin Booker, Jayson Tatum, Doc Rivers"
+      url:
+        description: "Optional: one read-only Wikimedia API address to print instead (for questions from a chat)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -27,7 +32,12 @@ jobs:
       - name: Diagnose
         env:
           NAMES: ${{ inputs.names }}
+          URL: ${{ inputs.url }}
+          WIKIMEDIA_TOKEN: ${{ secrets.WIKIMEDIA_TOKEN }}   # optional: Wikimedia limits per account, not per shared IP
+          OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
+          OPENVERSE_CLIENT_SECRET: ${{ secrets.OPENVERSE_CLIENT_SECRET }}
         run: |
+          if [ -n "$URL" ]; then python src/diagnose_commons.py --url "$URL"; exit; fi
           IFS=',' read -ra LIST <<< "$NAMES"
           ARGS=()
           for n in "${LIST[@]}"; do ARGS+=("$(echo "$n" | xargs)"); done

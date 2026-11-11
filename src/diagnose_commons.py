@@ -1,11 +1,13 @@
 """Diagnosis only (manual workflow diagnose.yml): what Wikipedia and Commons say about a few
 players, and why the pipeline does or does not read their Commons category.
 
-Read-only: no secrets, no Claude, no files changed. Claude's own session cannot reach
-Wikimedia (a shared cloud IP is rate-limited), GitHub's runner can, so this runs there and
-Claude reads the log.
+Read-only: no Claude, no files changed. Claude's own session cannot reach Wikimedia (its
+shared cloud IP is over Wikimedia's anonymous per-IP limit), GitHub's runner can, and with
+WIKIMEDIA_TOKEN set it is counted per account. So this runs there and Claude reads the log.
 
   python src/diagnose_commons.py "Luka Doncic" "Devin Booker"
+  python src/diagnose_commons.py --url "https://www.wikidata.org/w/api.php?action=wbgetclaims&..."
+      (any read-only Wikimedia API address: prints the answer, for questions from a chat)
 """
 import json
 import sys
@@ -33,7 +35,19 @@ def members(cat: str) -> tuple[list[dict], list[str]]:
     return files, subs
 
 
+def ask(url: str) -> None:
+    """One read-only Wikimedia API answer, printed (GET only, Wikimedia addresses only)."""
+    if not media.wiki_http.is_wiki(url) or not any(p in url for p in media.wiki_http.API_PATHS):
+        sys.exit(f"not a Wikimedia API address: {url[:120]}")
+    print(f"===== {url}")
+    print(media.get(url).decode("utf-8", "replace")[:20000])
+
+
 def main() -> None:
+    if len(sys.argv) > 2 and sys.argv[1] == "--url":
+        for url in sys.argv[2:]:
+            ask(url.strip())
+        return
     names = [n for n in sys.argv[1:] if n.strip()] or ["Luka Doncic", "Devin Booker"]
     real = media.real_people(names)
     print(f"Wikipedia check: {real}")

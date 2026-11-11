@@ -79,6 +79,7 @@ jobs:
         env:
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          WIKIMEDIA_TOKEN: ${{ secrets.WIKIMEDIA_TOKEN }}   # optional: Wikimedia limits per account, not per shared IP
         run: |
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/stage_summary.md"; : > "$GITHUB_STEP_SUMMARY"   # full report: private only
           python src/signals.py || status=$?
@@ -176,6 +177,7 @@ jobs:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
           OPENVERSE_CLIENT_SECRET: ${{ secrets.OPENVERSE_CLIENT_SECRET }}
+          WIKIMEDIA_TOKEN: ${{ secrets.WIKIMEDIA_TOKEN }}   # optional: Wikimedia limits per account, not per shared IP
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/stage_summary.md"; : > "$GITHUB_STEP_SUMMARY"   # full report: private only

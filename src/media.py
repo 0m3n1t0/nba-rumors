@@ -46,7 +46,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from collect import names  # same name finder as the collector
-from picture_ids import already_shown, mark_shown  # one photo in two crops = one picture
+from picture_ids import already_shown, base_name, mark_shown  # one photo in two crops = one picture
 import wiki_http  # noqa: E402  Wikimedia: token when set, waits politely on 429
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -879,6 +879,7 @@ def flickr_photos(person: str) -> list[dict]:
             "kind": "photo", "url": url, "title": r.get("title", "") or person,
             "page": f"https://www.flickr.com/photos/{r.get('owner')}/{r.get('id')}/",
             "author": r.get("ownername") or "Flickr user", "license": lic,
+            "date": (r.get("datetaken") or "")[:10],      # with the author: the scene (B11)
             "license_url": "", "source": "Flickr", "license_verified": True,
             "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4) + (1000 if hoops else 0),
             "hoops": hoops,
@@ -1224,16 +1225,57 @@ def rank_candidates(cands: list[dict], choice: dict) -> tuple:
     return ranked, claude_top, tier, scores, n_ph, bp, bc
 
 
+SERIES_NO = re.compile(r"(\s*\(\d{6,}\)|[\s_-]*\d{1,4})+$")   # " (42950693724)", "-044", " 2"
+
+
 def scene_of(c: dict) -> tuple | None:
     """Two photos by the same photographer on the same day are one scene (the same game, the
-    same moment): they look like a repeat when shown in one Short. None when unknown."""
-    if not c or c.get("kind") != "photo" or not c.get("date"):
+    same moment): they look like a repeat when shown in one Short. Without a date (Openverse),
+    the same photographer's numbered series ("Event title (42950693724)", "Event-044") of at
+    least 4 words is one scene too. None when unknown."""
+    if not c or c.get("kind") != "photo":
         return None
     author = fold(re.sub(r"<[^>]+>", "", c.get("author", ""))).strip()
-    return (author, c["date"]) if author and author != "unknown author" else None
+    if not author or author in ("unknown author", "unknown", "flickr user"):
+        return None
+    if c.get("date"):
+        return (author, c["date"])
+    name = fold(base_name(c.get("title", ""))[0])
+    stem = SERIES_NO.sub("", name).strip()
+    return (author, "series:" + stem) if stem != name and len(stem.split()) >= 4 else None
 
 
-def fresh_first(order: list[int], cands: list[dict], tier, scores: dict, scenes: set,
+SCENE_MAX = 3   # photos from one scene (photographer + day = one game) per Short, while others fit
+
+
+def scene_full(c: dict, scenes) -> bool:
+    """This photo's scene already has SCENE_MAX photos in the Short (scenes: a Counter)."""
+    sc = scene_of(c)
+    return sc is not None and scenes[sc] >= SCENE_MAX
+
+
+def count_scenes(shots) -> "Counter":
+    from collections import Counter
+    return Counter(sc for x in shots if x and (sc := scene_of(x)))
+
+
+def spread_scenes(order: list[int], cands: list[dict], tier, scores: dict, scenes) -> list[int]:
+    """B11: a run once showed 9 of 13 photos from one game. A photo whose scene is already used
+    SCENE_MAX times waits behind the next candidates that are just as much about the person
+    (same tier) and still fit the line (ALT_MIN+). It never waits behind anything less related
+    or below ALT_MIN, and it is never dropped: with nothing else that fits, it is used as before."""
+    out, held = [], []
+    for j in order:
+        if scene_full(cands[j], scenes):
+            held.append(j)
+            continue
+        while held and (tier(j) < tier(held[0]) or scores.get(j, 0) < ALT_MIN):
+            out.append(held.pop(0))
+        out.append(j)
+    return out + held
+
+
+def fresh_first(order: list[int], cands: list[dict], tier, scores: dict, scenes,
                 hook: bool = False) -> list[int]:
     """Only INSIDE a group the ranking cannot tell apart (same tier, same score, same kind:
     rank_candidates gives them the same key) prefer a photo from a scene not shown yet in this
@@ -1363,12 +1405,14 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             print(f"[i] second search round for beats {weak}")
         result: list[dict | None] = []
         shown: set = set()  # nothing repeats inside one Short
-        scenes: set = set()  # the photographer + day of every photo shown (see scene_of)
+        from collections import Counter
+        scenes: Counter = Counter()  # photos shown per scene (photographer + day, see scene_of)
         for i, cands in enumerate(per_beat):
             choice = picks.get(i, {})
             order = list(range(len(cands)))
             ranked, claude_top, tier, scores, n_ph, bp, bc = rank_candidates(cands, choice)
-            ranked = fresh_first(ranked, cands, tier, scores, scenes, hook=(i == 0))
+            ranked = spread_scenes(fresh_first(ranked, cands, tier, scores, scenes, hook=(i == 0)),
+                                   cands, tier, scores, scenes)
             REJECTED.update(rejected_photos(cands, choice))
             if ranked and ranked[0] != claude_top:   # Claude's focus/start were for its own top pick
                 choice = {**choice, "score": int(scores.get(ranked[0], 0)), "focus": None, "start": None}
@@ -1408,7 +1452,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 if c["kind"] == "video":
                     used.add(c["id"])
                 mark_shown(c, shown, key)
-                scene_of(c) and scenes.add(scene_of(c))
+                scene_of(c) and scenes.update([scene_of(c)])
                 chosen["match"] = (int(scores[idx]) if idx in scores
                                    else choice.get("score") if idx == (k or 0) - 1 else None)
                 break
@@ -1419,7 +1463,8 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             if need > 0:
                 # the second shot: the next most relevant (6+), a clip when equally relevant
                 fits = [j for j in ranked if scores.get(j, 0) >= ALT_MIN]   # already in who-first order
-                fits = fresh_first(fits, cands, tier, scores, scenes)        # ties: a new scene first
+                fits = spread_scenes(fresh_first(fits, cands, tier, scores, scenes),   # ties: a new scene first
+                                     cands, tier, scores, scenes)                       # a full scene waits
                 for j in fits:
                     c = cands[j]
                     key = c.get("id") or c["page"]
@@ -1436,7 +1481,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                     chosen["alts"].append(alt)
                     chosen["alt"] = chosen["alts"][0]
                     mark_shown(c, shown, key)
-                    scene_of(c) and scenes.add(scene_of(c))
+                    scene_of(c) and scenes.update([scene_of(c)])
                     if c["kind"] == "video":
                         used.add(c["id"])
                     if len(chosen["alts"]) >= need:
@@ -1682,12 +1727,15 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                 mark_shown(x, shown, x.get("page"))
     faces = {person: person_photos(person, shown) for person in (who or [])}
     lines = [b.get("say", "") for b in spoken(short)] if short else [""] * n_beats
+    scenes = count_scenes(x for it in items if it for x in [it] + list(it.get("alts") or []))
 
     def next_face(i: int, tag: str) -> dict | None:
         """A new, never shown photo of the person beat i talks about (else anyone in the story)."""
         said = [p for p in (who or []) if fold(p.split()[-1]) in fold(lines[i] if i < len(lines) else "")]
         for person in said + [p for p in (who or []) if p not in said]:
             while faces.get(person):
+                # a photo from a scene with fewer than SCENE_MAX shots first (B11); order kept otherwise
+                faces[person].sort(key=lambda f: scene_full(f, scenes))
                 c = faces[person].pop(0)
                 if already_shown(c, shown, c["page"]):
                     continue
@@ -1701,6 +1749,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                             continue
                         if h is not None:
                             looks.append(h)
+                        scene_of(c) and scenes.update([scene_of(c)])
                         return {**{k: v for k, v in c.items() if k not in ("score", "hoops")},
                                 "file": str(path.relative_to(ROOT)), "beat": i, "match": None}
                 except Exception:

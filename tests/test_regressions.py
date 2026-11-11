@@ -18,6 +18,8 @@ the "Safety tests" step before anything is installed or made.
  13. today's uniform: the player's current team (Wikidata) decides which of his photos come first
  14. Wikimedia: the account token goes only to Wikimedia's APIs, a refused token is dropped, a 429
      is waited out (within a budget), and every other site is fetched exactly as before
+ 15. one game per Short at most 3 times while other fitting photos of the person exist (run
+     43011651547 showed 9 of 13 photos from "Celtics at Wizards", 15 Dec 2024)
 """
 
 from __future__ import annotations
@@ -832,6 +834,122 @@ class WikimediaPolite(unittest.TestCase):
         self.assertIs(signals.wiki_http, self.w)
         self.answers = [b"{}"]
         self.assertEqual(media.get(self.API), b"{}")
+
+
+class SceneSpread(unittest.TestCase):
+    """Run 43011651547: 9 of its 13 photos were Hameltion's "Celtics at Wizards 2024-12-0NN"."""
+
+    def setUp(self):
+        import media
+        from collections import Counter
+        self.m, self.Counter = media, Counter
+
+    def ph(self, title, author="Hameltion", date="2024-12-15"):
+        return {"kind": "photo", "title": title, "author": author, "date": date, "page": title}
+
+    def test_scene_keys(self):
+        m = self.m
+        a = m.scene_of(self.ph("Celtics at Wizards 2024-12-015 (cropped).jpg"))
+        self.assertEqual(a, m.scene_of(self.ph("Celtics at Wizards 2024-12-044.jpg")))
+        jak = "Pemain Bola Basket NBA dari Amerika Melatih Pelajar SMA di Jakarta (%s)"
+        s1 = m.scene_of(self.ph(jak % "42950693724", "U.S. Embassy Jakarta", ""))
+        self.assertIsNotNone(s1)
+        self.assertEqual(s1, m.scene_of(self.ph(jak % "42950705794", "U.S. Embassy Jakarta", "")))
+        # no date and no numbered series, or no real author: unknown, never grouped
+        self.assertIsNone(m.scene_of(self.ph("Jaylen Brown", "Keith Allison", "")))
+        self.assertIsNone(m.scene_of(self.ph("Celtics at Wizards 2024-12-015.jpg", "unknown author")))
+        self.assertIsNone(m.scene_of({"kind": "video", "title": "x", "author": "a", "date": "2024"}))
+
+    def _pool(self):
+        h = [self.ph(f"Celtics at Wizards 2024-12-0{n}.jpg") for n in (15, 23, 36, 38, 44)]
+        other = [self.ph("Jaylen Brown 2022.jpg", "All-Pro Reels", "2022-01-23"),
+                 self.ph("Jaylen Brown Sixers.jpg", "Someone", "2026-10-30")]
+        return h + other
+
+    def test_full_scene_waits_for_an_equal_fitting_photo(self):
+        m, c = self.m, self._pool()
+        scenes = self.Counter({m.scene_of(c[0]): 3})
+        tier = lambda j: 3
+        scores = {0: 8, 1: 8, 5: 7, 6: 6}
+        self.assertEqual(m.spread_scenes([0, 1, 5, 6], c, tier, scores, scenes), [5, 6, 0, 1])
+        self.assertEqual(m.spread_scenes([0, 1, 5], c, tier, scores, self.Counter()), [0, 1, 5])
+
+    def test_never_behind_less_related_or_weak(self):
+        m, c = self.m, self._pool()
+        scenes = self.Counter({m.scene_of(c[0]): 3})
+        tiers = {0: 3, 5: 2}
+        self.assertEqual(m.spread_scenes([0, 5], c, tiers.get, {0: 8, 5: 9}, scenes), [0, 5])
+        self.assertEqual(m.spread_scenes([0, 5], c, lambda j: 3, {0: 8, 5: 5}, scenes), [0, 5])
+        self.assertEqual(m.spread_scenes([0, 1], c, lambda j: 3, {0: 8, 1: 8}, scenes), [0, 1])
+
+    def test_replay_of_the_run(self):
+        """The run's 13 shots in its own order, with two fitting photos of other games added to
+        the pool: the Wizards game is shown at most SCENE_MAX times, nothing is lost."""
+        m = self.m
+        run = [self.ph(f"Celtics at Wizards 2024-12-0{n}.jpg") for n in (15, 44, 23, 36, 38, 13, 19, 11, 12)]
+        others = [self.ph(f"Jaylen Brown {k}.jpg", "All-Pro Reels", "2022-01-23") for k in range(2)] + \
+                 [self.ph(f"Jaylen Brown game {k}.jpg", f"Author {k}", f"2025-0{k + 1}-02") for k in range(6)]
+        pool = run + others
+        scores = {j: 8 if j < len(run) else 6 for j in range(len(pool))}
+        scenes, shown = self.Counter(), []
+        for _ in range(13):
+            order = [j for j in range(len(pool)) if j not in shown]
+            j = m.spread_scenes(order, pool, lambda j: 3, scores, scenes)[0]
+            shown.append(j)
+            scenes.update([m.scene_of(pool[j])])
+        wizards = sum(1 for j in shown if j < len(run))
+        # before B11: 9 of 13. Now 3, then the 8 other photos, then (pool used up) 2 more Wizards
+        # ones rather than an empty beat; the 2 All-Pro Reels photos are one scene, both fit
+        self.assertEqual(wizards, 5)
+        self.assertEqual(len(set(shown)), 13)
+        self.assertEqual(shown[:m.SCENE_MAX], [0, 1, 2])     # the best come first, as before
+
+    def test_flickr_photos_know_their_day(self):
+        m = self.m
+        saved = (m.FLICKR_KEY, m.get, m.namesake, dict(m.PHOTO_STATS))
+        reply = {"stat": "ok", "photos": {"photo": [
+            {"title": "Jaylen Brown", "tags": "basketball nba", "license": k, "owner": "o", "id": str(n),
+             "ownername": "Keith Allison", "datetaken": f"2019-03-0{n} 19:30:00",
+             "url_k": f"https://live.staticflickr.com/{n}.jpg", "width_k": "1400", "height_k": "2000"}
+            for n, k in ((1, next(k for k, v in m.FLICKR_LICENCES.items() if m.licence_ok(v))),)]}}
+        try:
+            m.FLICKR_KEY, m.namesake = "k", (lambda p, t: False)
+            m.get = lambda url, timeout=30: json.dumps(reply).encode()
+            got = m.flickr_photos("Jaylen Brown")
+            self.assertEqual(got[0]["date"], "2019-03-01")
+            self.assertEqual(m.scene_of(got[0]), ("keith allison", "2019-03-01"))
+        finally:
+            m.FLICKR_KEY, m.get, m.namesake = saved[:3]
+            m.PHOTO_STATS.clear(); m.PHOTO_STATS.update(saved[3])
+
+    def test_fill_prefers_another_game(self):
+        m = self.m
+        saved = {k: getattr(m, k) for k in ("person_photos", "download", "picture_hash", "image_ok")}
+        folder = m.ROOT / "data" / "_test_scene"
+        try:
+            wiz = [{**self.ph(f"Celtics at Wizards 2024-12-0{n}.jpg"), "url": f"w{n}"} for n in (11, 12, 13)]
+            new = {**self.ph("Jaylen Brown 2022.jpg", "All-Pro Reels", "2022-01-23"), "url": "a"}
+            m.person_photos = lambda person, shown: [dict(c) for c in wiz + [new]]
+            m.download = lambda url, path, timeout=60: (Path(path).write_text("x"), True)[1]
+            m.image_ok = lambda path: True
+            m.picture_hash = lambda path: None
+            on = [{**self.ph(f"Celtics at Wizards 2024-12-0{n}.jpg"), "file": "data/x.jpg"} for n in (15, 23, 36)]
+            items = [{**on[0], "file": "data/x.jpg", "match": 8, "alts": on[1:]}, None, None]
+            got = m.fill_empty(items, 3, folder, set(), ["Jaylen Brown"], None)
+            self.assertEqual(got[1]["title"], "Jaylen Brown 2022.jpg")       # another game first
+            self.assertEqual(got[2]["title"], "Celtics at Wizards 2024-12-011.jpg")  # then, not empty
+        finally:
+            for k, v in saved.items():
+                setattr(m, k, v)
+            shutil.rmtree(folder, ignore_errors=True)
+
+    def test_fill_counts_what_is_on_screen(self):
+        m = self.m
+        items = [{**self.ph("Celtics at Wizards 2024-12-015.jpg"),
+                  "alts": [self.ph("Celtics at Wizards 2024-12-023.jpg"), self.ph("Celtics at Wizards 2024-12-036.jpg")]}]
+        sc = m.count_scenes(x for it in items for x in [it] + it["alts"])
+        self.assertTrue(m.scene_full(self.ph("Celtics at Wizards 2024-12-044.jpg"), sc))
+        self.assertFalse(m.scene_full(self.ph("Jaylen Brown 2022.jpg", "All-Pro Reels", "2022-01-23"), sc))
 
 
 if __name__ == "__main__":

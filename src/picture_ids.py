@@ -7,6 +7,11 @@ different pages and, being crops, different picture fingerprints, so both used t
 repeat check (run 43011651547 showed two photos twice). Here the crop marker is removed from the
 file name, so the original and its crops share one identity.
 
+A crop can also be named after the person cut out of it: "Celtics at Wizards 2024-12-036
+(White).jpg" is Derrick White cut from "...-036.jpg" (run 43027675858 showed both). A trailing
+"(words)" counts as a crop mark only when what is left is a numbered series file (ends in a
+digit): "Doc Rivers (coach)" or "Jayson Tatum (2018)" stay their own pictures.
+
 Only Commons photos take part, and only a crop matches: Flickr titles are not unique (many
 different photos are simply called "Jaylen Brown"), and two different Commons files without a
 crop marker never match by name.
@@ -18,6 +23,7 @@ import re
 
 COMMONS = "Wikimedia Commons"
 EXTENSION = re.compile(r"\.(jpe?g|png|webp|tiff?|gif)$", re.I)
+NAMED_CROP = re.compile(r"\s*\(\s*([^()\d]+?)\s*\)$")   # "(White)", "(Tatum and Brown)"
 CROP_MARK = re.compile(r"[\s_\-]*[\(\[]\s*cropped(?:[\s_\-]*\d+)?\s*[\)\]]|[\s_\-]+cropped(?:[\s_\-]*\d+)?$", re.I)
 
 
@@ -26,6 +32,9 @@ def base_name(title: str) -> tuple[str, bool]:
     t = EXTENSION.sub("", re.sub(r"^File:", "", (title or "").strip(), flags=re.I))
     cropped = bool(CROP_MARK.search(t))
     t = CROP_MARK.sub("", t)
+    named = NAMED_CROP.search(t)
+    if named and re.search(r"\d$", t[:named.start()].strip()):
+        t, cropped = t[:named.start()], True
     return re.sub(r"[\s_]+", " ", t).strip().lower(), cropped
 
 

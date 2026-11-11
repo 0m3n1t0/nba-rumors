@@ -32,6 +32,7 @@ the "Safety tests" step before anything is installed or made.
      back, the repair pass fixes the beats, the gate holds what is left (run 43011651547)
  21. length: 45-65 words after the hook, up to 72 only when must-know context or her own reason
      needs it (owner's choice "გ"); the longest Short still counts as ready
+ (12 also: a crop named after the person, "...-036 (White).jpg", is the same picture, run 43027675858)
 """
 
 from __future__ import annotations
@@ -665,6 +666,18 @@ class OnePhotoOnce(unittest.TestCase):
                          "Celtics at Wizards 2024-12-044 (cropped).jpg"):
                 self.assertNotIn(gone, shown, mod.__name__)
             self.assertIn("Celtics at Wizards 2024-12-015 (cropped).jpg", shown)   # the first one stays
+
+    def test_a_crop_named_after_the_person(self):
+        """Run 43027675858: "...-036 (White).jpg" (Derrick White cut out) and "...-036.jpg" were
+        both on screen. A "(name)" after a numbered file is a crop; other names stay apart."""
+        from picture_ids import already_shown, base_name, mark_shown
+        shown = set()
+        mark_shown(_commons("Celtics at Wizards 2024-12-036 (White).jpg"), shown)
+        self.assertTrue(already_shown(_commons("Celtics at Wizards 2024-12-036.jpg"), shown))
+        self.assertFalse(already_shown(_commons("Celtics at Wizards 2024-12-038.jpg"), shown))
+        for own in ("Doc Rivers (coach).jpg", "Jayson Tatum (2018).jpg", "Doc Rivers (31361603010).jpg",
+                    "20150401 MCDAAG Jaylen Brown floater (1).JPG"):
+            self.assertFalse(base_name(own)[1], own)
 
     def test_fill_never_brings_another_crop(self):
         import media

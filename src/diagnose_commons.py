@@ -72,6 +72,15 @@ def main() -> None:
         got = media.category_files(person)
         print(f"RESULT with today's code: {len(got)} photos from the category "
               f"(files read: {media.PHOTO_STATS.get(person, {}).get('category', 0)})")
+        current, former = media.teams_of(person)
+        print(f"TEAMS (Wikidata): now {current or '?'}; before: {', '.join(sorted(former)) or '-'} "
+              f"(since {media._team_since.get(media._wikidata.get(person, ''), '?')})")
+        pool = media.commons_photos(person)
+        counts = {k: sum(1 for p in pool if p.get("team", "") == k) for k in ("current", "", "former")}
+        print(f"PHOTOS by uniform: today's team {counts['current']}, no team named {counts['']}, "
+              f"former team {counts['former']}")
+        for p in media.photos(person)[:6]:     # the order Claude sees them in
+            print(f"    first: [{p.get('team') or '-'}] {p['title'][:80]}")
 
 
 if __name__ == "__main__":

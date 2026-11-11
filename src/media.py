@@ -200,6 +200,10 @@ a pro game of Portland or the Lakers 6, a stock clip of a referee with kids 1.
 "Draymond called out Brooks on his podcast" -> Draymond at a microphone 10, a photo of
 Draymond 8, a photo of Brooks 7, a stock podcast microphone 0 (an object, not basketball).
 "Kuminga yelled at Gobert" -> Kuminga or Gobert 8-9, a men's NBA game 4, a women's game 0.
+UNIFORMS: the story line says which team each person plays for NOW. A photo of the person in
+his CURRENT team's uniform fits better than one in a former team's uniform: score a
+former-team photo 1 lower, unless the line is about his time with that team ("ten years in
+Boston" may show him as a Celtic). A suit, a practice or an off-court photo is neither.
 Score honestly and never inflate a clip: the pipeline already prefers clips when they are
 about as relevant. Between equal clips: REAL CLIP > STOCK CLIP. A wrong person always scores 0.
 Nothing may repeat: never pick a candidate already picked for an earlier beat.
@@ -357,6 +361,92 @@ def commons_category(person: str) -> str:
     return _commons_cat[q]
 
 
+# ---------- the player's CURRENT team (Wikidata), so his photos show today's uniform ----------
+# The 30 NBA teams: full name -> the words a photo's title, caption or category uses for it.
+NBA_TEAMS = {
+    "atlanta hawks": ["hawks"], "boston celtics": ["celtics"], "brooklyn nets": ["nets"],
+    "charlotte hornets": ["hornets"], "chicago bulls": ["bulls"], "cleveland cavaliers": ["cavaliers", "cavs"],
+    "dallas mavericks": ["mavericks", "mavs"], "denver nuggets": ["nuggets"], "detroit pistons": ["pistons"],
+    "golden state warriors": ["warriors"], "houston rockets": ["rockets"], "indiana pacers": ["pacers"],
+    "los angeles clippers": ["clippers"], "los angeles lakers": ["lakers"], "memphis grizzlies": ["grizzlies"],
+    "miami heat": ["heat"], "milwaukee bucks": ["bucks"], "minnesota timberwolves": ["timberwolves"],
+    "new orleans pelicans": ["pelicans"], "new york knicks": ["knicks"], "oklahoma city thunder": ["thunder"],
+    "orlando magic": ["magic"], "philadelphia 76ers": ["76ers", "sixers"], "phoenix suns": ["suns"],
+    "portland trail blazers": ["trail blazers", "blazers"], "sacramento kings": ["kings"],
+    "san antonio spurs": ["spurs"], "toronto raptors": ["raptors"], "utah jazz": ["jazz"],
+    "washington wizards": ["wizards"],
+}
+_teams: dict[str, tuple[str, set[str]]] = {}     # Wikidata item -> (current team, former teams)
+_team_since: dict[str, int] = {}                  # Wikidata item -> year his current spell began
+
+
+def teams_of(person: str) -> tuple[str, set[str]]:
+    """(his current NBA team, his former NBA teams) as full names, from Wikidata ("member of
+    sports team", P54: the spell with no end date is the current one). Two small requests per
+    person, cached; ("", set()) if unknown, and then nothing about the photos changes."""
+    q = _wikidata.get(person, "")
+    if not q:
+        return "", set()
+    if q in _teams:
+        return _teams[q]
+    _teams[q] = ("", set())
+    try:
+        claims = json.loads(get("https://www.wikidata.org/w/api.php?" + urllib.parse.urlencode(
+            {"action": "wbgetclaims", "format": "json", "entity": q, "property": "P54"}), 30)).get("claims", {}).get("P54") or []
+        spells = []
+        for c in claims:
+            team = ((c.get("mainsnak") or {}).get("datavalue") or {}).get("value", {}).get("id")
+            if not team or c.get("rank") == "deprecated":
+                continue
+            quals = c.get("qualifiers") or {}
+            start = ((((quals.get("P580") or [{}])[0].get("datavalue") or {}).get("value") or {}).get("time") or "")
+            spells.append((team, start, bool(quals.get("P582"))))
+        ids = list(dict.fromkeys(t for t, _, _ in spells))[:50]
+        labels = {}
+        if ids:
+            ents = json.loads(get("https://www.wikidata.org/w/api.php?" + urllib.parse.urlencode(
+                {"action": "wbgetentities", "format": "json", "ids": "|".join(ids), "props": "labels",
+                 "languages": "en"}), 30)).get("entities", {})
+            labels = {i: fold(((e.get("labels") or {}).get("en") or {}).get("value", "")) for i, e in ents.items()}
+        nba = [(labels.get(t, ""), start, ended) for t, start, ended in spells if labels.get(t, "") in NBA_TEAMS]
+        open_spells = sorted([x for x in nba if not x[2]], key=lambda x: x[1], reverse=True)
+        current = open_spells[0][0] if open_spells else ""
+        _teams[q] = (current, {name for name, _, _ in nba if name != current})
+        since = re.match(r"\+?(\d{4})", open_spells[0][1]) if open_spells else None
+        if since:
+            _team_since[q] = int(since.group(1))
+    except Exception as exc:
+        print(f"[!] Wikidata teams failed for {person}: {exc}")
+    return _teams[q]
+
+
+def team_words(team: str) -> list[str]:
+    return [team] + NBA_TEAMS.get(team, [])
+
+
+def photo_team(person: str, text: str, year: int | None = None) -> str:
+    """"current": the photo names his current team; "former": it names only a former team of his
+    ("Celtics at Wizards" for Jaylen Brown, now a 76er); "" when it says nothing about his team
+    (then nothing changes for it). A photo taken BEFORE his current spell began cannot show
+    today's uniform ("Celtics at 76ers 2023" names the 76ers, but Brown was a Celtic then)."""
+    current, former = teams_of(person)
+    if not current and not former:
+        return ""
+    t = fold(text or "")
+
+    def named(team: str) -> bool:
+        return any(re.search(rf"\b{re.escape(w)}\b", t) for w in team_words(team))
+    since = _team_since.get(_wikidata.get(person, ""), 0)
+    if current and named(current) and not (year and since and year < since):
+        return "current"
+    if any(named(f) for f in former):
+        return "former"
+    return ""
+
+
+TEAM_ORDER = {"current": 0, "": 1, "former": 2}   # among the person's photos: today's uniform first
+
+
 def birth_year(person: str) -> str:
     """The person's birth year, as Wikipedia gave it when the story's people were checked
     (people() -> real_people). No extra request here; "" if unknown: then nothing is filtered."""
@@ -426,6 +516,16 @@ RULES = [  # used only when Claude is unavailable: always professional basketbal
 
 
 MOOD = ["tense"]
+
+
+def people_line(who: list[str]) -> str:
+    """"Jaylen Brown (now with the Philadelphia 76ers), Jayson Tatum (now with the Boston
+    Celtics)": the editor judging the pictures knows which uniform is today's."""
+    out = []
+    for p in who:
+        current = teams_of(p)[0]
+        out.append(f"{p} (now with the {current.title().replace('76Ers', '76ers')})" if current else p)
+    return ", ".join(out)
 
 
 def spoken(short: dict) -> list[dict]:
@@ -659,6 +759,7 @@ def commons_photos(person: str) -> list[dict]:
             "date": date,
             "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4) + (1000 if hoops else 0),
             "hoops": hoops,
+            "team": photo_team(person, text + " " + clean(meta.get("Categories", "")), year if year > 2000 else None),
         })
     if sum(f["hoops"] for f in found) >= 2:   # enough real basketball photos: drop the namesakes
         found = [f for f in found if f["hoops"]]
@@ -732,6 +833,7 @@ def openverse_photos(person: str) -> list[dict]:
             "source": f"{(r.get('source') or 'Openverse').title()} via Openverse",
             "score": (5 if h >= w else 0) + min(w * h / 4e6, 4),
             "hoops": bool(BASKETBALL.search(text)),
+            "team": photo_team(person, text),
         })
     PHOTO_STATS.setdefault(person, {})["openverse"] = len(out)
     return sorted(out, key=lambda f: -f["score"])
@@ -781,6 +883,7 @@ def flickr_photos(person: str) -> list[dict]:
             "license_url": "", "source": "Flickr", "license_verified": True,
             "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4) + (1000 if hoops else 0),
             "hoops": hoops,
+            "team": photo_team(person, text),
         })
     if sum(f["hoops"] for f in out) >= 2:      # enough real basketball photos: drop the namesakes
         out = [f for f in out if f["hoops"]]
@@ -807,7 +910,10 @@ def photos(person: str) -> list[dict]:
             if flickr_id(f["page"]) not in seen:
                 seen.add(flickr_id(f["page"]))
                 found.append(f)
-        _all_photos[person] = sorted(found, key=lambda f: -f["score"])
+        # among his photos, today's uniform first, then photos that do not show a team, then a
+        # former team's (stable: inside each group the old order, newest first, is kept).
+        # Relevance is still Claude's judgement: this only decides which photos it sees first.
+        _all_photos[person] = sorted(found, key=lambda f: (TEAM_ORDER.get(f.get("team", ""), 1), -f["score"]))
     return _all_photos[person]
 
 
@@ -1203,7 +1309,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 cands = []
             per_beat.append(cands)
         picks = {}
-        story = f"{short.get('headline', '')} (people: {', '.join(people(short)) or 'see the beats'})"
+        story = f"{short.get('headline', '')} (people: {people_line(people(short)) or 'see the beats'})"
         rows = [{"beat": i, "say": b.get("say", ""), "person": plans[i].get("person", ""),
                  "candidates": len(per_beat[i])}
                 for i, b in enumerate(beats)]

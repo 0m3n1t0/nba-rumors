@@ -15,6 +15,7 @@ the "Safety tests" step before anything is installed or made.
  10. the public run page is short; the full report and working data are kept privately
  11. the weekly plan and competitor scan come from the private repository (not this public one)
  12. one photo in two crops is ONE picture: never shown twice in a Short
+ 13. today's uniform: the player's current team (Wikidata) decides which of his photos come first
 """
 
 from __future__ import annotations
@@ -667,6 +668,86 @@ class OnePhotoOnce(unittest.TestCase):
             for k, v in saved.items():
                 setattr(media, k, v)
             shutil.rmtree(folder, ignore_errors=True)
+
+
+class CurrentTeam(unittest.TestCase):
+    """13. Run 43011651547 showed Jaylen Brown in a Celtics jersey while the story said "now in
+    Philly", and Paul George in a Pacers jersey: today's uniform comes first now."""
+
+    CLAIMS = {"Q19664817": [   # Jaylen Brown: Celtics 2016-2026, 76ers since 2026, a college spell
+        {"mainsnak": {"datavalue": {"value": {"id": "Q131371"}}}, "rank": "normal",
+         "qualifiers": {"P580": [{"datavalue": {"value": {"time": "+2016-06-23T00:00:00Z"}}}],
+                        "P582": [{"datavalue": {"value": {"time": "+2026-07-01T00:00:00Z"}}}]}},
+        {"mainsnak": {"datavalue": {"value": {"id": "Q138089"}}}, "rank": "normal",
+         "qualifiers": {"P580": [{"datavalue": {"value": {"time": "+2026-07-01T00:00:00Z"}}}]}},
+        {"mainsnak": {"datavalue": {"value": {"id": "Q999"}}}, "rank": "normal", "qualifiers": {}}]}
+    LABELS = {"Q131371": "Boston Celtics", "Q138089": "Philadelphia 76ers", "Q999": "California Golden Bears"}
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = (media.get, dict(media._wikidata), dict(media._teams))
+        media._wikidata.clear()
+        media._teams.clear()
+        media._wikidata["Jaylen Brown"] = "Q19664817"
+        claims, labels = self.CLAIMS, self.LABELS
+
+        def get(url, timeout=30):
+            q = dict(urllib.parse.parse_qsl(url.split("?", 1)[1]))
+            if q.get("action") == "wbgetclaims":
+                return json.dumps({"claims": {"P54": claims.get(q["entity"], [])}}).encode()
+            if q.get("action") == "wbgetentities":
+                return json.dumps({"entities": {i: {"labels": {"en": {"value": labels[i]}}}
+                                                for i in q["ids"].split("|") if i in labels}}).encode()
+            raise OSError("unexpected")
+        media.get = get
+
+    def tearDown(self):
+        self.m.get = self.saved[0]
+        self.m._wikidata.clear()
+        self.m._wikidata.update(self.saved[1])
+        self.m._teams.clear()
+        self.m._teams.update(self.saved[2])
+
+    def test_current_and_former_teams(self):
+        self.assertEqual(self.m.teams_of("Jaylen Brown"), ("philadelphia 76ers", {"boston celtics"}))
+        t = self.m.photo_team
+        self.assertEqual(t("Jaylen Brown", "Celtics at Wizards 2024-12-015 (cropped).jpg"), "former")
+        self.assertEqual(t("Jaylen Brown", "Jaylen Brown 76ers media day 2026"), "current")
+        self.assertEqual(t("Jaylen Brown", "Jaylen Brown, Sixers vs Celtics"), "current")   # today's team named
+        self.assertEqual(t("Jaylen Brown", "Jaylen Brown 2022.jpg"), "")                   # no team: unchanged
+        # an older photo naming today's team is not today's uniform (Brown was a Celtic in 2023)
+        self.assertEqual(t("Jaylen Brown", "Celtics at 76ers 2023", 2023), "former")
+        self.assertEqual(t("Jaylen Brown", "76ers media day", 2026), "current")
+        self.assertEqual(self.m.people_line(["Jaylen Brown", "Bomani Jones"]),
+                         "Jaylen Brown (now with the Philadelphia 76ers), Bomani Jones")
+        self.assertIn("UNIFORMS", self.m.PICK_PROMPT)
+
+    def test_photo_order_today_first(self):
+        m = self.m
+        saved = (m.commons_photos, m.flickr_photos, m.openverse_photos, dict(m._all_photos))
+        m._all_photos.clear()
+        pool = [{"page": "a", "score": 30, "team": "former"}, {"page": "b", "score": 20, "team": ""},
+                {"page": "c", "score": 10, "team": "current"}, {"page": "d", "score": 25, "team": ""}]
+        try:
+            m.commons_photos = lambda person: [dict(p) for p in pool]
+            m.flickr_photos = m.openverse_photos = lambda person: []
+            self.assertEqual([p["page"] for p in m.photos("Jaylen Brown")], ["c", "d", "b", "a"])
+        finally:
+            m.commons_photos, m.flickr_photos, m.openverse_photos = saved[:3]
+            m._all_photos.clear()
+            m._all_photos.update(saved[3])
+
+    def test_unknown_or_down_changes_nothing(self):
+        self.assertEqual(self.m.teams_of("Bomani Jones"), ("", set()))       # no Wikidata item: no request
+        self.assertEqual(self.m.photo_team("Bomani Jones", "Celtics at Wizards"), "")
+        self.m._teams.clear()
+
+        def down(url, timeout=30):
+            raise OSError("down")
+        self.m.get = down
+        self.assertEqual(self.m.teams_of("Jaylen Brown"), ("", set()))
+        self.assertEqual(self.m.people_line(["Jaylen Brown"]), "Jaylen Brown")
 
 
 if __name__ == "__main__":

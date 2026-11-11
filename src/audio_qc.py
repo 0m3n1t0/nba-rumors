@@ -24,9 +24,62 @@ ROOT = Path(__file__).resolve().parent.parent
 AUDIO = ROOT / "data" / "audio"
 FLOOR = 0.5   # seconds of silence we tolerate between words (a short dramatic pause before a
               # twist is part of the performance; longer is dead air that loses viewers)
-PAD = 0.22    # Whisper's word edges are approximate and often END EARLY on a fading last
-              # sound ("-s", "-t"): never cut closer than this to a word, or the cut eats it
+# yt-edit (deadair.py) decides WHICH pauses are dead; WHERE to cut is measured in the sound
+# itself, because Whisper's word edges are approximate and often END EARLY on a fading last
+# sound (after "positively." the voice still sounds for half a second). The natural rhythm
+# of the voice stays untouched (owner, 2026-11-11: never run sentences together): only a
+# TRULY silent stretch longer than LONG is shortened, and LEFT of it stays (a full sentence
+# pause). Chatterbox's own pauses (0.3-0.5 s) are never cut; mostly the Kokoro fallback's
+# long silences are. No sound is ever removed.
+LONG = 0.7        # seconds of real silence before a pause counts as dead air
+LEFT = 0.5        # what stays of a shortened pause (a natural sentence pause)
+SILENT = 0.04     # a 20 ms frame quieter than this share of the speech level is silence
+FRAME = 0.02
 FADE = 0.012  # a tiny fade at every join, so the cut never clicks
+
+
+def pcm(mp3: Path, rate: int = 16000):
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(mp3), "-f", "s16le", "-ac", "1",
+                          "-ar", str(rate), "-"], capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.int16).astype(np.float32) / 32768
+
+
+def silence_cut(audio, rate: int, start: float, end: float, level: float) -> dict | None:
+    """The cuttable middle of the longest truly silent stretch between start and end
+    (seconds), or None. Silence = 20 ms frames under SILENT x the speech level."""
+    import numpy as np
+    n = int(FRAME * rate)
+    a, b = int(max(0.0, start) * rate), int(min(len(audio) / rate, end) * rate)
+    frames = [float(np.sqrt(np.mean(audio[k:k + n] ** 2))) for k in range(a, b - n + 1, n)]
+    best, run_start = (0, 0), None
+    for i, v in enumerate(frames + [1.0]):
+        if v < SILENT * level:
+            run_start = i if run_start is None else run_start
+        elif run_start is not None:
+            if i - run_start > best[1] - best[0]:
+                best = (run_start, i)
+            run_start = None
+    s0, s1 = a / rate + best[0] * FRAME, a / rate + best[1] * FRAME
+    if s1 - s0 < LONG:
+        return None                      # a natural pause: never touched
+    cut_start, cut_end = s0 + LEFT / 2, s1 - LEFT / 2
+    if cut_end - cut_start < 0.08:
+        return None
+    return {"start": round(cut_start, 3), "end": round(cut_end, 3)}
+
+
+def sound_end(mp3: Path, rate: int = 16000) -> float | None:
+    """Where the voice really stops (the last 20 ms frame that is not silence), in seconds:
+    the end card starts after it, never over a fading last sound."""
+    import numpy as np
+    audio = pcm(mp3, rate)
+    loud = audio[np.abs(audio) > 0.02]
+    if not len(loud):
+        return None
+    level, n = float(np.sqrt(np.mean(loud ** 2))), int(FRAME * rate)
+    frames = [k for k in range(0, len(audio) - n, n) if float(np.sqrt(np.mean(audio[k:k + n] ** 2))) >= SILENT * level]
+    return round((frames[-1] + n) / rate, 2) if frames else None
 
 
 def shift(t: float, cuts: list[dict]) -> float:
@@ -61,9 +114,24 @@ def main() -> None:
         seg = segments_file(timing["words"], path.with_suffix(".segments.json"))
         report = tool("yt-edit", "deadair.py", str(seg), "--floor", str(FLOOR)) or {}
         seg.unlink(missing_ok=True)
-        cuts = [{**c, "start": round(c["start"] + PAD, 3), "end": round(c["end"] - PAD, 3)}
-                for c in report.get("cuts", []) if c.get("kind") == "DEAD"]
-        cuts = [c for c in cuts if c["end"] - c["start"] >= 0.08]
+        mp3 = path.with_name(path.name.replace(".timing.json", ".mp3"))
+        cuts = []
+        dead = [c for c in report.get("cuts", []) if c.get("kind") == "DEAD"]
+        if dead and mp3.exists():
+            import numpy as np
+            audio = pcm(mp3)
+            loud = audio[np.abs(audio) > 0.02]
+            level = float(np.sqrt(np.mean(loud ** 2))) if len(loud) else 0.1
+            for c in dead:
+                before = [w["end"] for w in timing["words"] if w["end"] <= c["start"] + 0.01]
+                after = [w["start"] for w in timing["words"] if w["start"] >= c["end"] - 0.01]
+                if not before or not after:
+                    continue
+                # search from the word Whisper heard before to the one after (a little past it,
+                # in case Whisper's start is late)
+                cut = silence_cut(audio, 16000, max(before), min(after) + 0.1, level)
+                if cut:
+                    cuts.append({**c, **cut})
         # where each cut is, so a clipped word can be traced: "word ✂ next"
         where = []
         for c in cuts:
@@ -71,7 +139,6 @@ def main() -> None:
             after = [w["word"] for w in timing["words"] if w["start"] >= c["start"] - 0.01][:1]
             where.append(f"{' '.join(before)} ✂ {' '.join(after)}")
         if cuts:
-            mp3 = path.with_name(path.name.replace(".timing.json", ".mp3"))
             apply_cuts(mp3, cuts, timing["duration"])
             for b in timing["beats"]:
                 b["start"], b["end"] = shift(b["start"], cuts), shift(b["end"], cuts)
@@ -83,6 +150,14 @@ def main() -> None:
             path.write_text(json.dumps(timing, indent=2), encoding="utf-8")
         else:
             removed = 0
+        if mp3.exists():
+            try:
+                end = sound_end(mp3)
+                if end:
+                    timing["voice_end"] = end
+                    path.write_text(json.dumps(timing, indent=2), encoding="utf-8")
+            except Exception as exc:
+                print(f"[!] {path.name}: voice end not measured ({exc}); the end card waits for the file's end")
         name = path.name.replace(".timing.json", "")
         lines.append(f"| {name} | {len(cuts)} | {removed}s | {timing['duration']:.1f}s | {' · '.join(where) or '-'} |")
     summary("\n".join(lines))

@@ -33,6 +33,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 SCRIPTS, AUDIO, VIDEO, MEDIA = DATA / "scripts", DATA / "audio", DATA / "video", DATA / "media"
 W, H, FPS = 1080, 1920, 30
+END_CARD_SECONDS = 2.0   # the subscribe card, shown after the story (never over the voice);
+                         # 2 s keeps every Short inside the niche's 25-35 s (owner, 2026-11-11)
 FONT_DIR = ROOT / "fonts"
 BRAND = "NBA RUMORS"
 
@@ -806,6 +808,13 @@ def opening_picture(media: list, n: int) -> list:
 def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
            media: list | None = None, music: dict | None = None, vs: list | None = None) -> list[str]:
     work.mkdir(parents=True, exist_ok=True)
+    # The story is told to the end over its pictures; only THEN the end card (black, the
+    # channel logo once assets/logo.png exists) asks for the subscription. It used to cover
+    # the last 3 s while the closing question was still being spoken (owner, 2026-11-11).
+    # the voice has ended: a breath after its last real sound (measured in the audio by
+    # audio_qc; Whisper's last word often ends too early). Not measured: the file's end.
+    cta_at = min(timing["duration"], timing.get("voice_end", timing["duration"]) + 0.4)
+    total = cta_at + END_CARD_SECONDS
     colors = team_colors(" ".join([short["headline"]] + [b.get("say", "") for b in short["beats"]]))
     accent = BRAND_COLOR
     beats = timing["beats"]
@@ -820,7 +829,7 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     runs = []
     for i, b in enumerate(beats):
         start = 0.0 if i == 0 else b["start"]
-        end = beats[i + 1]["start"] if i + 1 < len(beats) else timing["duration"] + 0.4
+        end = beats[i + 1]["start"] if i + 1 < len(beats) else total
         if media[i] is None and runs and runs[-1][1] is not None:
             runs[-1][2] += max(0.6, end - start)
         else:
@@ -832,7 +841,7 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     introduced: set[str] = {x.get("person") for x in vs if x.get("person")}
     for i in range(1, len(beats)):     # per beat (a beat may continue the previous picture)
         st, b0 = stage_of(short, i), beats[i]["start"]
-        b1 = beats[i + 1]["start"] if i + 1 < len(beats) else timing["duration"] + 0.4
+        b1 = beats[i + 1]["start"] if i + 1 < len(beats) else total
         if st == "twist":
             sfx.append((b0, "impact"))
             lifts.append((b0, b0 + 1.8))
@@ -912,10 +921,8 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
     (work / "list.txt").write_text("".join(f"file '{s.name}'\n" for s in segments))
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(work / "list.txt"), "-c", "copy",
          str(work / "visuals.mp4")])
-    total = timing["duration"] + 0.4
-    # end card: the last 3 s (after the 85% mark, so nobody swipes early) show a subscribe
-    # prompt; the captions go back to their usual place there, the sound logo plays
-    cta_at = max(total - 3.0, total * 0.85)
+    # end card (from cta_at, after the voice): the captions go back to their usual place
+    # there, the sound logo plays
     places = [(a, min(b, cta_at), y) for a, b, y in places if a < cta_at] + [(cta_at, total + 1, CAP_LOW)]
     sfx.append((cta_at + 0.05, "logo"))
     ass = work / "captions.ass"
@@ -948,7 +955,7 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
         # MUSIC_UNDER_DB below it, ducks a few more dB while she speaks, comes back up in the
         # pauses, and lifts on the twist and the final question. Final mix: -14 LUFS.
         bed_lufs = -14 - MUSIC_UNDER_DB
-        af = (f"[1:a]asplit=2[voice][key];"
+        af = (f"[1:a]apad=whole_dur={total:.2f},asplit=2[voice][key];"
               f"[2:a]atrim=start={offset:.1f},asetpts=PTS-STARTPTS,"
               f"loudnorm=I={bed_lufs}:TP=-9:LRA=7,aresample=44100,"
               f"afade=t=in:d=0.8,afade=t=out:st={max(total - 1.5, 0):.2f}:d=1.5,"
@@ -959,8 +966,8 @@ def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
         inputs = ["-i", str(work / "visuals.mp4"), "-i", str(mp3), "-stream_loop", "-1", "-i", str(ROOT / music["file"])]
         log.append("music: " + music.get("mood", ""))
     else:
-        af = ("[1:a][FX:a]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]"
-              if fx_track else "[1:a]anull[a]")
+        af = (f"[1:a]apad=whole_dur={total:.2f}[vo];[vo][FX:a]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]"
+              if fx_track else f"[1:a]apad=whole_dur={total:.2f}[a]")
         inputs = ["-i", str(work / "visuals.mp4"), "-i", str(mp3)]
         log.append("music: none")
     vf = vf.replace("[CTA:v]", f"[{inputs.count('-i')}:v]")

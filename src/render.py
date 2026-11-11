@@ -805,15 +805,20 @@ def opening_picture(media: list, n: int) -> list:
     return media
 
 
+def end_card_at(timing: dict) -> float:
+    """When the end card starts: a breath (0.4 s) after the voice's last real sound, measured in
+    the audio by audio_qc (Whisper's last word often ends too early); never after the voice
+    file ends. Not measured: the file's end."""
+    return min(timing["duration"], timing.get("voice_end", timing["duration"]) + 0.4)
+
+
 def render(short: dict, timing: dict, mp3: Path, out: Path, work: Path,
            media: list | None = None, music: dict | None = None, vs: list | None = None) -> list[str]:
     work.mkdir(parents=True, exist_ok=True)
     # The story is told to the end over its pictures; only THEN the end card (black, the
     # channel logo once assets/logo.png exists) asks for the subscription. It used to cover
     # the last 3 s while the closing question was still being spoken (owner, 2026-11-11).
-    # the voice has ended: a breath after its last real sound (measured in the audio by
-    # audio_qc; Whisper's last word often ends too early). Not measured: the file's end.
-    cta_at = min(timing["duration"], timing.get("voice_end", timing["duration"]) + 0.4)
+    cta_at = end_card_at(timing)
     total = cta_at + END_CARD_SECONDS
     colors = team_colors(" ".join([short["headline"]] + [b.get("say", "") for b in short["beats"]]))
     accent = BRAND_COLOR

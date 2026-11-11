@@ -1,0 +1,516 @@
+"""Regression tests for the 2026-11-11 fixes (PROJECT.md section 6). They protect what works:
+each test is a real case from a real run that once went wrong. Offline and fast: no voice
+engine, no ffmpeg, no network (every outside call is replaced by a fake answer), so they run in
+the "Safety tests" step before anything is installed or made.
+
+  1. voice: quote marks never lower the "words heard" count; the best take is kept
+  2. footage: a clip that is not of the story's person must prove it is the NBA
+  3. namesakes: a different birth year on the file = another person
+  4. the player's own Commons category: Wikidata's name, the "by year" level, no false drop
+  5. empty beats: no unjudged stock clip; the gate holds any unjudged clip
+  6. script: hook replayed in a beat, repeated beat, weak payoff -> one safe repair pass
+  7. quotes in single quotes are checked against the sources too
+  8. yt-edit: only real silence over 0.7 s is shortened, natural pauses never
+  9. end card: after the voice's last real sound, never over it
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+import shutil
+import sys
+import tempfile
+import types
+import unittest
+import urllib.parse
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+import numpy as np  # noqa: E402  (in requirements.txt)
+
+# tts.py imports soundfile (installed later, with the voice engine): a stand-in is enough here,
+# the tests never write real audio
+if "soundfile" not in sys.modules:
+    try:
+        import soundfile  # noqa: F401
+    except ImportError:
+        _sf = types.ModuleType("soundfile")
+        _sf.write = lambda path, data, rate: Path(path).write_text("wav")
+        sys.modules["soundfile"] = _sf
+
+# The Luka Short of run 42877530241: what Whisper heard, and the script
+LUKA_HEARD = ("Luca Doncic really tell Hawks fans you all wish you would have had me. Atlanta drafted "
+              "Luca third, then traded him for Tree Young. Yahoo! Sports reported Luca told Hawks fans, "
+              "you all wish you would have had me. One fired back, we had you. A fan gave in, I wish we "
+              "did, I do. Luca dropped 32 in the win. That fan was the honest one. So who's right, him, "
+              "or the one who never wanted Luca?")
+LUKA_HOOK = "Did Luka Doncic really tell Hawks fans 'You all wish you would have had me'?"
+LUKA_BEATS = [
+    {"say": "Atlanta drafted Luka third, then traded him for Trae Young.", "on_screen": "Luka",
+     "tone": "calm", "role": "context", "stage": "setup"},
+    {"say": "Yahoo Sports reported Luka told Hawks fans, 'You all wish you would have had me.' "
+            "One fired back, 'We had you.'", "on_screen": "Luka", "tone": "tense", "role": "fact",
+     "stage": "conflict"},
+    {"say": "A fan gave in: 'I wish we did, I do.'", "on_screen": "Hawks fans", "tone": "amused",
+     "role": "reaction", "stage": "twist"},
+    {"say": "Luka dropped 32 in the win.", "on_screen": "Luka", "tone": "calm", "role": "analysis",
+     "stage": "payoff"},
+    {"say": "That fan was the honest one. So who's right: him, or the one who never wanted Luka?",
+     "on_screen": "Luka", "tone": "amused", "role": "question", "stage": "exit"},
+]
+
+
+class Voice(unittest.TestCase):
+    """1. The voice check (tts.py)."""
+
+    def test_quote_marks_do_not_count_as_words(self):
+        import tts
+        self.assertEqual(tts.tokens("'You all wish you would have had me.'"),
+                         ["you", "all", "wish", "you", "would", "have", "had", "me"])
+        self.assertEqual(tts.tokens("who's Giannis' 'I"), ["who's", "giannis", "i"])
+        words = [{"word": w, "start": 0.0, "end": 0.0} for w in LUKA_HEARD.split()]
+        text = " ".join([LUKA_HOOK] + [b["say"] for b in LUKA_BEATS])
+        # was 59% before the fix (the voice was fine: the count was wrong)
+        self.assertGreaterEqual(tts.coverage(text, words), 0.85)
+
+    def _voice(self, plan: dict, performer: bool = True):
+        """tts.main() with fake engines: plan = {(engine, seed): words heard share, or "boom"}."""
+        import tts
+        saved = {k: getattr(tts, k) for k in ("SCRIPTS", "AUDIO", "load_pipeline", "Performer", "speak",
+                                               "finish", "word_times", "coverage", "duration_of")}
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "scripts").mkdir()
+            (tmp / "scripts" / "short_1.json").write_text(json.dumps(
+                {"n": 1, "headline": "h", "ready": True, "hook": {"text": "Did Luka say it?"},
+                 "beats": [{"say": "He did.", "tone": "calm"}]}))
+            tts.SCRIPTS, tts.AUDIO = tmp / "scripts", tmp / "audio"
+            calls = []
+
+            class Fake:
+                rate = 24000
+
+                def __init__(self, *a):
+                    if not performer:
+                        raise RuntimeError("no chatterbox")
+
+                def speak_parts(self, parts, seed):
+                    calls.append(("chatterbox", seed))
+                    if plan[("chatterbox", seed)] == "boom":
+                        raise RuntimeError("boom")
+                    return np.zeros(10, dtype=np.float32)
+                speak = speak_parts
+
+            def kokoro(*a):
+                calls.append(("kokoro", 0))
+                if plan[("kokoro", 0)] == "boom":
+                    raise RuntimeError("boom")
+                return np.zeros(10, dtype=np.float32)
+
+            def heard(text, words):
+                eng, seed = words[0]["word"].split(".take_")[1][:-4].rsplit("_", 1)
+                return plan[(eng, int(seed))]
+            tts.load_pipeline = lambda: (None, None)
+            tts.Performer, tts.speak = Fake, kokoro
+            tts.finish = lambda wav, mp3, tempo=1.0: Path(mp3).write_text(Path(mp3).name)
+            tts.word_times = lambda mp3: [{"word": Path(mp3).read_text(), "start": 0.0, "end": 1.0}]
+            tts.coverage, tts.duration_of = heard, (lambda mp3: 10.0)
+            tts.main()
+            timing = tmp / "audio" / "short_1.timing.json"
+            files = sorted(p.name for p in (tmp / "audio").iterdir())
+            return (json.loads(timing.read_text()) if timing.exists() else None), files, calls
+        finally:
+            for k, v in saved.items():
+                setattr(tts, k, v)
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_best_take_is_kept(self):
+        import tts
+        s = tts.CONFIG["chatterbox"]["seed"]
+        # both Chatterbox takes just under the bar, Kokoro worse: Chatterbox stays (the old code
+        # always took Kokoro)
+        res, files, _ = self._voice({("chatterbox", s): .83, ("chatterbox", s + 1): .82, ("kokoro", 0): .59})
+        self.assertEqual((res["engine"], res["heard"]), ("chatterbox", .83))
+        self.assertEqual(files, ["short_1.mp3", "short_1.timing.json"])      # no take left behind
+        # a good first take: nothing else is tried
+        res, _, calls = self._voice({("chatterbox", s): .95, ("chatterbox", s + 1): .1, ("kokoro", 0): .1})
+        self.assertEqual(calls, [("chatterbox", s)])
+        # Kokoro really better: Kokoro
+        res, _, _ = self._voice({("chatterbox", s): .70, ("chatterbox", s + 1): .75, ("kokoro", 0): .90})
+        self.assertEqual(res["engine"], "kokoro")
+        # a tie: Chatterbox (the channel's voice)
+        res, _, _ = self._voice({("chatterbox", s): .80, ("chatterbox", s + 1): .80, ("kokoro", 0): .80})
+        self.assertEqual(res["engine"], "chatterbox")
+        # every engine fails: no narration for this Short, nothing left behind
+        res, files, _ = self._voice({("chatterbox", s): "boom", ("chatterbox", s + 1): "boom", ("kokoro", 0): "boom"})
+        self.assertIsNone(res)
+        self.assertEqual(files, [])
+        # no Chatterbox at all: Kokoro, as before
+        res, _, _ = self._voice({("kokoro", 0): .70}, performer=False)
+        self.assertEqual(res["engine"], "kokoro")
+
+
+def _fake_media_get(wiki: dict, cats: dict, p373: dict, videos: list):
+    def get(url, timeout=30):
+        if "wikipedia.org" in url:
+            return json.dumps(wiki).encode()
+        q = dict(urllib.parse.parse_qsl(url.split("?", 1)[1]))
+        if "wikidata.org" in url:
+            v = p373.get(q.get("entity"))
+            return json.dumps({"claims": {"P373": [{"mainsnak": {"datavalue": {"value": v}}}]} if v else {}}).encode()
+        if q.get("prop") == "videoinfo":
+            return json.dumps({"query": {"pages": {str(i): v for i, v in enumerate(videos)}}}).encode()
+        if q.get("list") == "search" or q.get("generator") == "search":
+            return json.dumps({"query": {}}).encode()
+        files, subs = cats.get(q.get("gcmtitle") or q.get("cmtitle"), ([], []))
+        if q.get("list") == "categorymembers":
+            return json.dumps({"query": {"categorymembers": [{"title": c} for c in subs]}}).encode()
+        return json.dumps({"query": {"pages": {str(i): f for i, f in enumerate(files)}}}).encode()
+    return get
+
+
+def _photo(title: str, desc: str, cats: str = "") -> dict:
+    return {"title": title, "imageinfo": [{"mime": "image/jpeg", "width": 1200, "height": 1600, "thumburl": "u",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/" + title,
+            "extmetadata": {"LicenseShortName": {"value": "CC BY-SA 4.0"}, "Artist": {"value": "A"},
+                            "ImageDescription": {"value": desc}, "Categories": {"value": cats}}}]}
+
+
+def _video(title: str, desc: str, cats: str) -> dict:
+    return {"title": "File:" + title, "videoinfo": [{"url": "u", "size": 1, "derivatives": [
+        {"type": "video/webm", "height": 480, "src": "s"}], "extmetadata": {
+        "ImageDescription": {"value": desc}, "Categories": {"value": cats},
+        "LicenseShortName": {"value": "CC BY-SA 3.0"}, "Artist": {"value": "own work"},
+        "Credit": {"value": "Own work"}, "Duration": {"value": "20"}}}]}
+
+
+WIKI = {"query": {"redirects": [{"from": "Luka Doncic", "to": "Luka Dončić"},
+                                {"from": "Robert Williams", "to": "Robert Williams III"}], "pages": {
+    "1": {"title": "Luka Dončić", "pageprops": {"wikibase-shortdesc": "Slovenian basketball player (born 1999)",
+                                                "wikibase_item": "Q1"}},
+    "2": {"title": "Devin Booker", "pageprops": {"wikibase-shortdesc": "American basketball player (born 1996)",
+                                                 "wikibase_item": "Q2"}},
+    "3": {"title": "Robert Williams III", "pageprops": {"wikibase-shortdesc": "American basketball player (born 1997)"}},
+    "4": {"title": "Bomani Jones", "pageprops": {"wikibase-shortdesc": "American sports journalist"}}}}}
+P373 = {"Q1": "Luka Dončić", "Q2": "Devin Booker (basketball, born 1996)"}
+CATS = {   # the real shapes found with diagnose.yml on 2026-11-11
+    "Category:Luka Dončić": ([], ["Category:Luka Dončić by year"]),
+    "Category:Luka Dončić by year": ([], ["Category:Luka Dončić in 2019", "Category:Luka Dončić in 2025",
+                                          "Category:Luka Dončić in 2026"]),
+    "Category:Luka Dončić in 2026": ([_photo("File:LD 2026.jpg", "Dončić")], []),
+    "Category:Luka Dončić in 2025": ([_photo("File:LD 2025.jpg", "Dončić, Lakers")], []),
+    "Category:Luka Dončić in 2019": ([_photo("File:LD 2019.jpg", "Dončić")], []),
+    "Category:Devin Booker": ([], []),
+    "Category:Devin Booker (basketball, born 1996)": ([_photo("File:Booker Suns 2025.jpg", "Booker")], []),
+    "Category:Robert Williams": ([_photo("File:RW speech.jpg", "Senator at a hearing")], []),
+    "Category:Robert Williams III": ([_photo("File:RWIII.jpg", "Robert Williams III")], []),
+}
+VIDEOS = [
+    _video("13 November 2011 Canberra Capitals game 2204.theora.ogv", "Canberra Capitals game at the AIS Arena.",
+           "2011 in basketball|Canberra Capitals|Basketball matches at AIS Arena"),
+    _video("Basketball CEO speech - iPhone (Cellular).theora.ogv", "Basketball CEO speech", "Basketball"),
+    _video("Boston Celtics warm-up 2019.webm", "Celtics players warming up before a basketball game",
+           "Boston Celtics|Basketball videos"),
+    _video("WNBA game.webm", "basketball game", "WNBA|Basketball videos"),
+    _video("Devin Booker (basketball, born 1991) dunk.webm", "Devin Booker dunk", "Devin Booker (basketball, born 1991)"),
+    _video("Devin Booker Suns warm-up.webm", "Devin Booker basketball", "Devin Booker|Phoenix Suns"),
+]
+
+
+class MediaCase(unittest.TestCase):
+    """Common set-up: media.py talks to a fake Commons / Wikipedia / Wikidata."""
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = {k: getattr(media, k) for k in ("get", "commons_trusted")}
+        self.caches = [media._person_cache, media._birth_year, media._wiki_title, media._wikidata,
+                       media._commons_cat, media._vid_cache, media._photo_cache, media.PHOTO_STATS]
+        self.backup = [dict(c) for c in self.caches]
+        for c in self.caches:
+            c.clear()
+        media.get = _fake_media_get(WIKI, CATS, P373, VIDEOS)
+        media.commons_trusted = lambda meta, title, video=False: True
+        media.real_people(["Luka Doncic", "Devin Booker", "Robert Williams", "Bomani Jones"])  # as people() does
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(self.m, k, v)
+        for c, b in zip(self.caches, self.backup):
+            c.clear()
+            c.update(b)
+
+
+class Footage(MediaCase):
+    """2 and 3: no women's games, no namesakes."""
+
+    def test_generic_clip_must_prove_nba(self):
+        kept = [c["title"] for c in self.m.commons_videos("basketball game")]
+        # Canberra Capitals (Australian women's team, "women" written nowhere), a CEO speech and a
+        # WNBA game are out; real NBA clips stay
+        self.assertEqual(kept, ["Boston Celtics warm-up 2019.webm", "Devin Booker Suns warm-up.webm"])
+
+    def test_namesake_clip_and_photo(self):
+        self.m._vid_cache.clear()
+        self.assertEqual([c["title"] for c in self.m.commons_videos('"Devin Booker"', "Devin Booker")],
+                         ["Devin Booker Suns warm-up.webm"])
+        n = self.m.namesake
+        self.assertTrue(n("Devin Booker", "Devin Booker (basketball, born 1991) Olimpia Milan Euroleague"))
+        self.assertFalse(n("Devin Booker", "Devin Booker (born 1996) Suns"))
+        self.assertFalse(n("Devin Booker", "Devin Booker 2023 Phoenix Suns"))      # no year: kept
+        self.assertFalse(n("Bomani Jones", "Bomani Jones born 1980"))               # year unknown: kept
+        self.assertFalse(n("Luka Doncic", "Luka Dončić and Asel Roberts, 2026"))    # a date is not a birth year
+
+    def test_namesake_needs_no_extra_request(self):
+        calls = []
+
+        def down(url, timeout=30):
+            calls.append(url)
+            raise OSError("down")
+        self.m.get = down
+        self.assertFalse(self.m.namesake("Jaylen Brown", "Jaylen Brown (born 1990)"))
+        self.assertEqual(calls, [])
+
+
+class Category(MediaCase):
+    """4. The player's own Commons category (Luka 0 -> 71 photos, Booker 0 -> 38 in real runs)."""
+
+    def files(self, who: str) -> list[str]:
+        self.m.PHOTO_STATS.clear()
+        return sorted(f["title"] for f in self.m.category_files(who))
+
+    def test_by_year_and_wikidata(self):
+        # Luka: no photo in the category itself, only "by year" -> "in 2025" (two levels down)
+        self.assertEqual(self.files("Luka Doncic"), ["File:LD 2019.jpg", "File:LD 2025.jpg", "File:LD 2026.jpg"])
+        # Booker: "Category:Devin Booker" is empty; Wikidata names the real one
+        self.assertEqual(self.files("Devin Booker"), ["File:Booker Suns 2025.jpg"])
+        # a politician's category under the plain name is skipped, and the search goes on
+        self.assertEqual(self.files("Robert Williams"), ["File:RWIII.jpg"])
+
+    def test_plain_spelling_still_first(self):
+        calls = []
+        fake = self.m.get
+
+        def spy(url, timeout=30):
+            calls.append(url)
+            return fake(url, timeout)
+        self.m.get = spy
+        self.files("Luka Doncic")
+        self.assertIn("Luka+Doncic+%28basketball%29", calls[0])
+
+    def test_wikidata_down_changes_nothing_else(self):
+        fake = self.m.get
+
+        def no_wikidata(url, timeout=30):
+            if "wikidata.org" in url:
+                raise OSError("down")
+            return fake(url, timeout)
+        self.m.get = no_wikidata
+        self.assertEqual(len(self.files("Luka Doncic")), 3)    # found by his Wikipedia name
+
+
+class EmptyBeats(unittest.TestCase):
+    """5. Empty beats and unjudged clips."""
+
+    def test_no_unjudged_stock_clip(self):
+        import media
+        saved = {k: getattr(media, k) for k in ("pixabay_videos", "download", "person_photos", "picture_hash")}
+        asked = []
+        folder = media.ROOT / "data" / "_test_fill"
+        try:
+            media.pixabay_videos = lambda q: asked.append(q) or [
+                {"kind": "video", "id": 139533, "url": "u", "title": "basketball, game, fitness", "page": "p",
+                 "author": "a", "license": "Pixabay Content License", "source": "Pixabay", "duration": 5}]
+            media.download = lambda url, path, timeout=60: (Path(path).write_text("x"), True)[1]
+            media.person_photos = lambda person, shown: []
+            media.picture_hash = lambda p: None
+            photo = {"kind": "photo", "file": "data/x.jpg", "page": "ph1", "title": "Luka Dončić 2025.jpg", "match": 8}
+            got = media.fill_empty([photo, None, None], 3, folder, set(), ["Luka Doncic"], None)
+            self.assertEqual([x and x["kind"] for x in got], ["photo", None, None])   # the picture continues
+            self.assertEqual(asked, [])                                                # Pixabay never asked
+            got = media.fill_empty([None, None, None], 3, folder, set(), ["Luka Doncic"], None)
+            self.assertEqual([x and x["kind"] for x in got], ["video", None, None])   # never a blank video
+        finally:
+            for k, v in saved.items():
+                setattr(media, k, v)
+            shutil.rmtree(folder, ignore_errors=True)
+        import gate
+        verdict, notes = gate.check_visuals(got, {"people": ["Luka Doncic"]})
+        self.assertEqual(verdict, "REVIEW")
+        self.assertTrue(any("clip not judged" in n for n in notes))
+        judged = [{"kind": "video", "match": 4, "title": "Boston Celtics warm-up", "license": "CC BY 3.0",
+                   "author": "A", "page": "p2"}]
+        self.assertEqual(gate.check_visuals(judged, {"people": ["Luka Doncic"]})[0], "PASS")
+
+
+class Script(unittest.TestCase):
+    """6 and 7. The script's repair pass and the quote check."""
+
+    TEXT = ("During the Lakers' 124-114 win over the Hawks, Luka Doncic told Hawks fans courtside "
+            "'You all wish you would have had me.' One fan replied 'We had you' and another said "
+            "'I wish we did, I do.' Atlanta drafted Doncic third in 2018 and traded his rights to Dallas "
+            "for Trae Young and a future first-round pick. Doncic finished with 32 points, 10 assists, "
+            "eight rebounds, five steals and two blocks. ") * 3
+    GOOD = [
+        {"say": "Atlanta drafted Luka third, then traded him for Trae Young.", "on_screen": "Luka", "tone": "calm",
+         "role": "context", "stage": "setup"},
+        {"say": "Yahoo Sports reported he really said it, and one fan fired back, 'We had you.'", "on_screen": "Luka",
+         "tone": "tense", "role": "fact", "stage": "conflict"},
+        {"say": "But another fan gave in: 'I wish we did, I do.'", "on_screen": "Hawks fans", "tone": "amused",
+         "role": "reaction", "stage": "twist"},
+        {"say": "So the trade still stings in Atlanta, and the fans know it better than anyone.", "on_screen": "Luka",
+         "tone": "calm", "role": "analysis", "stage": "payoff"},
+        {"say": "So who's right about Luka: the fan who gave in, or the one who never wanted him?",
+         "on_screen": "Luka", "tone": "amused", "role": "question", "stage": "exit"}]
+
+    def test_quotes_in_both_styles(self):
+        import script
+        q = script.quotes_in
+        self.assertEqual(q("Luka told fans, 'You all wish you would have had me.' One fired back, 'We had you.'"),
+                         ["You all wish you would have had me."])
+        self.assertEqual(q("He said 'He's not my coach, and I don't care' after the game."),
+                         ["He's not my coach, and I don't care"])
+        self.assertEqual(q('Tatum called it "another game on the schedule" before tip.'),
+                         ["another game on the schedule"])
+        self.assertEqual(q("Luka's Lakers beat the Hawks' bench, and Doncic's night was huge."), [])
+        self.assertEqual(q("one fan fired back, 'We had you.' But another fan gave in: 'I wish we did, I do.'"),
+                         ["I wish we did, I do."])        # a short quote never swallows the next one
+        sources = [{"title": "t", "summary": "", "text": self.TEXT}]
+        self.assertEqual(script.quote_check("one fan yelled 'Go back to Dallas, Luka, nobody wants you'", sources),
+                         ["Go back to Dallas, Luka, nobody wants you"])     # an invented single-quoted quote
+
+    def test_problems_found(self):
+        import script
+        beats = copy.deepcopy(LUKA_BEATS)
+        problems = script.repair_needed(LUKA_HOOK, beats, script.retention_check(beats))
+        self.assertEqual(len(problems), 3)      # hook replayed in beat 2, beat 5 repeats, payoff is a stat
+        self.assertEqual(script.repair_needed(LUKA_HOOK, copy.deepcopy(self.GOOD),
+                                              script.retention_check(copy.deepcopy(self.GOOD))), [])
+        take = [{"say": "Doc was half right and fully clumsy.", "stage": "payoff"}]
+        self.assertFalse(script.weak_payoff(take))    # a short take of her own is an answer
+
+    def _build(self, repair_beats, limit: bool = False, draft_beats=None, hook: str = LUKA_HOOK):
+        import nbadata
+        import script
+        calls = []
+        draft = {"hooks": [{"text": hook, "formula": "The Receipt"}],
+                 "strategy": {"kind": "beef", "central_question": "Who was right?", "headline_gap": "The trade."},
+                 "angles": ["a"], "angle": "a",
+                 "beats": copy.deepcopy(draft_beats if draft_beats is not None else LUKA_BEATS),
+                 "titles": ["Luka Doncic TROLLED Hawks fans"], "thumbnail_text": "LUKA vs HAWKS FANS",
+                 "receipt": "", "sources_used": [1],
+                 "claims": [{"text": "Doncic told fans 'You all wish you would have had me.'", "status": "CONFIRMED",
+                             "source": 1}],
+                 "queries": ["luka doncic hawks fans"], "description": "Luka trolled Hawks fans.\nWhy.",
+                 "tags": ["Luka Doncic"]}
+
+        def fake(prompt, model=""):
+            if "THE PROBLEMS TO FIX" in prompt:
+                calls.append("repair")
+                if limit:
+                    raise script.UsageLimit("limit")
+                return {"beats": copy.deepcopy(repair_beats)}
+            if "sound human" in prompt:
+                return {}
+            if "scrolling Shorts" in prompt:
+                return {"order": [1]}
+            return copy.deepcopy(draft)
+        saved = (script.ask_claude, script.gather_sources, nbadata.annotate)
+        script.ask_claude = fake
+        script.gather_sources = lambda topic, editor, tid: [
+            {"publisher": "Yahoo Sports", "title": "Luka trolls Hawks fans", "link": "https://sports.yahoo.com/x",
+             "url": "https://sports.yahoo.com/x", "text": self.TEXT, "trusted": True, "tier": 1}]
+        nbadata.annotate = lambda claims: None
+        try:
+            editor = {"topics": [{"headline": "Luka Doncic trolls Hawks fans", "search_phrases": []}],
+                      "ranked": [{"id": 0, "virality": 8}]}
+            short = script.build_short(1, 0, editor, "voice", {"hooks": [{"name": "x", "shape": "y", "example": "z"}],
+                                                               "rules": ["r"]})
+            return short, calls
+        finally:
+            script.ask_claude, script.gather_sources, nbadata.annotate = saved
+
+    def test_repair_pass(self):
+        import script
+        short, calls = self._build(self.GOOD)
+        self.assertEqual(calls, ["repair"])
+        self.assertEqual(len(short["repaired"]), 3)
+        self.assertEqual(short["retention"]["hard"], [])
+        # a repair that invents a number is refused: the original stays and is held
+        bad = copy.deepcopy(self.GOOD)
+        bad[3]["say"] = "So the trade still stings, and Luka has 45 points in his last game."
+        short, _ = self._build(bad)
+        self.assertEqual(short["repaired"], [])
+        self.assertIn("beat 2 repeats the hook", short["retention"]["hard"])
+        self.assertFalse(short["ready"])
+        # a repair that invents a quote is refused too
+        bad = copy.deepcopy(self.GOOD)
+        bad[1]["say"] = "Yahoo Sports reported he said it, and one fan yelled 'Go back to Dallas, Luka.'"
+        short, _ = self._build(bad)
+        self.assertEqual(short["repaired"], [])
+        # the Claude limit stops the run cleanly, as everywhere else
+        with self.assertRaises(script.UsageLimit):
+            self._build(self.GOOD, limit=True)
+        # nothing to repair: the repair pass is never paid for
+        _, calls = self._build(self.GOOD, draft_beats=self.GOOD,
+                               hook="Did Luka Doncic just rub the 2018 trade in the Hawks fans' faces courtside?")
+        self.assertEqual(calls, [])
+
+
+class Timing(unittest.TestCase):
+    """8 and 9. yt-edit and the end card."""
+
+    @staticmethod
+    def audio(*parts: tuple[str, float]) -> np.ndarray:
+        """("voice", 1.0), ("silence", 0.8) ... at 16 kHz."""
+        rate, out = 16000, []
+        rng = np.random.default_rng(1)
+        for kind, sec in parts:
+            n = int(sec * rate)
+            out.append(rng.uniform(-0.5, 0.5, n).astype(np.float32) if kind == "voice" else np.zeros(n, np.float32))
+        return np.concatenate(out)
+
+    def test_natural_pauses_are_never_cut(self):
+        import audio_qc
+        # Chatterbox's own pauses run up to ~0.6 s (measured on 7 real recordings): never touched
+        for pause in (0.45, 0.62, 0.68):
+            a = self.audio(("voice", 1.0), ("silence", pause), ("voice", 1.0))
+            self.assertIsNone(audio_qc.silence_cut(a, 16000, 0.9, 1.0 + pause + 0.1, 0.29), pause)
+
+    def test_long_silence_is_shortened_to_a_breath(self):
+        import audio_qc
+        a = self.audio(("voice", 1.0), ("silence", 1.2), ("voice", 1.0))
+        cut = audio_qc.silence_cut(a, 16000, 0.9, 2.3, 0.29)
+        self.assertIsNotNone(cut)
+        self.assertGreaterEqual(cut["start"], 1.0)          # never into the sound before
+        self.assertLessEqual(cut["end"], 2.2)               # never into the sound after
+        self.assertAlmostEqual(1.2 - (cut["end"] - cut["start"]), audio_qc.LEFT, delta=0.05)
+
+    def test_breath_in_the_gap_is_not_cut_through(self):
+        import audio_qc
+        # a long gap that is not silent (a breath in the middle): only the silent part may go
+        a = self.audio(("voice", 1.0), ("silence", 0.5), ("voice", 0.3), ("silence", 0.5), ("voice", 1.0))
+        self.assertIsNone(audio_qc.silence_cut(a, 16000, 0.9, 2.4, 0.29))
+
+    def test_voice_end_and_end_card(self):
+        import audio_qc
+        import render
+        a = self.audio(("voice", 2.0), ("silence", 0.6))
+        saved = audio_qc.pcm
+        audio_qc.pcm = lambda mp3, rate=16000: a
+        try:
+            self.assertAlmostEqual(audio_qc.sound_end(Path("x.mp3")), 2.0, delta=0.03)
+        finally:
+            audio_qc.pcm = saved
+        # 0.4 s after the last real sound, never after the file ends; unmeasured = the file's end
+        self.assertAlmostEqual(render.end_card_at({"duration": 29.07, "voice_end": 28.68}), 29.07, delta=0.001)
+        self.assertAlmostEqual(render.end_card_at({"duration": 31.0, "voice_end": 28.0}), 28.4, delta=0.001)
+        self.assertEqual(render.end_card_at({"duration": 30.0}), 30.0)
+        self.assertEqual(render.END_CARD_SECONDS, 2.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

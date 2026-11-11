@@ -417,9 +417,12 @@ def teams_of(person: str) -> tuple[str, set[str]]:
                  "languages": "en"}), 30)).get("entities", {})
             labels = {i: fold(((e.get("labels") or {}).get("en") or {}).get("value", "")) for i, e in ents.items()}
         nba = [(labels.get(t, ""), start, ended) for t, start, ended in spells if labels.get(t, "") in NBA_TEAMS]
-        open_spells = sorted([x for x in nba if not x[2]], key=lambda x: x[1], reverse=True)
+        # an open spell WITHOUT a start date is not trusted (run 43080115985: Wikidata still had
+        # Jordan Poole "now" at Golden State, undated, while he plays for New Orleans). Then the
+        # teams stay unknown and nothing about the photos or the story line changes.
+        open_spells = sorted([x for x in nba if not x[2] and x[1]], key=lambda x: x[1], reverse=True)
         current = open_spells[0][0] if open_spells else ""
-        _teams[q] = (current, {name for name, _, _ in nba if name != current})
+        _teams[q] = (current, {name for name, _, _ in nba if name != current}) if current else ("", set())
         since = re.match(r"\+?(\d{4})", open_spells[0][1]) if open_spells else None
         if since:
             _team_since[q] = int(since.group(1))
@@ -435,6 +438,16 @@ def team_words(team: str) -> list[str]:
     return [team] + NBA_TEAMS.get(team, [])
 
 
+# Before the NBA, read from the photo itself when Wikidata has no dates (Jordan Poole's 2018
+# Michigan photos, run 43080115985): college / high school words in its title or categories.
+# "...men's NATIONAL basketball team" (the Olympics) is NBA-era and stays out.
+PRE_NBA_TEXT = re.compile(
+    r"\b(ncaa|college|collegiate|university|high school|prep school|mcdonald'?s all.?american|"
+    r"mcdaag|aau|eybl|nike hoop summit|freshman|sophomore|wolverines|blue devils|tar heels|"
+    r"jayhawks|wildcats|longhorns|hoosiers|buckeyes|razorbacks|hoyas|crimson tide|seminoles|"
+    r"(?<!national )men'?s basketball (?:players|team))\b", re.I)   # no words with an NBA/NHL meaning
+
+
 def photo_team(person: str, text: str, year: int | None = None) -> str:
     """"current": the photo names his current team; "former": it names only a former team of his
     ("Celtics at Wizards" for Jaylen Brown, now a 76er); "" when it says nothing about his team
@@ -442,6 +455,8 @@ def photo_team(person: str, text: str, year: int | None = None) -> str:
     today's uniform ("Celtics at 76ers 2023" names the 76ers, but Brown was a Celtic then).
     "pre-nba": taken before his first NBA season (run 43066151290 showed Brown at a 2015 high
     school all-star game in a Short about his NBA feud)."""
+    if PRE_NBA_TEXT.search(text or "") and not re.search(r"\bnba\b|summer league", text or "", re.I):
+        return "pre-nba"
     current, former = teams_of(person)
     if not current and not former:
         return ""

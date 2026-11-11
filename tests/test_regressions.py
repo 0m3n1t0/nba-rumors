@@ -42,6 +42,8 @@ the "Safety tests" step before anything is installed or made.
  27. PODCASTS (C3): two Google News searches for what was said on NBA podcasts and shows
  28. HISTORIC BEEFS (B20/C4): a weak day's empty slot gets a famous beef that is back in the
      news (2+ articles in 30 days), never one used in the last 90 days, told as OLD
+ 29. stale Wikidata (run 43080115985): an undated "current" team is not trusted; college / high
+     school photos are PRE-NBA from their own text; a former role is said as former
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1526,6 +1528,37 @@ class HistoricBeefs(unittest.TestCase):
             self.assertEqual(self.e.used(), {})                                        # nothing marked
         finally:
             script.build_short = saved
+
+
+class StaleWikidata(CurrentTeam):
+    """29. Run 43080115985: Jordan Poole's Wikidata spells have no dates and still say Golden
+    State; his 2018 Michigan photos were not marked PRE-NBA."""
+
+    def test_undated_current_team_not_trusted(self):
+        m = self.m
+        self.CLAIMS["Q50820763"] = [
+            {"mainsnak": {"datavalue": {"value": {"id": "Q157376"}}}, "rank": "normal", "qualifiers": {}},
+            {"mainsnak": {"datavalue": {"value": {"id": "Q169165"}}}, "rank": "normal",
+             "qualifiers": {"P582": [{"datavalue": {"value": {"time": "+2024-01-01T00:00:00Z"}}}]}}]
+        self.LABELS.update({"Q157376": "Golden State Warriors", "Q169165": "Washington Wizards"})
+        m._wikidata["Jordan Poole"] = "Q50820763"
+        try:
+            self.assertEqual(m.teams_of("Jordan Poole"), ("", set()))
+            self.assertEqual(m.people_line(["Jordan Poole"]), "Jordan Poole")    # no false "now with"
+        finally:
+            del self.CLAIMS["Q50820763"]
+
+    def test_college_photo_by_its_text(self):
+        m = self.m
+        self.assertEqual(m.photo_team("Jordan Poole", "20180206 UM-NW Jordan Poole Category:Michigan Wolverines men's basketball players"), "pre-nba")
+        self.assertEqual(m.photo_team("Jaylen Brown", "20150401 MCDAAG Jaylen Brown dunk"), "pre-nba")
+        self.assertNotEqual(m.photo_team("Kevin Durant", "Kevin Durant United States men's national basketball team 2012"), "pre-nba")
+        self.assertNotEqual(m.photo_team("Draymond Green", "Draymond Green 2022 Warriors"), "pre-nba")
+        self.assertNotEqual(m.photo_team("Jaylen Brown", "Jaylen Brown NBA Summer League 2016 college"), "pre-nba")
+
+    def test_former_role_rule(self):
+        import script
+        self.assertIn("a FORMER role stays former", script.PROMPT)
 
 
 if __name__ == "__main__":

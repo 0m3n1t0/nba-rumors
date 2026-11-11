@@ -270,7 +270,9 @@ TWO VERSIONS (the channel lives on them): before choosing the angle, search the 
      story came in that same trade (that is often the sharpest fact of all);
    - a game in the story: its result (who won, and the score or margin if the sources give it);
    - a person's current team when it explains the story (a Heat host defends Giannis because
-     Giannis now plays for Miami).
+     Giannis now plays for Miami);
+   - a FORMER role stays former: "his former coach", "his ex-teammate", never words that make
+     it sound current ("Giannis's Milwaukee coach" for a coach who no longer coaches him).
    If the sources do not give a piece of context, leave that person or game out rather than
    leave the viewer guessing; never fill it from memory.
    QUESTIONS: only the hook and the closing question ask. A middle beat never asks the hook's

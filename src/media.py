@@ -46,6 +46,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from collect import names  # same name finder as the collector
+from picture_ids import already_shown, mark_shown  # one photo in two crops = one picture
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -1282,7 +1283,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             for idx in order:
                 c = cands[idx]
                 key = c.get("id") or c["page"]
-                if key in shown:
+                if already_shown(c, shown, key):
                     continue
                 ext = ".jpg" if c["kind"] == "photo" else ".mp4"
                 path = folder / f"beat{i}_{c['kind']}{ext}"
@@ -1301,7 +1302,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                         chosen["start"] = max(0.0, min(start, max(c.get("duration", 0) - 2, 0)))
                 if c["kind"] == "video":
                     used.add(c["id"])
-                shown.add(key)
+                mark_shown(c, shown, key)
                 scene_of(c) and scenes.add(scene_of(c))
                 chosen["match"] = (int(scores[idx]) if idx in scores
                                    else choice.get("score") if idx == (k or 0) - 1 else None)
@@ -1317,7 +1318,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 for j in fits:
                     c = cands[j]
                     key = c.get("id") or c["page"]
-                    if key in shown:
+                    if already_shown(c, shown, key):
                         continue
                     ext = ".jpg" if c["kind"] == "photo" else ".mp4"
                     path = folder / f"beat{i}_alt{len(chosen['alts'])}_{c['kind']}{ext}"
@@ -1329,7 +1330,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                     alt["match"] = int(scores[j]) if j in scores else None
                     chosen["alts"].append(alt)
                     chosen["alt"] = chosen["alts"][0]
-                    shown.add(key)
+                    mark_shown(c, shown, key)
                     scene_of(c) and scenes.add(scene_of(c))
                     if c["kind"] == "video":
                         used.add(c["id"])
@@ -1515,9 +1516,9 @@ def no_repeats(items: list) -> list:
         for p in pool:
             k = item_key(p)
             h = picture_hash(ROOT / p["file"]) if p.get("kind") == "photo" and p.get("file") else None
-            if k in keys or seen_before(h, hashes):
+            if already_shown(p, keys, k) or seen_before(h, hashes):
                 continue
-            keys.add(k)
+            mark_shown(p, keys, k)
             if h is not None:
                 hashes.append(h)
             keep.append(p)
@@ -1552,7 +1553,7 @@ def solo_title(c: dict, person: str) -> bool:
 
 def person_photos(person: str, shown: set) -> list[dict]:
     """The person's photos that are safe to use unjudged: basketball photos first."""
-    ok = [c for c in photos(person)[:20] if c["page"] not in shown and c["page"] not in REJECTED
+    ok = [c for c in photos(person)[:20] if not already_shown(c, shown, c["page"]) and c["page"] not in REJECTED
           and solo_title(c, person)]
     return sorted(ok, key=lambda c: not c.get("hoops"))
 
@@ -1569,8 +1570,11 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
     folder.mkdir(parents=True, exist_ok=True)
     looks = [h for it in items if it for p in [it] + (it.get("alts") or [])
              if p.get("kind") == "photo" and (h := picture_hash(ROOT / p["file"])) is not None]
-    shown = {it.get("page") for it in items if it} | {a.get("page") for it in items if it
-                                                      for a in (it.get("alts") or [it.get("alt")]) if a}
+    shown: set = set()
+    for it in items:
+        for x in ([it] + list(it.get("alts") or ([it["alt"]] if it.get("alt") else []))) if it else []:
+            if x:
+                mark_shown(x, shown, x.get("page"))
     faces = {person: person_photos(person, shown) for person in (who or [])}
     lines = [b.get("say", "") for b in spoken(short)] if short else [""] * n_beats
 
@@ -1580,12 +1584,12 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
         for person in said + [p for p in (who or []) if p not in said]:
             while faces.get(person):
                 c = faces[person].pop(0)
-                if c["page"] in shown:
+                if already_shown(c, shown, c["page"]):
                     continue
                 path = folder / f"beat{i}_{tag}.jpg"
                 try:
                     if download(c["url"], path, 60) and image_ok(path):
-                        shown.add(c["page"])
+                        mark_shown(c, shown, c["page"])
                         h = picture_hash(path)
                         if seen_before(h, looks):      # the same photo under another address
                             path.unlink(missing_ok=True)
@@ -1660,13 +1664,15 @@ def vs_pair(short: dict, items: list, folder: Path, who: list[str]) -> list[dict
     if not sides:
         return []
     shots = [x for it in items if it for x in [it] + (it.get("alts") or []) if x]
-    shown = {x.get("page") for x in shots}
+    shown: set = set()
+    for x in shots:
+        mark_shown(x, shown, x.get("page"))
     looks = [h for x in shots if x.get("kind") == "photo" and x.get("file")
              and (h := picture_hash(ROOT / x["file"])) is not None]
     pair = []
     for k, person in enumerate(sides):
         for c in person_photos(person, shown):
-            if c["page"] in shown:
+            if already_shown(c, shown, c["page"]):
                 continue
             path = folder / f"vs_{k}.jpg"
             try:
@@ -1678,7 +1684,7 @@ def vs_pair(short: dict, items: list, folder: Path, who: list[str]) -> list[dict
             if seen_before(h, looks):
                 path.unlink(missing_ok=True)
                 continue
-            shown.add(c["page"])
+            mark_shown(c, shown, c["page"])
             if h is not None:
                 looks.append(h)
             pair.append({**{k2: v for k2, v in c.items() if k2 not in ("score", "hoops")},

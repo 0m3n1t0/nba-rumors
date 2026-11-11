@@ -14,6 +14,7 @@ the "Safety tests" step before anything is installed or made.
   9. end card: after the voice's last real sound, never over it
  10. the public run page is short; the full report and working data are kept privately
  11. the weekly plan and competitor scan come from the private repository (not this public one)
+ 12. one photo in two crops is ONE picture: never shown twice in a Short
 """
 
 from __future__ import annotations
@@ -586,6 +587,86 @@ class PrivatePlan(unittest.TestCase):
             state.ROOT, state.DATA, state.STATE, state.HOME = saved
             shutil.rmtree(tmp, ignore_errors=True)
         self.assertIn("plan/", (ROOT / ".gitignore").read_text())
+
+
+# run 43011651547 (Brown snubs Tatum): what was on screen, beat by beat (main picture + alts)
+RUN_43011651547 = [
+    ["Celtics at Wizards 2024-12-015 (cropped).jpg", "Celtics at Wizards 2024-12-044 (cropped 2).jpg"],
+    ["Jaylen Brown 2022.jpg", "Celtics at Wizards 2024-12-023.jpg", "Jaylen Brown (51840869654).jpg"],
+    ["Celtics at Wizards 2024-12-036.jpg", "Jaylen Brown 2022 (cropped).jpg"],
+    ["Anthony Tolliver defending Paul George.jpg", "Celtics at Wizards 2024-12-038.jpg"],
+    ["Celtics at Wizards 2024-12-015.jpg", "Celtics at Wizards 2024-12-044 (cropped).jpg"],
+    ["Celtics at Wizards 2024-12-013.jpg", "Celtics at Wizards 2024-12-019.jpg"],
+]
+
+
+def _commons(title: str) -> dict:
+    return {"kind": "photo", "title": title, "source": "Wikimedia Commons",
+            "page": "https://commons.wikimedia.org/wiki/File:" + title.replace(" ", "_")}
+
+
+class OnePhotoOnce(unittest.TestCase):
+    """12. A photo and its crops ("X.jpg", "X (cropped).jpg", "X (cropped 2).jpg") are one picture."""
+
+    def test_names(self):
+        from picture_ids import already_shown, base_name, mark_shown
+        self.assertEqual(base_name("Celtics at Wizards 2024-12-044 (cropped 2).jpg"),
+                         ("celtics at wizards 2024-12-044", True))
+        self.assertEqual(base_name("File:Jaylen_Brown_2022_cropped.jpg"), ("jaylen brown 2022", True))
+        self.assertEqual(base_name("Jaylen Brown 2022.jpg"), ("jaylen brown 2022", False))
+        shown: set = set()
+        mark_shown(_commons("Jaylen Brown 2022.jpg"), shown)
+        self.assertTrue(already_shown(_commons("Jaylen Brown 2022 (cropped).jpg"), shown))
+        self.assertFalse(already_shown(_commons("Jaylen Brown 2023.jpg"), shown))        # another photo
+        self.assertFalse(already_shown(_commons("Jaylen Brown 2022 (2).jpg"), shown))    # numbered = another shot
+        # Flickr titles are not unique: two different "Jaylen Brown" photos are never merged
+        flickr = {"kind": "photo", "title": "Jaylen Brown", "source": "Flickr via Openverse", "page": "f1"}
+        shown2: set = set()
+        mark_shown(flickr, shown2)
+        self.assertFalse(already_shown({**flickr, "page": "f2"}, shown2))
+
+    def _items(self):
+        out = []
+        for beat, titles in enumerate(RUN_43011651547):
+            main, *alts = [_commons(t) for t in titles]
+            out.append({**main, "beat": beat, "alts": alts, "alt": alts[0] if alts else None})
+        return out
+
+    def test_the_real_run_has_no_repeat(self):
+        import media
+        import render
+        for mod in (media, render):
+            saved = mod.picture_hash
+            mod.picture_hash = lambda path: None        # no files here: only the names decide
+            try:
+                got = mod.no_repeats(copy.deepcopy(self._items()))
+            finally:
+                mod.picture_hash = saved
+            shown = [x["title"] for it in got if it for x in [it] + (it.get("alts") or [])]
+            self.assertEqual(len(shown), 10, mod.__name__)      # 13 shots, 3 were repeats of a photo
+            for gone in ("Jaylen Brown 2022 (cropped).jpg", "Celtics at Wizards 2024-12-015.jpg",
+                         "Celtics at Wizards 2024-12-044 (cropped).jpg"):
+                self.assertNotIn(gone, shown, mod.__name__)
+            self.assertIn("Celtics at Wizards 2024-12-015 (cropped).jpg", shown)   # the first one stays
+
+    def test_fill_never_brings_another_crop(self):
+        import media
+        saved = {k: getattr(media, k) for k in ("person_photos", "download", "picture_hash", "image_ok")}
+        folder = media.ROOT / "data" / "_test_crop"
+        try:
+            offered = [{**_commons("Jaylen Brown 2022.jpg"), "url": "u1"},
+                       {**_commons("Jaylen Brown 2024.jpg"), "url": "u2"}]
+            media.person_photos = lambda person, shown: [dict(c) for c in offered]
+            media.download = lambda url, path, timeout=60: (Path(path).write_text("x"), True)[1]
+            media.image_ok = lambda path: True
+            media.picture_hash = lambda path: None
+            items = [{**_commons("Jaylen Brown 2022 (cropped).jpg"), "file": "data/x.jpg", "match": 8}, None]
+            got = media.fill_empty(items, 2, folder, set(), ["Jaylen Brown"], None)
+            self.assertEqual(got[1]["title"], "Jaylen Brown 2024.jpg")   # not the uncropped original again
+        finally:
+            for k, v in saved.items():
+                setattr(media, k, v)
+            shutil.rmtree(folder, ignore_errors=True)
 
 
 if __name__ == "__main__":

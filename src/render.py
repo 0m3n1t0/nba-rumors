@@ -29,6 +29,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from picture_ids import already_shown, mark_shown  # noqa: E402  (one photo in two crops = one picture)
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 SCRIPTS, AUDIO, VIDEO, MEDIA = DATA / "scripts", DATA / "audio", DATA / "video", DATA / "media"
@@ -127,9 +130,9 @@ def no_repeats(items: list) -> list:
         for p in pool:
             k = item_key(p)
             h = picture_hash(ROOT / p["file"]) if p.get("kind") == "photo" and p.get("file") else None
-            if k in keys or seen_before(h, hashes):
+            if already_shown(p, keys, k) or seen_before(h, hashes):
                 continue
-            keys.add(k)
+            mark_shown(p, keys, k)
             if h is not None:
                 hashes.append(h)
             keep.append(p)

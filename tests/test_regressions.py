@@ -705,6 +705,22 @@ class OnePhotoOnce(unittest.TestCase):
                     "20150401 MCDAAG Jaylen Brown floater (1).JPG"):
             self.assertFalse(base_name(own)[1], own)
 
+    def test_commons_files_found_through_openverse(self):
+        """Run 43088629255: "Jaylen Brown 2022" and "Jaylen Brown 2022 (cropped)" came through
+        Openverse (source "Wikimedia via Openverse") and were both shown."""
+        from picture_ids import already_shown, mark_shown
+        ov = lambda t, cur: {"kind": "photo", "source": "Wikimedia via Openverse", "title": t,
+                             "page": f"https://commons.wikimedia.org/w/index.php?curid={cur}",
+                             "url": "https://upload.wikimedia.org/wikipedia/commons/a/a0/x.jpg"}
+        shown = set()
+        mark_shown(ov("Jaylen Brown 2022", 115872550), shown)
+        self.assertTrue(already_shown(ov("Jaylen Brown 2022 (cropped)", 131264916), shown))
+        self.assertTrue(already_shown(_commons("Jaylen Brown 2022 (cropped).jpg"), shown))   # across sources
+        self.assertFalse(already_shown(ov("Jaylen Brown (51840869654)", 115872551), shown))  # another file
+        flickr = {"kind": "photo", "source": "Flickr", "title": "Jaylen Brown 2022 (cropped)",
+                  "page": "https://www.flickr.com/photos/x/1", "url": "https://live.staticflickr.com/1.jpg"}
+        self.assertFalse(already_shown(flickr, shown))                                       # not Commons
+
     def test_fill_never_brings_another_crop(self):
         import media
         saved = {k: getattr(media, k) for k in ("person_photos", "download", "picture_hash", "image_ok")}

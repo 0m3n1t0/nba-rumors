@@ -26,6 +26,16 @@ from __future__ import annotations
 import re
 
 COMMONS = "Wikimedia Commons"
+
+
+def from_commons(item: dict) -> bool:
+    """A Commons file, found on Commons or through Openverse ("Wikimedia via Openverse", the same
+    file under its title without the extension). Run 43088629255: "Jaylen Brown 2022" and
+    "Jaylen Brown 2022 (cropped)" came through Openverse and were both shown."""
+    src = item.get("source") or ""
+    return src == COMMONS or ("wikimedia" in src.lower()
+                              and "commons.wikimedia.org" in (item.get("page") or item.get("url") or "")
+                              ) or "upload.wikimedia.org" in (item.get("url") or "")
 EXTENSION = re.compile(r"\.(jpe?g|png|webp|tiff?|gif)$", re.I)
 DERIVED_FROM = re.compile(r"\bFile:\s*([^|\]\n:]+?\.(?:jpe?g|png|webp|tiff?|gif))", re.I)
 NAMED_CROP = re.compile(r"\s*\(\s*([^()\d]+?)\s*\)$")   # "(White)", "(Tatum and Brown)"
@@ -46,7 +56,7 @@ def base_name(title: str) -> tuple[str, bool]:
 def crop_keys(item: dict) -> tuple[set[str], set[str]]:
     """(what this picture marks as shown, what it must not meet). Empty for non-Commons photos
     and clips: their page / fingerprint checks stay exactly as before."""
-    if item.get("kind") != "photo" or item.get("source") != COMMONS or not item.get("title"):
+    if item.get("kind") != "photo" or not from_commons(item) or not item.get("title"):
         return set(), set()
     name, cropped = base_name(item["title"])
     if not name:

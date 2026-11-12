@@ -77,11 +77,17 @@ def crop_keys(item: dict) -> tuple[set[str], set[str]]:
 def already_shown(item: dict, shown: set, key: str | None = None) -> bool:
     """The picture (its own key, or another version of the same photo) is already in the Short."""
     k = key if key is not None else (item.get("id") or item.get("page"))
-    return (k is not None and k in shown) or bool(crop_keys(item)[1] & shown)
+    # burst shots seconds apart (photo_tags.py "same moment") are one picture (owner's rule:
+    # one picture never repeats in a Short; run 43208765485 showed Poole's -033 and -034)
+    moment = item.get("moment")
+    return (k is not None and k in shown) or bool(crop_keys(item)[1] & shown) \
+        or bool(moment and f"moment:{moment}" in shown)
 
 
 def mark_shown(item: dict, shown: set, key: str | None = None) -> None:
     k = key if key is not None else (item.get("id") or item.get("page"))
     if k is not None:
         shown.add(k)
+    if item.get("moment"):
+        shown.add(f"moment:{item['moment']}")
     shown |= crop_keys(item)[0]

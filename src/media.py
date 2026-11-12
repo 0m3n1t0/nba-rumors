@@ -48,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from collect import names  # same name finder as the collector
 from picture_ids import already_shown, base_name, mark_shown  # one photo in two crops = one picture
 import wiki_http  # noqa: E402  Wikimedia: token when set, waits politely on 429
+import photo_tags  # noqa: E402  every photo looked at once, tagged, then shortlisted per beat
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -175,6 +176,8 @@ BEATS_JSON"""
 
 PICK_PROMPT = """You are the photo and video editor of a vertical NBA news Short. In this folder there
 is one contact sheet per beat: beat_0.jpg, beat_1.jpg, ... Open EVERY sheet with the Read tool.
+A beat with many candidates continues on more sheets (beat_0_2.jpg, beat_0_3.jpg): its numbers
+continue across them, so open those too and judge the beat's candidates together.
 Each sheet shows numbered candidates. A clip shows 3 frames (start, middle, end of the clip).
 
 Judge every picture against the WHOLE STORY, never against one phrase. Every line of this Short
@@ -213,6 +216,9 @@ a school jersey is not the man in this NBA story.
 OFF COURT: a clinic, camp, school visit, charity or promo event (kids or students around him, a
 gym with no game, a stage) is not a game or a feud photo. When the line is about a game, a
 clash or a trade, score it 4 at most; it fits only a line about that event.
+A POLITICAL event (the White House, a president or a politician, a government ceremony) is OFF
+COURT too (owner, 2026-11-12: Biden in 5 shots of an injury Short): score it 3 at most, unless
+the line is about that very event or that politician; then it fits like any other photo.
 Score honestly and never inflate a clip: the pipeline already prefers clips when they are
 about as relevant. Between equal clips: REAL CLIP > STOCK CLIP. A wrong person always scores 0.
 Nothing may repeat: never pick a candidate already picked for an earlier beat.
@@ -1151,8 +1157,13 @@ def image_ok(path: Path) -> bool:
         return False
 
 
+SHEET_ROWS = 3   # rows per contact sheet: more rows shrink every tile when Claude reads it
+
+
 def contact_sheet(cands: list[dict], path: Path, title: str) -> None:
-    """Numbered tiles; a clip gets 3 frames in one wide tile."""
+    """Numbered tiles; a clip gets 3 frames in one wide tile. At most SHEET_ROWS rows a sheet:
+    a beat with more candidates continues on beat_N_2.jpg, beat_N_3.jpg (numbers continue).
+    One tall sheet of 17 tiles was shrunk to about 270 px a tile before Claude saw it."""
     try:
         f = ImageFont.truetype(SHEET_FONT, 30)
     except OSError:
@@ -1183,21 +1194,25 @@ def contact_sheet(cands: list[dict], path: Path, title: str) -> None:
         row.append(t)
         x += t.width + 16
     rows.append(row)
-    height = 60 + sum(max(t.height for t in r) + 16 for r in rows)
-    sheet = Image.new("RGB", (width, height), "#111")
-    ImageDraw.Draw(sheet).text((10, 12), title[:110], font=f, fill="#FFFFFF")
-    y = 60
-    for r in rows:
-        x = 0
-        for t in r:
-            sheet.paste(t, (x, y))
-            x += t.width + 16
-        y += max(t.height for t in r) + 16
-    sheet.save(path, quality=85)
+    for page in range(0, len(rows), SHEET_ROWS):
+        part = rows[page:page + SHEET_ROWS]
+        height = 60 + sum(max(t.height for t in r) + 16 for r in part)
+        sheet = Image.new("RGB", (width, height), "#111")
+        more = f" (part {page // SHEET_ROWS + 1})" if len(rows) > SHEET_ROWS else ""
+        ImageDraw.Draw(sheet).text((10, 12), (title[:100] + more), font=f, fill="#FFFFFF")
+        y = 60
+        for r in part:
+            x = 0
+            for t in r:
+                sheet.paste(t, (x, y))
+                x += t.width + 16
+            y += max(t.height for t in r) + 16
+        target = path if page == 0 else path.with_name(f"{path.stem}_{page // SHEET_ROWS + 1}{path.suffix}")
+        sheet.save(target, quality=85)
 
 
 def candidates(p: dict, work: Path, i: int, used: set, main_person: str = "",
-               others: tuple = ()) -> list[dict]:
+               others: tuple = (), shortlist: list[dict] | None = None) -> list[dict]:
     """Real clips first (the person, then real basketball games), then photos of the person,
     then stock clips for the 3 queries. Previews are downloaded for Claude to look at."""
     cands: list[dict] = []
@@ -1212,11 +1227,15 @@ def candidates(p: dict, work: Path, i: int, used: set, main_person: str = "",
             fr = frames_of(prev, c.get("duration", 0), work, f"b{i}_r{len(cands)}")
             if fr:
                 cands.append({**c, "frames": [str(x) for x in fr]})
+    offer = []
     for n, who in enumerate(dict.fromkeys(x for x in [p.get("person"), main_person] + list(others) if x)):
-        for c in photo_window(photos(who), MAX_PHOTOS if n < 2 else 2, i % 100):
-            thumb = work / f"b{i}_p{len(cands)}.jpg"
-            if download(c["url"], thumb, 60) and image_ok(thumb):
-                cands.append({**c, "thumb": str(thumb)})
+        if shortlist is not None and any(c.get("tag") for c in photos(who)):
+            continue                      # this person's photos come from the tag shortlist
+        offer += photo_window(photos(who), MAX_PHOTOS if n < 2 else 2, i % 100)
+    for c in list(shortlist or []) + offer:
+        thumb = work / f"b{i}_p{len(cands)}.jpg"
+        if download(c["url"], thumb, 60) and image_ok(thumb):
+            cands.append({**c, "thumb": str(thumb)})
     seen_ids = set()
     clips: list[dict] = []
     # the plan's own queries first (they describe this line), up to 3 clips each; then real
@@ -1323,6 +1342,7 @@ def rank_candidates(cands: list[dict], choice: dict) -> tuple:
     return ranked, claude_top, tier, scores, n_ph, bp, bc
 
 
+TITLE_DAY = re.compile(r"(?<!\d)((?:19|20)\d\d)-?(0[1-9]|1[0-2])-?(0[1-9]|[12]\d|3[01])(?!\d)")
 SERIES_NO = re.compile(r"(\s*\(\d{6,}\)|[\s_-]*\d{1,4})+$")   # " (42950693724)", "-044", " 2"
 
 
@@ -1338,12 +1358,17 @@ def scene_of(c: dict) -> tuple | None:
         return None
     if c.get("date"):
         return (author, c["date"])
+    # a date in the file name ("Joe Biden Steph Curry P20230117AS-1347"): the White House fill of
+    # run 43208765485 had no date and escaped the scene count
+    day = TITLE_DAY.search(c.get("title", ""))
+    if day:
+        return (author, f"{day.group(1)}-{day.group(2)}-{day.group(3)}")
     name = fold(base_name(c.get("title", ""))[0])
     stem = SERIES_NO.sub("", name).strip()
     return (author, "series:" + stem) if stem != name and len(stem.split()) >= 4 else None
 
 
-SCENE_MAX = 3   # photos from one scene (photographer + day = one game) per Short, while others fit
+SCENE_MAX = 3   # photos from one scene (photographer + day = one game) per Short, never more
 
 
 def scene_full(c: dict, scenes) -> bool:
@@ -1358,19 +1383,11 @@ def count_scenes(shots) -> "Counter":
 
 
 def spread_scenes(order: list[int], cands: list[dict], tier, scores: dict, scenes) -> list[int]:
-    """B11: a run once showed 9 of 13 photos from one game. A photo whose scene is already used
-    SCENE_MAX times waits behind the next candidates that are just as much about the person
-    (same tier) and still fit the line (ALT_MIN+). It never waits behind anything less related
-    or below ALT_MIN, and it is never dropped: with nothing else that fits, it is used as before."""
-    out, held = [], []
-    for j in order:
-        if scene_full(cands[j], scenes):
-            held.append(j)
-            continue
-        while held and (tier(j) < tier(held[0]) or scores.get(j, 0) < ALT_MIN):
-            out.append(held.pop(0))
-        out.append(j)
-    return out + held
+    """B11: a run once showed 9 of 13 photos from one game. Since 2026-11-12 (owner: never more
+    than 3 photos of one scene; run 43208765485 showed 5 of one White House ceremony) a photo
+    whose scene is already used SCENE_MAX times is DROPPED. A beat left with nothing gets another
+    person's photo later (fill_empty), or continues the previous picture: never a 4th shot of a scene."""
+    return [j for j in order if not scene_full(cands[j], scenes)]
 
 
 def fresh_first(order: list[int], cands: list[dict], tier, scores: dict, scenes,
@@ -1426,6 +1443,39 @@ def unjudged_ok(c: dict, who: list[str]) -> bool:
     return c.get("kind") == "photo" and any(solo_title(c, p) for p in who)
 
 
+TAG_DIAG: list[str] = []
+
+
+def shortlist_photos(short: dict, beats: list[dict], plans: list[dict]) -> dict[int, list[dict]] | None:
+    """photo_tags.py: tag every photo of the story's people (once, kept between runs), then let
+    Claude pick per beat the photos that fit the line. None = the old way (first photos)."""
+    who = list(dict.fromkeys([x for x in [p.get("person", "") for p in plans] if x and not not_a_person(x)]
+                             + people(short)[:4]))[:4]
+    if not who:
+        return None
+    try:
+        for person in who:
+            new = photo_tags.tag_person(person, photos(person), ask_claude, download, photo_era, scene_of)
+            pool = photos(person)[:photo_tags.MAX_PER_PERSON]
+            seen = sum(1 for c in pool if c.get("tag"))
+            fit = sum(1 for c in pool if photo_tags.usable(c))
+            TAG_DIAG.append(f"{short.get('_name', '')}: {person}: {len(pool)} photos, {seen} looked at "
+                            f"({new} new), {fit} show him")
+        story = f"{short.get('headline', '')} (people: {people_line(people(short)) or 'see the beats'})"
+        lists = photo_tags.shortlists(beats, plans, who, story,
+                                      {p: photos(p)[:photo_tags.MAX_PER_PERSON] for p in who},
+                                      ask_claude, photo_era, scene_of)
+        if lists is not None:
+            TAG_DIAG.append(f"{short.get('_name', '')}: shortlist per beat: "
+                            + " ".join(str(len(lists.get(i, []))) for i in range(len(plans))))
+        return lists
+    except UsageLimit:
+        raise
+    except Exception as exc:
+        MEDIA_ERRORS.append(f"photo tags: {type(exc).__name__}: {str(exc)[:120]} (first photos used)")
+        return None
+
+
 def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
     folder.mkdir(parents=True, exist_ok=True)
     REJECTED.clear()
@@ -1434,10 +1484,12 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
     work = Path(tempfile.mkdtemp(prefix="media_"))
     sheets = Path(tempfile.mkdtemp(prefix="sheets_"))  # Claude sees ONLY this folder
     try:
+        lists = shortlist_photos(short, beats, plans)
         per_beat = []
         for i, p in enumerate(plans):
             try:
-                cands = candidates(p, work, i, used, (people(short) or [""])[0], tuple(people(short)[1:3]))
+                cands = candidates(p, work, i, used, (people(short) or [""])[0], tuple(people(short)[1:3]),
+                                   lists.get(i, []) if lists is not None else None)
                 if cands:
                     contact_sheet(cands, sheets / f"beat_{i}.jpg",
                                   f"BEAT {i}: {beats[i].get('say', '')[:90]}" if i < len(beats) else f"BEAT {i}")
@@ -1800,10 +1852,15 @@ def solo_title(c: dict, person: str) -> bool:
 
 
 def person_photos(person: str, shown: set) -> list[dict]:
-    """The person's photos that are safe to use unjudged: basketball photos first."""
-    ok = [c for c in photos(person)[:20] if not already_shown(c, shown, c["page"]) and c["page"] not in REJECTED
-          and solo_title(c, person)]
-    return sorted(ok, key=lambda c: not c.get("hoops"))
+    """The person's photos that are safe to use unjudged: basketball photos first. With tags
+    (photo_tags.py) also: never one he is not in, never a political, stage, charity, red-carpet or
+    school photo (no line asked for it), and the ones with his face clearly seen first."""
+    pool = photos(person)
+    tagged = any(c.get("tag") for c in pool)
+    ok = [c for c in pool[:photo_tags.MAX_PER_PERSON if tagged else 20]
+          if not already_shown(c, shown, c["page"]) and c["page"] not in REJECTED
+          and solo_title(c, person) and photo_tags.fill_ok(c)]
+    return sorted(ok, key=photo_tags.fill_rank) if tagged else sorted(ok, key=lambda c: not c.get("hoops"))
 
 
 def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str] | None = None,
@@ -1832,10 +1889,9 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
         said = [p for p in (who or []) if fold(p.split()[-1]) in fold(lines[i] if i < len(lines) else "")]
         for person in said + [p for p in (who or []) if p not in said]:
             while faces.get(person):
-                # a photo from a scene with fewer than SCENE_MAX shots first (B11); order kept otherwise
-                faces[person].sort(key=lambda f: scene_full(f, scenes))
                 c = faces[person].pop(0)
-                if already_shown(c, shown, c["page"]):
+                # never a 4th photo of one scene (owner, 2026-11-12)
+                if already_shown(c, shown, c["page"]) or scene_full(c, scenes):
                     continue
                 path = folder / f"beat{i}_{tag}.jpg"
                 try:
@@ -2161,6 +2217,9 @@ def main() -> None:
     if BEAT_DIAG:
         report += ["", "**Why each picture won** (scores 0-10 for how well it matches the words):", ""]
         report += [f"- {d}" for d in BEAT_DIAG]
+    if TAG_DIAG:
+        report += ["", "**Every photo looked at** (tags kept between runs; the editor sees the best per beat):", ""]
+        report += [f"- {d}" for d in TAG_DIAG]
     if PHOTO_STATS:
         report += ["", "**Photos found per person** (usable, before AI judging):", ""] + [
             f"- {who}: Commons {st.get('commons', '-')} (category files read: {st.get('category', 0)}), "

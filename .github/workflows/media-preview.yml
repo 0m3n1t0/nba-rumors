@@ -1,0 +1,81 @@
+name: Media preview (read-only)
+
+# Manual only. Picks the pictures again for the Shorts of an earlier run, with the code of the
+# branch it is started on, so a change to the picture choice can be compared on the SAME scripts
+# before it reaches main. Nothing is saved: no history, no ledger, no state commit, no upload.
+# The result is one contact sheet per Short (the pictures in beat order), kept for 1 day.
+on:
+  workflow_dispatch:
+    inputs:
+      run_archive:
+        description: "Run archive in the private state repository, e.g. 2026-11-12_43208765485"
+        required: true
+        default: "2026-11-12_43208765485"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-pipeline       # never at the same time as a real run (one Claude limit)
+  cancel-in-progress: false
+
+env:
+  CLAUDE_MODEL: sonnet
+  CLAUDE_MODEL_LIGHT: haiku
+  CLAUDE_CODE_VERSION: "2.1.322"
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Private state repository (read only here)
+        uses: actions/checkout@v5
+        with:
+          repository: 0m3n1t0/nba-rumors-state
+          token: ${{ secrets.STATE_REPO_TOKEN }}
+          path: state
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+
+      - name: Restore the channel's history and the run's scripts
+        env:
+          RUN: ${{ inputs.run_archive }}
+        run: |
+          python src/state.py restore
+          mkdir -p data && tar -xzf "state/nba/runs/${RUN}.tar.gz" -C data
+          ls data/scripts data/audio
+
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Pick the pictures again (this branch's code)
+        env:
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
+          OPENVERSE_CLIENT_SECRET: ${{ secrets.OPENVERSE_CLIENT_SECRET }}
+          WIKIMEDIA_TOKEN: ${{ secrets.WIKIMEDIA_TOKEN }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/private_summary.md"   # the report stays private
+          python src/media.py
+          python src/media_preview.py
+
+      - name: Contact sheets (1 day)
+        uses: actions/upload-artifact@v6
+        with:
+          name: media-preview
+          path: data/preview/
+          retention-days: 1

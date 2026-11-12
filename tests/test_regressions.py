@@ -54,6 +54,7 @@ the "Safety tests" step before anything is installed or made.
      links the article itself, not a Google News redirect
  34. the hook is a STATED shock (owner, 2026-11-12): statements rank first, a question loses
      points; name + shock in the first 8 words; a rumor hook opens with its source
+ 35. a historic beef follows the 48-hour feud rule too (also against this run's Shorts)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1499,10 +1500,58 @@ class HistoricBeefs(unittest.TestCase):
         evergreen.fresh_news = fake
         evergreen.wikipedia_item = lambda a, b: {"title": "Feud (Wikipedia)", "link": "https://en.wikipedia.org/wiki/F",
                                                  "publisher": "Wikipedia", "tier": 1}
+        import editor                       # never read the real made history in a test
+        self.made, self.saved_made = [], editor.made_recently
+        editor.made_recently = lambda: list(self.made)
 
     def tearDown(self):
+        import editor
+        editor.made_recently = self.saved_made
         self.e.USED, self.e.fresh_news, self.e.wikipedia_item, self.e.BANK = self.saved
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_fill(self, shorts):
+        import script
+        saved = (script.build_short, script.OUT)
+        script.OUT = self.tmp
+        script.build_short = lambda n, tid, editor, voice, formulas: {"headline": editor["topics"][tid]["headline"], "beats": []}
+        try:
+            editor = {"topics": [], "ranked": []}
+            self.assertFalse(script.fill_with_evergreen(shorts, editor, "", {}))
+        finally:
+            script.build_short, script.OUT = saved
+
+    def test_same_feud_in_48_hours_is_skipped(self):
+        """35. Run 43208765485: Draymond vs Poole made 17 h after a Short on the same two people."""
+        import datetime as dt
+        import editor
+        recent = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=17)).isoformat()
+        self.made = [{"time": recent, "headline": "Fans mock Kobe's claim he'd have no issue with O'Neal",
+                      "hook": "Did Kobe really say that?"}]
+        shorts = [{"headline": "today's strong story"}]
+        self.run_fill(shorts)
+        self.assertEqual(len(shorts), 2)
+        self.assertNotEqual(shorts[1]["evergreen"], self.e.key_of("Kobe Bryant", "Shaquille O'Neal"))
+        self.assertNotIn(self.e.key_of("Kobe Bryant", "Shaquille O'Neal"), self.e.used())   # not used up
+        # older than 48 hours: allowed again
+        self.made[0]["time"] = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=50)).isoformat()
+        self.assertEqual(editor.pair_made_recently(["Kobe Bryant", "Shaquille O'Neal"], self.made), "")
+        # only ONE of the two people in that Short: not the same feud
+        self.made[0].update(time=recent, headline="Shaq rips the Lakers' bench", hook="Is Shaq right?")
+        self.assertEqual(editor.pair_made_recently(["Kobe Bryant", "Shaquille O'Neal"], self.made), "")
+
+    def test_same_feud_already_made_this_run_is_skipped(self):
+        import datetime as dt
+        import editor
+        shorts = [{"headline": "Shaquille O'Neal fires back at Kobe Bryant's old teammate", "hook": {"text": "Shaq just fired back at Kobe."}}]
+        self.run_fill(shorts)
+        self.assertEqual(len(shorts), 2)
+        self.assertNotEqual(shorts[1]["evergreen"], self.e.key_of("Kobe Bryant", "Shaquille O'Neal"))
+        real = [{"time": "2026-11-11T18:46+00:00",
+                 "headline": "'Would Welcome With Closed Fists,' 'Stop Lying' - NBA Fans Mock Draymond Green's Claim "
+                             "That He'd Have 'No Issue' With Jordan Poole Warriors Reunion", "hook": ""}]
+        now = dt.datetime(2026, 11, 12, 11, 28, tzinfo=dt.timezone.utc)
+        self.assertTrue(editor.pair_made_recently(["Draymond Green", "Jordan Poole"], real, now))
 
     def test_only_fresh_and_not_recent(self):
         e = self.e

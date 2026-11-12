@@ -1970,9 +1970,21 @@ def fill_with_evergreen(shorts: list[dict], editor: dict, voice: str, formulas: 
     except Exception as exc:          # the bank must never cost the day's real Shorts
         print(f"[!] evergreen search failed: {exc}")
         return False
+    from datetime import datetime, timezone
+    import editor as editor_mod
     for c in found:
         if quota_reached(shorts):
             break
+        # ONE FEUD, ONE SHORT IN 48 HOURS also for the historic beefs (run 43208765485), and
+        # never twice in one run
+        now = datetime.now(timezone.utc)
+        made = editor_mod.made_recently() + [{"time": now.isoformat(), "headline": x.get("headline", ""),
+                                              "hook": (x.get("hook") or {}).get("text", "")} for x in shorts]
+        earlier = editor_mod.pair_made_recently(c["people"], made, now)
+        if earlier:
+            print(f"[i] historic beef {c['key']} skipped: same two people in a Short of the last 48 h")
+            SKIPPED.append(f"historic beef {c['key']}: same feud made in the last 48 h ({earlier[:70]})")
+            continue
         topic_id = len(editor["topics"])
         editor["topics"].append({"headline": c["headline"], "items": c["items"], "verified": True,
                                  "outlets": len(c["items"]), "star_names": c["people"], "evergreen": c["key"]})

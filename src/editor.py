@@ -420,6 +420,29 @@ def same_feud_recent(topic: dict, made: list[dict], now=None) -> str:
     return ""
 
 
+def pair_made_recently(people: list[str], made: list[dict], now=None) -> str:
+    """Run 43208765485: the historic-beef fill made Draymond vs Poole 17 hours after a Short on
+    the same two people. A historic beef is a repeat when both its people were in a Short of the
+    last FEUD_HOURS (no major-turn exception: a real new turn arrives as ordinary news and is
+    judged there). Returns the earlier Short's headline, or ""."""
+    from datetime import datetime, timezone
+    # each person by surname OR first name: headlines say "Draymond" or "Kobe" as often as the
+    # surname. A wrong match only skips this one beef; the next one is tried.
+    names = [w[:1] + w[-1:] for n in people if (w := fold(re.sub(r"\s+[\d.]+$", "", n)).split())]
+    if len(names) < 2:
+        return ""
+    now = now or datetime.now(timezone.utc)
+    for m in made:
+        try:
+            age = (now - datetime.fromisoformat(m["time"])).total_seconds() / 3600
+        except (KeyError, ValueError, TypeError):
+            continue
+        text = fold(f"{m.get('headline', '')} {m.get('hook', '')}")
+        if age < FEUD_HOURS and all(any(re.search(rf"\b{re.escape(x)}\b", text) for x in w) for w in names):
+            return m.get("headline", "")
+    return ""
+
+
 def made_recently() -> list[dict]:
     try:
         return json.loads((DATA / "history" / "made.json").read_text(encoding="utf-8"))

@@ -1893,11 +1893,21 @@ class EveryPhotoLookedAt(unittest.TestCase):
         import media
         self.t, self.m = photo_tags, media
         self.tmp = Path(tempfile.mkdtemp())
-        self.saved = photo_tags.CACHE
+        self.saved = (photo_tags.CACHE, photo_tags.fetch_thumbs, photo_tags._sleep)
         photo_tags.CACHE = self.tmp / "tags.json"
+        photo_tags._sleep = lambda s: None
+
+        def thumbs(urls, folder, ua):
+            out = []
+            for k, u in enumerate(urls):
+                p = folder / f"t{k}.jpg"
+                self.fake_download(u, p)
+                out.append(p)
+            return out
+        photo_tags.fetch_thumbs = thumbs
 
     def tearDown(self):
-        self.t.CACHE = self.saved
+        self.t.CACHE, self.t.fetch_thumbs, self.t._sleep = self.saved
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def ph(self, n, date="2022-02-20", author="Erik Drost"):
@@ -1928,17 +1938,69 @@ class EveryPhotoLookedAt(unittest.TestCase):
             self.assertIn("Steph Curry", prompt)
             return {"photos": [{"n": k, "v": "A" if k == 11 else "C", "s": "game", "e": "calm", "t": "plays"}
                                for k in range(1, 12)], "same": [[2, 3]]}
-        n = self.t.tag_person("Steph Curry", pool, ask, self.fake_download, self.m.photo_era, self.m.scene_of)
+        n = self.t.tag_person("Steph Curry", pool, ask, "ua", self.m.photo_era, self.m.scene_of)
         self.assertEqual(n, 11)
         self.assertEqual(calls, [["tags_1.jpg", "tags_2.jpg"]])          # 9 a sheet
         self.assertEqual(pool[1]["moment"], pool[2]["moment"])
         self.assertFalse(self.t.usable(pool[10]))
         fresh = [self.ph(n) for n in range(1, 12)]
-        self.assertEqual(self.t.tag_person("Steph Curry", fresh, ask, self.fake_download,
+        self.assertEqual(self.t.tag_person("Steph Curry", fresh, ask, "ua",
                                            self.m.photo_era, self.m.scene_of), 0)
         self.assertEqual(len(calls), 1)                                   # kept: no second look
         self.assertEqual(fresh[0]["tag"]["s"], "game")
         self.assertEqual(fresh[1]["moment"], fresh[2]["moment"])
+
+    def test_big_pools_are_asked_in_parts_and_a_broken_answer_once_more(self):
+        """Preview 43222583073: one call for 120+ photos returned broken JSON and the whole Short
+        fell back. Now 45 a call; a broken answer is asked again once, then only that part waits."""
+        pool = [self.ph(n) for n in range(1, 101)]
+        calls = []
+
+        def ask(prompt, folder=None, timeout=0):
+            calls.append(len(os.listdir(folder)))
+            if len(calls) in (2, 4, 5):
+                raise ValueError("Expecting ',' delimiter")
+            n = min(45, 100 - 45 * (0 if len(calls) == 1 else 1 if len(calls) == 3 else 2))
+            return {"photos": [{"n": k, "v": "C", "s": "game", "e": "calm", "t": "x"} for k in range(1, n + 1)]}
+        n = self.t.tag_person("Steph Curry", pool, ask, "ua", self.m.photo_era, self.m.scene_of)
+        self.assertEqual(calls, [5, 5, 5, 2, 2])      # 45 + 45 + 10 photos; part 2 asked twice
+        self.assertEqual(n, 90)                       # the last part failed twice: untagged this run
+        self.assertTrue(all(c.get("tag") for c in pool[:90]))
+        self.assertFalse(any(c.get("tag") for c in pool[90:]))
+
+    def test_thumbnails_one_at_a_time_and_stop_on_a_second_429(self):
+        import urllib.error
+        import urllib.request
+        t = self.t
+        t.fetch_thumbs = self.saved[1]
+        seen, slept = [], []
+        t._sleep = slept.append
+
+        class Resp:
+            def __init__(self, b): self.b = b
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return self.b
+
+        def fake_open(req, timeout=0):
+            seen.append(req.full_url)
+            if req.full_url.endswith("/2.jpg"):
+                raise urllib.error.HTTPError(req.full_url, 429, "slow down", {"Retry-After": "7"}, None)
+            from io import BytesIO
+            from PIL import Image
+            buf = BytesIO()
+            Image.new("RGB", (50, 50)).save(buf, "JPEG")
+            return Resp(buf.getvalue())
+        saved_open = urllib.request.urlopen
+        urllib.request.urlopen = fake_open
+        try:
+            got = t.fetch_thumbs([f"https://upload.wikimedia.org/{k}.jpg" for k in range(1, 7)], self.tmp, "ua")
+        finally:
+            urllib.request.urlopen = saved_open
+        self.assertEqual([bool(x) for x in got], [True, False, False, False, False, False])
+        self.assertEqual(len(seen), 3)                # 1 ok; 2: 429, waited 7 s, 429 again: stop
+        self.assertIn(7.0, slept)
+        self.assertIn(t.PACE, slept)
 
     def test_same_moment_is_one_picture(self):
         from picture_ids import already_shown, mark_shown
@@ -2007,6 +2069,7 @@ class EveryPhotoLookedAt(unittest.TestCase):
     def test_unjudged_top_ups_use_the_tags(self):
         m = self.m
         pool = [{**self.ph(1), "title": "Steph Curry White House.jpg", "tag": {"v": "C", "s": "political"}},
+                {**self.ph(6), "title": "Steph Curry Davidson.jpg", "team": "pre-nba"},
                 {**self.ph(2), "title": "Steph Curry popcorn.jpg", "tag": {"v": "A", "s": "other"}},
                 {**self.ph(3), "title": "Steph Curry stage.jpg", "tag": {"v": "C", "s": "stage"}},
                 {**self.ph(4), "title": "Steph Curry far.jpg", "tag": {"v": "S", "s": "game"}, "hoops": True},

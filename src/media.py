@@ -1458,7 +1458,7 @@ def shortlist_photos(short: dict, beats: list[dict], plans: list[dict]) -> dict[
         return None
     try:
         for person in who:
-            new = photo_tags.tag_person(person, photos(person), ask_claude, download, photo_era, scene_of)
+            new = photo_tags.tag_person(person, photos(person), ask_claude, UA, photo_era, scene_of)
             pool = photos(person)[:photo_tags.MAX_PER_PERSON]
             seen = sum(1 for c in pool if c.get("tag"))
             fit = sum(1 for c in pool if photo_tags.usable(c))

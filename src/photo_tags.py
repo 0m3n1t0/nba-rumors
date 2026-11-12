@@ -29,7 +29,6 @@ import re
 import shutil
 import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -39,6 +38,11 @@ CACHE = Path(os.environ.get("NBA_TAG_CACHE") or ROOT / "data" / "history" / "pho
 PER_SHEET, COLS, CELL = 9, 3, 470   # 3 x 3 tiles of about 470 px: a whole sheet stays under the
                                     # size Claude sees without shrinking (about 1568 px)
 MAX_PER_PERSON = 150                # tagged per person (Curry: 94 Commons + 28 Openverse)
+PER_CALL = 45                       # photos per Claude call (5 sheets): a short answer stays valid JSON
+                                    # (preview 43222583073: one call for 120+ photos broke its JSON)
+PACE = 0.35                         # seconds between thumbnail downloads: Wikimedia's file servers
+                                    # answered 429 to 4 parallel downloads (preview 43222583073), and the
+                                    # shared 429 budget was then gone for the Short's real pictures
 SHORTLIST = 8                       # photos the editor sees per beat (was 3 of one person's first 12)
 VISIBLE = {"C", "S", "B"}           # C clear face, S small/far, B from behind; A absent, O someone else
 SCENES = ("game", "warmup", "bench", "interview", "practice", "allstar", "national", "pre_nba",
@@ -66,8 +70,8 @@ file name, never a guess. For EVERY number return:
   "e": the emotion HIS face or body shows: "angry", "intense" (focused, shouting, competing),
        "celebrating", "hurt" (in pain, injured, limping, being helped), "sad" (dejected, head
        down), "smiling", "calm", or "unclear" when his face cannot be read. Never guess.
-  "t": what he is doing, at most 8 plain words ("walks off head down, Warriors jersey",
-       "shoots a three", "laughs on a stage").
+  "t": what he is doing, at most 8 plain words, no quotation marks ("walks off head down,
+       Warriors jersey", "shoots a three", "laughs on a stage").
 Also list the photos that are THE SAME MOMENT (burst shots seconds apart: same place, same people,
 same pose; or a crop of another tile) as groups of numbers: "same": [[3, 4], [10, 11, 12]].
 Return ONLY JSON: {"photos":[{"n":1,"v":"C","s":"game","e":"sad","t":"walks off head down"}, ...],
@@ -125,6 +129,48 @@ def thumb_url(url: str) -> str:
     if "/thumb/" in url:
         return re.sub(r"/\d+px-", "/500px-", url.split("?")[0])
     return url
+
+
+def fetch_thumbs(urls: list[str], folder: Path, ua: str) -> list[Path | None]:
+    """One at a time, politely. A 429 is waited out once (as long as Wikimedia asks, 30 s at
+    most); a second 429 stops this person's thumbnails (the rest stay untagged this run) so the
+    Short's own pictures are never starved. Never touches wiki_http's shared waiting budget."""
+    import urllib.error
+    import urllib.request
+    out: list[Path | None] = []
+    blocked = False
+    for k, url in enumerate(urls):
+        p = folder / f"t{k}.jpg"
+        got = None
+        for attempt in range(2):
+            if blocked:
+                break
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": ua})
+                with urllib.request.urlopen(req, timeout=40) as r:
+                    p.write_bytes(r.read())
+                got = p if readable(p) else None
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code in (429, 503) and attempt == 0:
+                    try:
+                        wait = min(30.0, max(2.0, float(exc.headers.get("Retry-After", "5"))))
+                    except (TypeError, ValueError, AttributeError):
+                        wait = 5.0
+                    _sleep(wait)
+                    continue
+                blocked = exc.code in (429, 503)
+                break
+            except Exception:
+                break
+        out.append(got)
+        _sleep(PACE)
+    if blocked:
+        print(f"[!] photo tags: Wikimedia asked to slow down; {sum(1 for x in out if x)} of {len(urls)} thumbnails this run")
+    return out
+
+
+_sleep = time.sleep   # tests replace it
 
 
 def readable(path: Path) -> bool:
@@ -186,9 +232,11 @@ def parse_tags(out: dict, n: int) -> tuple[dict[int, dict], list[list[int]]]:
     return tags, groups
 
 
-def tag_person(person: str, pool: list[dict], ask, download, era, scene_of) -> int:
+def tag_person(person: str, pool: list[dict], ask, ua: str, era, scene_of) -> int:
     """Tags every photo of the person not tagged before; puts "tag" (and "moment" for burst
-    shots) on the photo dicts. Returns how many photos were newly tagged."""
+    shots) on the photo dicts. Returns how many photos were newly tagged. Up to PER_CALL photos
+    per Claude call; a call whose answer is broken is asked once more, then skipped (those
+    photos stay untagged this run, the others keep their tags)."""
     cache = _cache()
     pool = pool[:MAX_PER_PERSON]
     for c in pool:
@@ -200,38 +248,40 @@ def tag_person(person: str, pool: list[dict], ask, download, era, scene_of) -> i
     # the same scene together and in file order, so burst shots sit side by side on one sheet
     todo.sort(key=lambda c: (str(scene_of(c) or ("~", c.get("title", ""))), c.get("title", "")))
     work = Path(tempfile.mkdtemp(prefix="tags_"))
+    done = 0
     try:
-        def fetch(k):
-            p = work / f"t{k}.jpg"
-            for wait in (0, 3, 8):
-                time.sleep(wait)
-                if download(thumb_url(todo[k]["url"]), p, 60) and readable(p):
-                    return p
-            return None
-        with ThreadPoolExecutor(4) as ex:
-            got = list(ex.map(fetch, range(len(todo))))
-        have = [(c, p) for c, p in zip(todo, got) if p]
-        if not have:
-            return 0
-        folder = work / "sheets"
-        folder.mkdir()
-        names = sheets([c for c, _ in have], [p for _, p in have], folder, era)
-        prompt = (TAG_PROMPT.replace("PERSON_NAME", person)
-                  .replace("SHEETS", ", ".join(names)))
-        out = ask(prompt, folder=str(folder), timeout=900)
-        tags, groups = parse_tags(out, len(have))
-        for g in groups:              # the moment is named after its first photo
-            first = have[g[0] - 1][0]["page"]
-            for k in g:
+        got = fetch_thumbs([thumb_url(c["url"]) for c in todo], work, ua)
+        have_all = [(c, p) for c, p in zip(todo, got) if p]
+        for start in range(0, len(have_all), PER_CALL):
+            have = have_all[start:start + PER_CALL]
+            folder = work / f"sheets_{start}"
+            folder.mkdir()
+            names = sheets([c for c, _ in have], [p for _, p in have], folder, era)
+            prompt = (TAG_PROMPT.replace("PERSON_NAME", person)
+                      .replace("SHEETS", ", ".join(names)))
+            out = None
+            for _attempt in range(2):
+                try:
+                    out = ask(prompt, folder=str(folder), timeout=900)
+                    break
+                except ValueError as exc:          # a broken JSON answer: ask once more
+                    print(f"[!] photo tags for {person}: answer not readable ({str(exc)[:80]})")
+            if out is None:
+                continue
+            tags, groups = parse_tags(out, len(have))
+            for g in groups:              # the moment is named after its first photo
+                first = have[g[0] - 1][0]["page"]
+                for k in g:
+                    if k in tags:
+                        tags[k]["m"] = first
+            cache = _cache()              # re-read: another Short of this run may have saved meanwhile
+            for k, (c, _) in enumerate(have, 1):
                 if k in tags:
-                    tags[k]["m"] = first
-        cache = _cache()              # re-read: another Short of this run may have saved meanwhile
-        for k, (c, _) in enumerate(have, 1):
-            if k in tags:
-                cache[c["page"]] = {**tags[k], "who": person, "at": time.strftime("%Y-%m-%d")}
-                _apply(c, cache[c["page"]])
-        _save(cache)
-        return len(tags)
+                    cache[c["page"]] = {**tags[k], "who": person, "at": time.strftime("%Y-%m-%d")}
+                    _apply(c, cache[c["page"]])
+            _save(cache)
+            done += len(tags)
+        return done
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -291,5 +341,9 @@ def fill_rank(c: dict) -> tuple:
 
 
 def fill_ok(c: dict) -> bool:
+    """An unjudged top-up: never a school photo (preview 43222583073: Poole at Michigan twice),
+    never one he is not in, never an event no line asked for. Untagged ones come last (fill_rank)."""
+    if c.get("team") == "pre-nba":
+        return False
     t = c.get("tag")
     return not t or (t.get("v") in VISIBLE and t.get("s") not in NOT_BY_DEFAULT)

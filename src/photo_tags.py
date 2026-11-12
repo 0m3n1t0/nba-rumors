@@ -288,9 +288,9 @@ def tag_person(person: str, pool: list[dict], ask, ua: str, era, scene_of) -> in
     try:
         got = fetch_thumbs([thumb_url(c["url"]) for c in todo], work, ua)
         have_all = [(c, p) for c, p in zip(todo, got) if p]
-        for start in range(0, len(have_all), PER_CALL):
-            have = have_all[start:start + PER_CALL]
-            folder = work / f"sheets_{start}"
+
+        def tag_batch(have: list, name: str) -> int:
+            folder = work / name
             folder.mkdir()
             names = sheets([c for c, _ in have], [p for _, p in have], folder, era)
             prompt = (TAG_PROMPT.replace("PERSON_NAME", person)
@@ -303,7 +303,7 @@ def tag_person(person: str, pool: list[dict], ask, ua: str, era, scene_of) -> in
                 except ValueError as exc:          # nothing readable at all: ask once more
                     print(f"[!] photo tags for {person}: answer not readable ({str(exc)[:80]})")
             if out is None:
-                continue
+                return 0
             tags, groups = parse_tags(out, len(have))
             for g in groups:              # the moment is named after its first photo
                 first = have[g[0] - 1][0]["page"]
@@ -316,7 +316,17 @@ def tag_person(person: str, pool: list[dict], ask, ua: str, era, scene_of) -> in
                     cache[c["page"]] = {**tags[k], "who": person, "at": time.strftime("%Y-%m-%d")}
                     _apply(c, cache[c["page"]])
             _save(cache)
-            done += len(tags)
+            return len(tags)
+
+        for start in range(0, len(have_all), PER_CALL):
+            done += tag_batch(have_all[start:start + PER_CALL], f"sheets_{start}")
+        # owner, 2026-11-13: a photo that missed its tags (a broken entry, a whole part that failed)
+        # must still be looked at, not left out: one more pass for exactly those, this run
+        left = [(c, p) for c, p in have_all if not c.get("tag")]
+        if left:
+            print(f"[i] photo tags for {person}: {len(left)} photos missed their tags, looking again")
+            for start in range(0, len(left), PER_CALL):
+                done += tag_batch(left[start:start + PER_CALL], f"again_{start}")
         return done
     finally:
         shutil.rmtree(work, ignore_errors=True)

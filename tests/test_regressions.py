@@ -2000,13 +2000,14 @@ class EveryPhotoLookedAt(unittest.TestCase):
             calls.append(len(os.listdir(folder)))
             if len(calls) in (2, 4, 5):
                 raise ValueError("Expecting ',' delimiter")
-            n = min(45, 100 - 45 * (0 if len(calls) == 1 else 1 if len(calls) == 3 else 2))
+            n = len(os.listdir(folder)) and min(45, 100 - 45 * (0 if len(calls) == 1 else 1 if len(calls) == 3 else 2))
             return {"photos": [{"n": k, "v": "C", "s": "game", "e": "calm", "t": "x"} for k in range(1, n + 1)]}
         n = self.t.tag_person("Steph Curry", pool, ask, "ua", self.m.photo_era, self.m.scene_of)
-        self.assertEqual(calls, [5, 5, 5, 2, 2])      # 45 + 45 + 10 photos; part 2 asked twice
-        self.assertEqual(n, 90)                       # the last part failed twice: untagged this run
-        self.assertTrue(all(c.get("tag") for c in pool[:90]))
-        self.assertFalse(any(c.get("tag") for c in pool[90:]))
+        # 45 + 45 + 10 photos; part 2 asked twice; the last part failed twice, so its 10 photos get
+        # one more look (owner, 2026-11-13), which answers
+        self.assertEqual(calls, [5, 5, 5, 2, 2, 2])
+        self.assertEqual(n, 100)
+        self.assertTrue(all(c.get("tag") for c in pool))
 
     def test_a_broken_answer_keeps_its_good_entries(self):
         """40. Run 43288011054: one broken spot in a 45-photo answer, twice, lost all 45 tags."""
@@ -2021,9 +2022,18 @@ class EveryPhotoLookedAt(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.t.parse_answer("Sorry, I cannot see the sheets.")
         pool = [self.ph(n) for n in range(1, 5)]
-        n = self.t.tag_person("Steph Curry", pool, lambda *a, **k: broken, "ua", self.m.photo_era, self.m.scene_of)
-        self.assertEqual(n, 3)
-        self.assertEqual([bool(c.get("tag")) for c in pool], [True, False, True, True])
+        answers = [broken, '{"photos":[{"n":1,"v":"C","s":"game","e":"smiling","t":"holds the MVP trophy"}]}']
+        sheets_seen = []
+
+        def ask(prompt, folder=None, timeout=0, **kw):
+            sheets_seen.append(len(os.listdir(folder)))
+            return answers.pop(0)
+        n = self.t.tag_person("Steph Curry", pool, ask, "ua", self.m.photo_era, self.m.scene_of)
+        # owner, 2026-11-13: the photo whose entry broke is looked at again, not left out
+        self.assertEqual(n, 4)
+        self.assertEqual(sheets_seen, [1, 1])
+        self.assertEqual(pool[1]["tag"]["t"], "holds the MVP trophy")
+        self.assertTrue(all(c.get("tag") for c in pool))
 
     def test_untagged_photo_never_fills_when_the_person_has_tags(self):
         m = self.m

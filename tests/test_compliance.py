@@ -291,10 +291,12 @@ class Stage3(unittest.TestCase):
     def test_17_hook_score_nba(self):
         import script
         import hookscore
-        clash = "Did Jason Kidd just fire back at Doc Rivers over Giannis Antetokounmpo's basketball IQ?"
+        clash = "Jason Kidd just fired back at Doc Rivers over Giannis Antetokounmpo's basketball IQ."
         vague = "What happened yesterday was surprising for many people around the league?"
         self.assertGreater(script.nba_hook_score(clash)[1], hookscore.score(clash)[1])
-        self.assertEqual(script.nba_hook_score(vague)[1], hookscore.score(vague)[1])   # no free points
+        self.assertLessEqual(script.nba_hook_score(vague)[1], hookscore.score(vague)[1])   # no free points
+        vague_said = "What happened yesterday was surprising for many people around the league."
+        self.assertLessEqual(script.nba_hook_score(vague_said)[1], hookscore.score(vague_said)[1])
 
     # SEO: an accented name matches its plain spelling, and the tags carry both
     def test_18_seo_names(self):
@@ -511,7 +513,7 @@ class Stage3(unittest.TestCase):
     def test_29_hook_craft_commentary_interview(self):
         import script, compliance, media
         weak = "Did Jonathan Kuminga just go off on Rudy Gobert again, and is this where it breaks in Minnesota?"
-        strong = "Did Jonathan Kuminga just scream at Rudy Gobert on camera, mid-game?"
+        strong = "Jonathan Kuminga just screamed at Rudy Gobert on camera, mid-game."   # a stated shock (2026-11-12)
         self.assertIn("two questions", [f for f, _ in script.hook_flaws(weak)])
         self.assertEqual(script.hook_flaws(strong), [])
         self.assertIn("fog word", [f for f, _ in script.hook_flaws("Is the Celtics drama about to explode?")])

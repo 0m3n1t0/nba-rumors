@@ -106,6 +106,9 @@ SENTENCE_HEDGE = re.compile(
     r"could|might|may|expected to|in talks|linked|eyeing|interested|considering|thinks?|believes?|"
     r"predicts?|expects?|suggest(s|ed)?|speculat\w*|whispers?|buzz|hears?|heard|apparently|allegedly)\b",
     re.I)
+# The stated-shock hook opens a rumor with its source and a colon ("Shams: the Lakers are
+# shopping Reaves."): that names the source in the same sentence, so it counts as attribution.
+SOURCE_LEAD = re.compile(r"^\s*(?:[A-Z][\w.'’-]*\s+){0,4}[A-Z][\w.'’-]*\s*:\s")
 CONTENT_WORD = re.compile(r"[a-z]{4,}")
 # A sentence ends at . ! ? followed by space, but NOT after an initial or a short title:
 # "So was Stephen A. smart to stand down?" is ONE question (run 43088629255: the split made
@@ -136,7 +139,12 @@ def bare_claims(claims: list[dict], spoken: str) -> list[str]:
             n = len(want & set(CONTENT_WORD.findall(fold(x))))
             if n > best_n:
                 best, best_n = x, n
-        if best and best_n >= max(2, len(want) // 2) and not SENTENCE_HEDGE.search(best):
+        lead = SOURCE_LEAD.search(best or "")
+        # "Lakers: Reaves is on the block." is a headline, not a source: the lead must not be
+        # one of the claim's own words
+        sourced = bool(lead) and not (set(CONTENT_WORD.findall(fold(lead.group(0)))) & want)
+        if best and best_n >= max(2, len(want) // 2) and not SENTENCE_HEDGE.search(best) \
+                and not sourced:
             out.append(c.get("text", ""))
     return out
 

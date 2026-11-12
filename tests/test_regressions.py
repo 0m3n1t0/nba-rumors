@@ -52,6 +52,8 @@ the "Safety tests" step before anything is installed or made.
  33. run 43199348111: a meaning word ("on-screen") is never dropped; the same Commons file from
      two sources is one picture; Openverse needs the full name as one phrase; the description
      links the article itself, not a Google News redirect
+ 34. the hook is a STATED shock (owner, 2026-11-12): statements rank first, a question loses
+     points; name + shock in the first 8 words; a rumor hook opens with its source
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1184,7 +1186,8 @@ class HookPick(unittest.TestCase):
         self.assertIn("Giannis Antetokounmpo, Doc Rivers", p)      # names, not their fame numbers
         self.assertNotIn("3.4", p)
         self.assertIn("Doc Rivers questioned Giannis's IQ", p)      # the whole Short
-        self.assertIn("THE SHORT ANSWERS IT", p)
+        self.assertIn("THE SHORT PAYS IT OFF", p)
+        self.assertIn("THE FIRST 3 SECONDS", p)
         self.assertIn("A STRANGER GETS IT AT ONCE", p)
         self.assertTrue(got[0]["intrigue_pick"])
         self.assertEqual(got[0]["text"], hooks[1]["text"])
@@ -1777,6 +1780,43 @@ class Run43199348111(unittest.TestCase):
         import inspect
         import script
         self.assertIn("s.get('url') or s['link']", inspect.getsource(script))
+
+
+class StatedShockHook(unittest.TestCase):
+    """34. Owner, 2026-11-12: "Did Gilbert Arenas really call...?" is not shocking enough;
+    "Gilbert Arenas called Ayesha Curry the only blemish..." is. The first 3 seconds decide."""
+
+    STATED = "Gilbert Arenas just called Ayesha Curry the only blemish on Steph Curry's family."
+    ASKED = "Did Gilbert Arenas really call Ayesha Curry the only blemish in Stephen Curry's family?"
+
+    def test_statement_is_a_valid_hook_and_ranks_first(self):
+        import script
+        self.assertTrue(script.one_question(self.STATED))
+        self.assertTrue(script.one_question(self.ASKED))              # a question still works
+        self.assertFalse(script.one_question("Arenas. Curry. Blemish."))  # never two sentences
+        self.assertGreater(script.nba_hook_score(self.STATED)[1], script.nba_hook_score(self.ASKED)[1])
+        self.assertIn("question, not a stated shock", [f for f, _ in script.hook_flaws(self.ASKED)])
+        self.assertGreaterEqual(script.nba_hook_score(self.STATED)[1], 40)  # usable: no extra rewrite call
+        hooks = [{"text": self.ASKED, "question": True, "score": 50},
+                 {"text": self.STATED, "question": True, "score": 41}]
+        hooks.sort(key=script.hook_rank)
+        self.assertEqual(hooks[0]["text"], self.STATED)
+
+    def test_rules_and_safety(self):
+        import script
+        p = script.PROMPT
+        for need in ("THE HOOK IS A SHOT, NOT A QUESTION", "first 8 words", "Shams: the Lakers",
+                     "a question hook only when the story has no shocking fact"):
+            self.assertIn(need, p, need)
+        self.assertIn("8-14 words", script.HOOK_RETRY if hasattr(script, "HOOK_RETRY") else p)
+        self.assertIn("PUNCH:", script.HUMANIZE)
+        # a stated rumor without its source is still caught by the rumor check (C2)
+        import compliance as C
+        cl = [{"status": "RUMOR", "text": "The Lakers are shopping Austin Reaves before the deadline", "source": 1}]
+        self.assertTrue(C.bare_claims(cl, "The Lakers are shopping Austin Reaves before the deadline."))
+        self.assertFalse(C.bare_claims(cl, "Shams: the Lakers are shopping Austin Reaves before the deadline."))
+        # a team name before the colon is a headline, not a source
+        self.assertTrue(C.bare_claims(cl, "Lakers: they are shopping Austin Reaves before the deadline."))
 
 
 if __name__ == "__main__":

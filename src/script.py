@@ -605,13 +605,21 @@ def gather_sources(topic: dict, editor: dict, topic_id: int) -> list[dict]:
     for it in out:                   # the publisher's own address for the description, read or not
         if real.get(it["link"]):
             it["url"] = real[it["link"]]
-    fetched = 0
-    for it in main_like:             # one copy of the pick's own article, the first that reads
+    fetched, tried = 0, set()
+    for it in main_like:             # the pick's own article: the first copy that reads is "main"
+        tried.add(it["link"])
         if read_article(it, real):
             it["main"] = True
             fetched += 1
             break
-    for it in rest:
+    # then up to MAX_ARTICLES in all: the merged stories' own headlines, then the OTHER outlets'
+    # reports of this same story (run 43253965466: Zion's story came from Yahoo, Bleacher Report,
+    # RealGM and ESPN, all near the headline; only Yahoo was read, because after the main copy the
+    # other copies were never tried - other outlets add their own quotes and details), then the rest
+    merged_first = [it for it in rest if any(closeness(it["title"], h) >= MAIN for h in merged)]
+    order = merged_first + [it for it in main_like if it["link"] not in tried] \
+        + [it for it in rest if it not in merged_first]
+    for it in order:
         if fetched >= MAX_ARTICLES:
             break
         if read_article(it, real):
@@ -706,7 +714,9 @@ def numbers(text: str) -> set[str]:
         lambda m: WORD_NUMBERS[m.group(1)], text)
     text = re.sub(r"\b(\d+) point (\d|zero|one|two|three|four|five|six|seven|eight|nine)\b",
                   lambda m: f"{m.group(1)}.{UNITS.get(m.group(2), m.group(2))}", text)
-    found = set(re.findall(r"\d+(?:\.\d+)?", text))
+    # "45.0" and "45" are the same number (run 43253965466: the source said Luka "averaged a
+    # staggering 45.0 points", the hook said 45, and the check held the Short as unsupported)
+    found = {re.sub(r"\.0+$|(\.\d*?)0+$", r"\1", n) for n in re.findall(r"\d+(?:\.\d+)?", text)}
     found |= {WORD_NUMBERS[w] for w in re.findall(r"[a-z]+", text) if w in WORD_NUMBERS}
     return found
 

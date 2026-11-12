@@ -58,6 +58,7 @@ the "Safety tests" step before anything is installed or made.
  36. every photo of the story's people is tagged once (kept), each beat gets a shortlist that fits
      its line; never more than 3 photos of one scene; burst shots are one picture; political
      photos only when the line is about them
+ 37. every outlet's report of the same story is read (up to MAX_ARTICLES); "45.0" counts as 45
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1084,6 +1085,42 @@ class OwnArticleFirst(unittest.TestCase):
         self.assertTrue(src[0]["main"])
         self.assertEqual(sum(bool(s["text"]) for s in src), 4)   # every readable one, up to MAX_ARTICLES
         self.assertIn("read in full, source [1]", script.main_note(src, self.HEAD))
+
+    def test_other_outlets_of_the_same_story_are_read_too(self):
+        """37. Run 43253965466: Zion's story from Yahoo, Bleacher Report, RealGM and ESPN, all near
+        the headline: 1 of 4 read (the other copies were never tried). Now up to MAX_ARTICLES."""
+        import script
+        head = "Zion Williamson tears into Pelicans after 'unacceptable' loss to Nets"
+        it = lambda t, tier, link: {"title": t, "tier": tier, "link": link, "publisher": "P"}
+        e = {"ranked": [{"id": 0, "same_as": []}], "topics": [{"headline": head, "items": [
+            it(head, 1, "https://yahoo/1"),
+            it("Zion Williamson Calls Out Pelicans After Loss to Nets", 1, "https://br/1"),
+            it("Zion Williamson Calls Pelicans' 145-111 Loss To Nets 'Unacceptable'", 2, "https://realgm/1"),
+            it("Zion Williamson calls out Pelicans for another 'unacceptable' blowout loss", 1, "https://espn/1")]}]}
+        saved = (script.read_article, script.decode_google)
+        tried = []
+
+        def fake(x, real):
+            tried.append(x["link"])
+            x["text"] = "y" * 700
+            return True
+        script.read_article, script.decode_google = fake, (lambda links: {})
+        try:
+            src = script.gather_sources(e["topics"][0], e, 0)
+        finally:
+            script.read_article, script.decode_google = saved
+        self.assertEqual(tried[0], "https://yahoo/1")
+        self.assertEqual(sorted(tried), sorted(["https://yahoo/1", "https://br/1", "https://realgm/1", "https://espn/1"]))
+        self.assertEqual(sum(bool(x["text"]) for x in src), 4)
+        self.assertEqual([x["link"] for x in src if x["main"]], ["https://yahoo/1"])   # one main only
+
+    def test_45_0_is_45(self):
+        """37. Run 43253965466: "averaged a staggering 45.0 points" in the source, "45" in the hook."""
+        import script
+        src = [{"title": "", "text": "Luka averaged a staggering 45.0 points, 7.0 rebounds and 8.30 assists"}]
+        self.assertEqual(script.fact_check("Luka Doncic averaged 45 points, 7 rebounds, 8.3 assists.", src), [])
+        self.assertEqual(script.fact_check("Luka Doncic averaged 46 points.", src), ["46"])
+        self.assertEqual(script.numbers("100 and 10 and 0.5 and 2026"), {"100", "10", "0.5", "2026"})
 
     def test_same_article_from_another_outlet(self):
         import script

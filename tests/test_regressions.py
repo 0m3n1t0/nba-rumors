@@ -62,6 +62,7 @@ the "Safety tests" step before anything is installed or made.
  38. the chosen hook with a detail the sources word differently is rewritten in their words, not dropped
  39. where a feud stands now: "silence" while a source tells of contact since -> repair, else REVIEW
  40. a broken tag answer keeps its good entries; an untagged photo never fills when the person has tags
+ 41. a beat that replays the hook in other order, and "that stretch" never said -> repair
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2288,6 +2289,42 @@ class WhereTheFeudStandsNow(unittest.TestCase):
 def compliance_split(text):
     import compliance
     return compliance.split_sentences(text)
+
+
+class NoReplayNoDanglingReference(unittest.TestCase):
+    """41 (D14). Run 43288011054: the hook "Alperen Sengun tangled with Steph Curry, and Curry now
+    has a torn oblique." was followed by "Curry tangled with Alperen Sengun, ...", and the closing
+    question asked about "that stretch", a schedule the Short never said."""
+
+    HOOK = "Alperen Sengun tangled with Steph Curry, and Curry now has a torn oblique."
+    BEATS = [{"say": "Curry tangled with Alperen Sengun, grabbed his side, and was done after six minutes."},
+             {"say": "Steve Kerr said concern is high."},
+             {"say": "So do the Warriors survive that stretch without him, or was the run just Curry?"}]
+
+    def test_reworded_replay_is_caught(self):
+        import script
+        self.assertEqual(script.hook_repeats(self.HOOK, self.BEATS), [0])
+        # the past Shorts that only continue the hook are left alone
+        self.assertEqual(script.hook_repeats(
+            "Did Dillon Brooks just troll LeBron James with a King Blocker, then lose his opener by 41?",
+            [{"say": "Brooks did a Kalshi ad for the King Blocker 9000, a gadget that mutes LeBron."}, {"say": "x"}]), [])
+        self.assertEqual(script.hook_repeats(
+            "Will the Bucks get the same hammer the Clippers got, now that Gary Trent Jr. is under investigation?",
+            [{"say": "The NBA is investigating the Bucks over Gary Trent Jr.'s 64 million contract."}, {"say": "x"}]), [])
+        # the closing question may come back to the hook's words
+        self.assertEqual(script.hook_repeats(self.HOOK, self.BEATS[1:] + [
+            {"say": "So Curry tangled with Alperen Sengun, but do the Warriors survive without him?"}]), [])
+
+    def test_closing_question_points_to_something_said(self):
+        import script
+        self.assertEqual(script.dangling_refs(self.HOOK, self.BEATS), ["that stretch"])
+        said = self.BEATS[:2] + [{"say": "Next comes a stretch of Spurs, Mavericks and Pelicans, back to back."},
+                                 self.BEATS[2]]
+        self.assertEqual(script.dangling_refs(self.HOOK, said), [])
+        self.assertEqual(script.dangling_refs(self.HOOK, [{"say": "So who's winning this feud?"}]), [])
+        problems = script.repair_needed(self.HOOK, self.BEATS, {"stages": [], "hard": [], "soft": []})
+        self.assertTrue(any("that stretch" in p for p in problems))
+        self.assertTrue(any("beat 1 repeats the hook" in p for p in problems))
 
 
 if __name__ == "__main__":

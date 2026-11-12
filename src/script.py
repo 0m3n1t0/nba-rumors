@@ -1350,20 +1350,53 @@ def _runs(text: str, n: int) -> set[tuple]:
     return {tuple(toks[i:i + n]) for i in range(len(toks) - n + 1)}
 
 
+ECHO_STOP = set("would could should will have were they there their them then than what when where which "
+                "while with about after again also just still even ever only really very much many more "
+                "most such some said says that this from into over".split())
+
+
+def _clause_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]+", compliance.fold(text)) if len(w) >= 4 and w not in ECHO_STOP}
+
+
 def hook_repeats(hook: str, beats: list[dict]) -> list[int]:
     """Beats that say the chosen hook's words again: six words in a row, or the same quote.
     (The beats are written before the hook is picked from five, so this can only be checked
     once the hook is chosen.) A beat may confirm the hook in its own words; it may not
-    replay it."""
+    replay it. D14 (run 43288011054): also a beat whose first clause is the hook's words in
+    another order ("Alperen Sengun tangled with Steph Curry..." then "Curry tangled with Alperen
+    Sengun, ..."): 4+ of its words from the hook, and at least 3 in 4 of its words. The closing question
+    is left out of that test: it is meant to come back to the hook."""
     runs = _runs(hook, HOOK_RUN)
     quotes = {" ".join(re.findall(r"[a-z0-9]+", compliance.fold(q))) for q in QUOTED.findall(hook)}
+    hook_words = _clause_words(hook)
     out = []
     for k, b in enumerate(beats):
         say = b.get("say", "")
         flat = " ".join(re.findall(r"[a-z0-9]+", compliance.fold(say)))
-        if (runs & _runs(say, HOOK_RUN)) or any(q and q in flat for q in quotes):
+        first = _clause_words(re.split(r"[,;:]", (compliance.split_sentences(say) or [""])[0])[0])
+        shared = first & hook_words
+        reworded = k < len(beats) - 1 and len(shared) >= 4 and len(shared) >= 0.75 * len(first)
+        if (runs & _runs(say, HOOK_RUN)) or any(q and q in flat for q in quotes) or reworded:
             out.append(k)
     return out
+
+
+# D14 (run 43288011054): "So do the Warriors survive that stretch without him?" - the Short never
+# said which stretch (Spurs, Mavericks, Pelicans back to back). A closing question that points to
+# "that <thing>" must point to something the Short said.
+REFERENT = re.compile(r"\b(?:that|this|those|these)\s+(stretch|schedule|trip|swing|matchup|deal|offer|contract|"
+                      r"comment|comments|tweet|post|report|clip|video|rumou?r|ruling|decision|move|plan|"
+                      r"streak|slump|stat|number|quote|ad|interview|podcast)\b", re.I)
+
+
+def dangling_refs(hook: str, beats: list[dict]) -> list[str]:
+    """"that stretch" in the closing question when "stretch" was never said before it."""
+    if not beats:
+        return []
+    before = compliance.fold(" ".join([hook] + [b.get("say", "") for b in beats[:-1]]))
+    return [m.group(0) for m in REFERENT.finditer(beats[-1].get("say", ""))
+            if not re.search(rf"\b{re.escape(compliance.fold(m.group(1)))}", before)]
 
 
 def weak_payoff(beats: list[dict]) -> bool:
@@ -1459,6 +1492,9 @@ def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[d
             problems.append(f"the closing question brings in {', '.join(new)}, never introduced before: "
                             "introduce them earlier in a few words (who they are in this story, from "
                             "the sources), or ask about the people the Short already introduced")
+        for ref in dangling_refs(hook, beats):
+            problems.append(f"the closing question points to \"{ref}\", which the Short never said: say "
+                            "it earlier in a few words from the sources, or ask about what was said")
         if not loops_back(hook, beats[-1].get("say", "")):
             problems.append("the closing question does not come back to the hook: it must name someone "
                             "the hook names, so a replay flows straight into the hook")

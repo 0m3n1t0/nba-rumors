@@ -943,15 +943,19 @@ class SceneSpread(unittest.TestCase):
                  self.ph("Jaylen Brown Sixers.jpg", "Someone", "2026-10-30")]
         return h + other
 
-    def test_full_scene_is_dropped(self):
-        """Owner, 2026-11-12: never more than SCENE_MAX photos of one scene (was: it waited)."""
+    def test_full_scene_goes_behind_everything_else(self):
+        """Owner, 2026-11-12: a 4th photo of one scene only when nothing else is left, then by
+        score (before: it waited only behind equally related photos scoring 6+)."""
         m, c = self.m, self._pool()
         scenes = self.Counter({m.scene_of(c[0]): 3})
         tier = lambda j: 3
         scores = {0: 8, 1: 8, 5: 7, 6: 6}
-        self.assertEqual(m.spread_scenes([0, 1, 5, 6], c, tier, scores, scenes), [5, 6])
+        self.assertEqual(m.spread_scenes([0, 1, 5, 6], c, tier, scores, scenes), [5, 6, 0, 1])
         self.assertEqual(m.spread_scenes([0, 1, 5], c, tier, scores, self.Counter()), [0, 1, 5])
-        self.assertEqual(m.spread_scenes([0, 1], c, tier, scores, scenes), [])     # nothing else: empty
+        self.assertEqual(m.spread_scenes([0, 1], c, tier, scores, scenes), [0, 1])  # nothing else: by score
+        # behind a less related or weaker photo too (the old rule kept it in front of those)
+        self.assertEqual(m.spread_scenes([0, 5], c, {0: 3, 5: 2}.get, {0: 8, 5: 9}, scenes), [5, 0])
+        self.assertEqual(m.spread_scenes([0, 5], c, tier, {0: 8, 5: 5}, scenes), [5, 0])
 
     def test_scene_from_the_file_name(self):
         m = self.m
@@ -980,10 +984,11 @@ class SceneSpread(unittest.TestCase):
             j = left[0]
             shown.append(j)
             scenes.update([m.scene_of(pool[j])])
-        # before B11: 9 of 13 from the Wizards game. Since 2026-11-12: 3 of them, then the 8 other
-        # photos, then nothing more (no 4th Wizards shot; fill_empty or the previous picture)
-        self.assertEqual(sum(1 for j in shown if j < len(run)), 3)
-        self.assertEqual(len(set(shown)), 11)
+        # before B11: 9 of 13 from the Wizards game. Now 3, then the 8 other photos, then (pool
+        # used up) 2 more Wizards shots rather than a frozen picture
+        self.assertEqual(sum(1 for j in shown if j < len(run)), 5)
+        self.assertEqual(len(set(shown)), 13)
+        self.assertTrue(all(j >= len(run) for j in shown[3:11]))
         self.assertEqual(shown[:m.SCENE_MAX], [0, 1, 2])     # the best come first, as before
 
     def test_flickr_photos_know_their_day(self):
@@ -1019,7 +1024,7 @@ class SceneSpread(unittest.TestCase):
             items = [{**on[0], "file": "data/x.jpg", "match": 8, "alts": on[1:]}, None, None]
             got = m.fill_empty(items, 3, folder, set(), ["Jaylen Brown"], None)
             self.assertEqual(got[1]["title"], "Jaylen Brown 2022.jpg")       # another game first
-            self.assertIsNone(got[2])        # never a 4th Wizards shot: the previous picture goes on
+            self.assertEqual(got[2]["title"], "Celtics at Wizards 2024-12-011.jpg")  # nothing else left
         finally:
             for k, v in saved.items():
                 setattr(m, k, v)

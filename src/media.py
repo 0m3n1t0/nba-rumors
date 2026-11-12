@@ -1368,7 +1368,7 @@ def scene_of(c: dict) -> tuple | None:
     return (author, "series:" + stem) if stem != name and len(stem.split()) >= 4 else None
 
 
-SCENE_MAX = 3   # photos from one scene (photographer + day = one game) per Short, never more
+SCENE_MAX = 3   # photos from one scene (photographer + day = one game) per Short, unless nothing else is left
 
 
 def scene_full(c: dict, scenes) -> bool:
@@ -1383,11 +1383,14 @@ def count_scenes(shots) -> "Counter":
 
 
 def spread_scenes(order: list[int], cands: list[dict], tier, scores: dict, scenes) -> list[int]:
-    """B11: a run once showed 9 of 13 photos from one game. Since 2026-11-12 (owner: never more
-    than 3 photos of one scene; run 43208765485 showed 5 of one White House ceremony) a photo
-    whose scene is already used SCENE_MAX times is DROPPED. A beat left with nothing gets another
-    person's photo later (fill_empty), or continues the previous picture: never a 4th shot of a scene."""
-    return [j for j in order if not scene_full(cands[j], scenes)]
+    """B11: a run once showed 9 of 13 photos from one game. Owner, 2026-11-12 (run 43208765485
+    showed 5 shots of one White House ceremony): a photo whose scene is already used SCENE_MAX
+    times goes behind EVERY other candidate the editor rated as related, whatever their scores
+    (before, it waited only behind ones of the same tier scoring ALT_MIN+). Only when nothing else
+    is left is it used, best score first and never the same moment twice: a different shot of the
+    same game beats a frozen picture or another person's photo."""
+    out = [j for j in order if not scene_full(cands[j], scenes)]
+    return out + [j for j in order if scene_full(cands[j], scenes)]
 
 
 def fresh_first(order: list[int], cands: list[dict], tier, scores: dict, scenes,
@@ -1885,13 +1888,21 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
     scenes = count_scenes(x for it in items if it for x in [it] + list(it.get("alts") or []))
 
     def next_face(i: int, tag: str) -> dict | None:
-        """A new, never shown photo of the person beat i talks about (else anyone in the story)."""
+        """A new, never shown photo: first one whose scene has fewer than SCENE_MAX shots (the
+        person the line is about, then anyone in the story); only when no such photo is left, a
+        further shot of a used scene (owner, 2026-11-12: better than a frozen picture)."""
+        return pick_face(i, tag, full_ok=False) or pick_face(i, tag, full_ok=True)
+
+    def pick_face(i: int, tag: str, full_ok: bool) -> dict | None:
         said = [p for p in (who or []) if fold(p.split()[-1]) in fold(lines[i] if i < len(lines) else "")]
         for person in said + [p for p in (who or []) if p not in said]:
+            waiting = []
             while faces.get(person):
                 c = faces[person].pop(0)
-                # never a 4th photo of one scene (owner, 2026-11-12)
-                if already_shown(c, shown, c["page"]) or scene_full(c, scenes):
+                if already_shown(c, shown, c["page"]):
+                    continue
+                if scene_full(c, scenes) and not full_ok:
+                    waiting.append(c)          # kept for the last-resort pass
                     continue
                 path = folder / f"beat{i}_{tag}.jpg"
                 try:
@@ -1904,10 +1915,12 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                         if h is not None:
                             looks.append(h)
                         scene_of(c) and scenes.update([scene_of(c)])
+                        faces[person] = waiting + faces.get(person, [])   # the held ones stay for later
                         return {**{k: v for k, v in c.items() if k not in ("score", "hoops")},
                                 "file": str(path.relative_to(ROOT)), "beat": i, "match": None}
                 except Exception:
                     pass
+            faces[person] = waiting + faces.get(person, [])
         return None
 
     for i in range(len(items)):

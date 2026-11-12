@@ -47,6 +47,8 @@ the "Safety tests" step before anything is installed or made.
  30. Openverse kept: a good search is kept 14 days per person; a failed one uses it
  31. sentences never split at an initial ("Stephen A. smart?" is one question; run 43088629255
      held a good Short for "repeating" because of it)
+ 32. one feud, one Short in 48 hours (run 43088629255: three Shorts on Brown and Tatum in a day),
+     unless a major turn or a new voice leads the story
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1642,6 +1644,73 @@ class Initials(unittest.TestCase):
         repeat = [dict(b) for b in self.BEATS]
         repeat[4]["say"] = "No argument is worth that kind of money. So was Stephen A. smart, or did money win?"
         self.assertIn("beat 5 repeats what was already said", script.retention_check(repeat)["hard"])   # real repeats still caught
+
+
+class OneFeudIn48Hours(unittest.TestCase):
+    """32. The made history of 2026-11-11 and the topics of run 43088629255."""
+
+    MADE = [{"time": "2026-11-11T13:20+00:00",
+             "headline": "Jayson Tatum won't give air to Jaylen Brown drama after snub",
+             "hook": "Did Jaylen Brown just ignore Jayson Tatum twice?"},
+            {"time": "2026-11-11T18:46+00:00",
+             "headline": "Players Should Start Talking Crazy About Coaches Too - Draymond Green Calls Out Doc Rivers",
+             "hook": "Is Draymond Green about to turn NBA players loose on coaches over Giannis Antetokounmpo?"}]
+
+    def topic(self, headline, *stars):
+        return {"headline": headline, "star_names": [f"{n} 2.0" for n in stars]}
+
+    def setUp(self):
+        import datetime as dt
+        import editor
+        self.e, self.now = editor, dt.datetime(2026, 11, 11, 19, 40, tzinfo=dt.timezone.utc)
+
+    def test_same_feud_is_a_repeat(self):
+        t = self.topic("Jayson Tatum responds to Jaylen Brown snub with runaway Celtics win",
+                       "Jaylen Brown", "Jayson Tatum", "Paul George")
+        self.assertIn("won't give air", self.e.same_feud_recent(t, self.MADE, self.now))
+
+    def test_exceptions(self):
+        e, now = self.e, self.now
+        # a major turn
+        self.assertEqual(e.same_feud_recent(self.topic("Jaylen Brown fined after Jayson Tatum altercation",
+                                                       "Jaylen Brown", "Jayson Tatum"), self.MADE, now), "")
+        # another person's own story (only one of them in the headline)
+        self.assertEqual(e.same_feud_recent(self.topic("Paul George explains his middle finger to a 76ers fan",
+                                                       "Jaylen Brown", "Jayson Tatum", "Paul George"), self.MADE, now), "")
+        # a new voice leads: Garnett was not in the earlier Short
+        self.assertEqual(e.same_feud_recent(self.topic("Kevin Garnett rips Jaylen Brown and Jayson Tatum",
+                                                       "Jaylen Brown", "Jayson Tatum", "Kevin Garnett"), self.MADE, now), "")
+        # after 48 hours the feud is open again
+        import datetime as dt
+        later = now + dt.timedelta(hours=49)
+        self.assertEqual(e.same_feud_recent(self.topic("Jayson Tatum responds to Jaylen Brown",
+                                                       "Jaylen Brown", "Jayson Tatum"), self.MADE, later), "")
+
+    def test_the_editor_drops_it(self):
+        import json as _j
+        e = self.e
+        topics = [self.topic("Jayson Tatum responds to Jaylen Brown snub", "Jaylen Brown", "Jayson Tatum"),
+                  self.topic("Stephen A. Smith stood down from LeBron James", "LeBron James")]
+        for t in topics:
+            t["items"] = [{"title": t["headline"], "tier": 1, "link": "https://x", "publisher": "ESPN"}]
+        raw = _j.dumps({"ranked": [{"id": 0, "nba": True, "kind": "player_vs_player", "virality": 9, "drama": 9,
+                                    "star_power": 9, "debate": 9, "repeat": False, "why": "", "same_as": []},
+                                   {"id": 1, "nba": True, "kind": "player_vs_media", "virality": 7, "drama": 7,
+                                    "star_power": 7, "debate": 7, "repeat": False, "why": "", "same_as": []}],
+                        "shorts": [0, 1], "long": {}})
+        saved = e.made_recently
+        e.made_recently = lambda: [{**self.MADE[0], "time": __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc).isoformat(timespec="minutes")}]
+        try:
+            data = e.parse(raw, 2, topics)
+        finally:
+            e.made_recently = saved
+        self.assertEqual(data["shorts"], [1])
+        self.assertTrue(data["ranked"][0]["repeat"])
+
+    def test_rule_told_to_the_editor(self):
+        import editor
+        self.assertIn("ONE FEUD, ONE SHORT IN 48 HOURS", editor.history_note.__code__.co_consts.__repr__())
 
 
 if __name__ == "__main__":

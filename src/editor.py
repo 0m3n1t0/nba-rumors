@@ -223,7 +223,13 @@ def history_note() -> str:
             + "\nFor every topic that is the same story as one already made, set \"repeat\": true "
               "UNLESS today's headlines bring a real new development (new facts, a response, a "
               "punishment, a trade completed) - then set \"repeat\": false and say the new part in "
-              "\"why\". Never pick a repeat for \"shorts\".\n")
+              "\"why\". Never pick a repeat for \"shorts\".\n"
+              "ONE FEUD, ONE SHORT IN 48 HOURS: if a Short about the same two people was made in the "
+              "last 48 hours, the same feud is a repeat unless a MAJOR turn happened (a trade or "
+              "signing, a suspension, fine or punishment, a fight or ejection, an official "
+              "statement). Another reaction, a teammate's comment, fans' replies or one more "
+              "interview are NOT a major turn: three Shorts on one feud in a day look like plain "
+              "news, not a channel with its own eye.\n")
 
 
 def build_input(topics: list[dict]) -> str:
@@ -372,6 +378,55 @@ def score_line(r: dict) -> str:
     return " ".join(f"{k}{v:g}" for k, v in p.items())
 
 
+FEUD_HOURS = 48
+MAJOR_TURN = re.compile(r"\b(trade[sd]?|signs?|signed|waive[sd]?|released|suspend\w*|fine[sd]?|"
+                        r"punish\w*|eject\w*|fight|altercation|brawl|arrest\w*|statement|"
+                        r"benched|banned|investigation)\b", re.I)
+def headline_people(topic: dict) -> list[str]:
+    """The story's people who are named IN ITS HEADLINE (surnames, in headline order). Only the
+    editor's star names are used: headlines are in Title Case, so capitalised words alone would
+    catch "After Failed Bucks Trade"."""
+    head = fold(topic.get("headline", ""))
+    found = []
+    for n in topic.get("star_names") or []:
+        last = fold(re.sub(r"\s+[\d.]+$", "", n)).split()[-1:] or [""]
+        m = re.search(rf"\b{re.escape(last[0])}\b", head) if last[0] else None
+        if m:
+            found.append((m.start(), last[0]))
+    return [w for _, w in sorted(found)]
+
+
+def same_feud_recent(topic: dict, made: list[dict], now=None) -> str:
+    """Run 43088629255: three Shorts in one day on Brown and Tatum ("explains", "wasn't paying
+    attention", "Tatum responds"), each with one small new detail. A story whose headline names
+    two people who were both in a Short of the last FEUD_HOURS is a repeat, unless its headline
+    brings a major turn (MAJOR_TURN) or a NEW voice leads it (its first-named person was not in
+    that Short: Draymond calling out Rivers is a new story, not a repeat of Rivers vs Giannis).
+    Returns the earlier Short's headline, or ""."""
+    from datetime import datetime, timezone
+    who = headline_people(topic)
+    if len(who) < 2 or MAJOR_TURN.search(topic.get("headline", "")):
+        return ""
+    now = now or datetime.now(timezone.utc)
+    for m in made:
+        try:
+            age = (now - datetime.fromisoformat(m["time"])).total_seconds() / 3600
+        except (KeyError, ValueError):
+            continue
+        text = fold(f"{m.get('headline', '')} {m.get('hook', '')}")
+        named = [w for w in who if re.search(rf"\b{re.escape(w)}\b", text)]
+        if age < FEUD_HOURS and len(named) >= 2 and who[0] in named:
+            return m.get("headline", "")
+    return ""
+
+
+def made_recently() -> list[dict]:
+    try:
+        return json.loads((DATA / "history" / "made.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
 def parse(text: str, n_topics: int, topics: list[dict] | None = None) -> dict:
     text = text.strip()
     if text.startswith("```"):
@@ -402,6 +457,14 @@ def parse(text: str, n_topics: int, topics: list[dict] | None = None) -> dict:
         if OPINION.search(r.get("headline", "")):
             r["kind"] = "filler"          # an opinion piece is never a Short
     repeats = {r["id"] for r in data["ranked"] if r.get("repeat")}
+    made = made_recently()
+    for r in data["ranked"]:
+        if topics and 0 <= r["id"] < len(topics) and r["id"] not in repeats:
+            earlier = same_feud_recent(topics[r["id"]], made)
+            if earlier:
+                repeats.add(r["id"])
+                r["repeat"] = True
+                r["why"] = f"same feud as a Short of the last {FEUD_HOURS} h ({earlier[:60]}), no major turn. " + r.get("why", "")
     by_id = {r["id"]: r for r in data["ranked"]}
     picks = [i for i in data.get("shorts", []) if i in valid and i not in repeats
              and by_id.get(i, {}).get("kind") != "filler"]

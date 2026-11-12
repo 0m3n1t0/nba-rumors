@@ -141,6 +141,33 @@ def bare_claims(claims: list[dict], spoken: str) -> list[str]:
     return out
 
 
+# Words that change WHAT happened: dropped, a movie scene becomes a real scandal (run 43199348111:
+# the source said "on-screen kiss", the Short said "Ayesha Curry's kiss").
+MEANING_WORD = re.compile(r"\b(on-?screen|in (?:a|the|her|his) (?:movie|film|show|series|ad|commercial|skit)|"
+                          r"scripted|alleged(?:ly)?|joked|jokingly|in jest|parody|satir\w*|fictional|"
+                          r"a?\s?prank)\b", re.I)
+
+
+def dropped_meaning(claims: list[dict], spoken: str) -> list[str]:
+    """Claims whose meaning word ("on-screen", "alleged"...) is missing from the sentence that
+    tells them. Same sentence matching as bare_claims."""
+    sentences = [x for x in split_sentences(spoken) if not x.strip().endswith("?")]
+    out = []
+    for c in claims or []:
+        m = MEANING_WORD.search(c.get("text", ""))
+        if not m:
+            continue
+        want = set(CONTENT_WORD.findall(fold(c.get("text", ""))))
+        best, best_n = None, 0
+        for x in sentences:
+            n = len(want & set(CONTENT_WORD.findall(fold(x))))
+            if n > best_n:
+                best, best_n = x, n
+        if best and best_n >= max(2, len(want) // 3) and not MEANING_WORD.search(best):
+            out.append(f"{c.get('text', '')[:80]} (\"{m.group(0)}\")")
+    return out
+
+
 def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[str, list[str], list[dict]]:
     """Every important claim carries CONFIRMED / REPORTED / RUMOR / UNVERIFIED, written by the
     script writer and CHECKED here against the sources. A status is downgraded when the evidence
@@ -179,6 +206,9 @@ def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[
     if any(c["status"] in ("REPORTED",) + HEDGED for c in out) and not HEDGE.search(spoken):
         verdict = worst(verdict, REJECT)
         notes.append("a report or rumor is told as fact: no attribution in the narration")
+    for text in dropped_meaning(out, spoken):
+        verdict = worst(verdict, REVIEW)
+        notes.append(f"a word that changes what happened was dropped: {text}")
     for text in bare_claims(out, spoken):
         verdict = worst(verdict, REVIEW)
         notes.append(f"a rumor / anonymous report / opinion sounds like a fact: {text[:80]}")

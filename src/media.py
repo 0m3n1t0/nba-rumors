@@ -851,6 +851,15 @@ def openverse_keep(person: str, photos: list[dict]) -> None:
         print(f"[!] Openverse results not kept: {exc}")
 
 
+def names_together(person: str, text: str) -> bool:
+    """The full name as one phrase, not just both words somewhere: run 43199348111 put an old
+    painting, "Profile portrait of a smart young man by S. M. Marcus", in Marcus Smart's Short."""
+    parts = fold(person).split()[:2]
+    if len(parts) < 2:
+        return bool(parts) and parts[0] in fold(text)
+    return bool(re.search(rf"\b{re.escape(parts[0])}\W+{re.escape(parts[1])}\b", fold(text)))
+
+
 def openverse_cached(person: str) -> list[dict]:
     """The last good Openverse search for this person, if it is younger than OV_CACHE_DAYS."""
     import datetime as _dt
@@ -859,7 +868,8 @@ def openverse_cached(person: str) -> list[dict]:
         age = (_dt.date.today() - _dt.date.fromisoformat(hit.get("day", ""))).days
     except ValueError:
         return []
-    return list(hit.get("photos") or []) if age < OV_CACHE_DAYS else []
+    kept = list(hit.get("photos") or []) if age < OV_CACHE_DAYS else []
+    return [p for p in kept if names_together(person, p.get("title", ""))]   # older entries too
 
 
 def openverse_photos(person: str) -> list[dict]:
@@ -903,7 +913,7 @@ def openverse_photos(person: str) -> list[dict]:
     for r in data.get("results", []):
         text = fold(r.get("title", "") + " " + " ".join(t.get("name", "") for t in r.get("tags") or []))
         w, h = r.get("width") or 0, r.get("height") or 0
-        if first not in text or last not in text or (w and h and min(w, h) < 700):
+        if not names_together(person, text) or (w and h and min(w, h) < 700):
             continue
         if namesake(person, text):
             continue      # another player with the same name ("..., born 1991")

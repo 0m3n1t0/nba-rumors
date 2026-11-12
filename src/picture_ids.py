@@ -63,8 +63,8 @@ def crop_keys(item: dict) -> tuple[set[str], set[str]]:
         return set(), set()
     if cropped:
         marks, avoid = {f"crop:{name}"}, {f"base:{name}", f"crop:{name}"}
-    else:
-        marks, avoid = {f"base:{name}"}, {f"crop:{name}"}
+    else:   # the same file again (from Commons AND through Openverse, run 43199348111) is the same picture
+        marks, avoid = {f"base:{name}"}, {f"crop:{name}", f"base:{name}"}
     origin = DERIVED_FROM.search(item.get("author") or "")
     if origin:
         src = base_name(origin.group(1))[0]

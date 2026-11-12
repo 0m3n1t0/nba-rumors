@@ -272,7 +272,10 @@ TWO VERSIONS (the channel lives on them): before choosing the angle, search the 
    - a person's current team when it explains the story (a Heat host defends Giannis because
      Giannis now plays for Miami);
    - a FORMER role stays former: "his former coach", "his ex-teammate", never words that make
-     it sound current ("Giannis's Milwaukee coach" for a coach who no longer coaches him).
+     it sound current ("Giannis's Milwaukee coach" for a coach who no longer coaches him);
+   - a word that changes what happened stays: "on-screen", "in a movie", "in an ad", "alleged",
+     "joked", "parody" ("Ayesha Curry's on-screen kiss", never just "her kiss": without it a
+     movie scene sounds like a real scandal about a real person).
    If the sources do not give a piece of context, leave that person or game out rather than
    leave the viewer guessing; never fill it from memory.
    QUESTIONS: only the hook and the closing question ask. A middle beat never asks the hook's
@@ -434,6 +437,8 @@ YOU ARE ALSO THE CRITICAL EDITOR. Before returning, check and fix:
   side the sources do not show is never invented;
 - QUESTIONS: a middle beat re-asks the hook's question (make it a statement), or the closing
   question names someone the Short never introduced or no one from the hook (fix it);
+- MEANING WORDS: a word that changes what happened ("on-screen", "in a movie", "alleged",
+  "joked", "in an ad") is kept exactly where the sources have it;
 - MUST-KNOW CONTEXT: a cold viewer would ask "who is that?" or "why is he in this?", a trade is
   mentioned without who went where, or a game without who won: add it from the sources in a
   few words (cut a weaker line for the room), and a person's role stays exactly as the sources
@@ -585,6 +590,9 @@ def gather_sources(topic: dict, editor: dict, topic_id: int) -> list[dict]:
 
     # Google News links are redirects: decode them to the real article (googlenewsdecoder, MIT)
     real = decode_google([it["link"] for it in out if "news.google.com" in it["link"]][:12])
+    for it in out:                   # the publisher's own address for the description, read or not
+        if real.get(it["link"]):
+            it["url"] = real[it["link"]]
     fetched = 0
     for it in main_like:             # one copy of the pick's own article, the first that reads
         if read_article(it, real):
@@ -1373,6 +1381,9 @@ def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[d
                             "it instead (only the hook and the closing question ask)")
     if claims:
         said = " ".join(b.get("say", "") for b in beats)
+        for text in compliance.dropped_meaning(claims, said):
+            problems.append(f"a word that changes what happened is missing: {text}: put it back in that "
+                            "sentence exactly as the sources say it")
         for text in compliance.bare_claims(claims, said):
             problems.append(f"this rumor / anonymous report / opinion sounds like a fact: \"{text[:90]}\": "
                             "say in the same sentence what it is (reportedly, sources say, he thinks)")
@@ -1702,7 +1713,8 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     description = (draft.get("description", "").strip()
                    + f"\n\n🔔 Subscribe for daily NBA rumors, trades and drama: {CHANNEL_URL}?sub_confirmation=1"
                    + "\n\nSources:\n"
-                   + "\n".join(f"- {s['publisher']}: {s['link']}" for s in used) + f"\n\n{DISCLAIMER}")
+                   + "\n".join(f"- {s['publisher']}: {s.get('url') or s['link']}" for s in used)   # the article itself, not a Google News redirect
+                   + f"\n\n{DISCLAIMER}")
     tags = [t for t in draft.get("tags", []) if isinstance(t, str)][:15]
     # yt-seo: tags are for spellings. A name with accents also gets its plain spelling
     # ("Porziņģis" + "Porzingis"), the way American fans type it; no other keywords are added.

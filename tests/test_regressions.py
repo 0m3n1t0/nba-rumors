@@ -49,6 +49,9 @@ the "Safety tests" step before anything is installed or made.
      held a good Short for "repeating" because of it)
  32. one feud, one Short in 48 hours (run 43088629255: three Shorts on Brown and Tatum in a day),
      unless a major turn or a new voice leads the story
+ 33. run 43199348111: a meaning word ("on-screen") is never dropped; the same Commons file from
+     two sources is one picture; Openverse needs the full name as one phrase; the description
+     links the article itself, not a Google News redirect
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1727,6 +1730,53 @@ class OneFeudIn48Hours(unittest.TestCase):
     def test_rule_told_to_the_editor(self):
         import editor
         self.assertIn("ONE FEUD, ONE SHORT IN 48 HOURS", editor.history_note.__code__.co_consts.__repr__())
+
+
+class Run43199348111(unittest.TestCase):
+    """33. "Ayesha Curry's kiss" (the source: an ON-SCREEN kiss); Charles Bassey's photo twice;
+    a painting for Marcus Smart; Google News links in the description."""
+
+    CLAIM = [{"status": "CONFIRMED", "source": 1,
+              "text": "Arenas and Nick Young criticized Ayesha Curry's on-screen kiss on the We Said What We Said podcast"}]
+
+    def test_meaning_word(self):
+        import compliance as C
+        import script
+        bad = "Arenas and Steph's old teammate Nick Young picked apart Ayesha Curry's kiss on their podcast."
+        good = "Arenas and Steph's old teammate Nick Young picked apart Ayesha Curry's on-screen kiss on their podcast."
+        self.assertEqual(len(C.dropped_meaning(self.CLAIM, bad)), 1)
+        self.assertEqual(C.dropped_meaning(self.CLAIM, good), [])
+        v, notes, _ = C.check_claims(self.CLAIM, [{"title": "x", "tier": 1, "text": "x"}], bad)
+        self.assertIn(v, (C.REVIEW, C.REJECT))                      # never PASS
+        self.assertTrue(any("changes what happened" in n for n in notes), notes)
+        beats = [{"say": bad, "stage": "setup"},
+                 {"say": "I think Young was smart, because he kept Steph and left Gil explaining himself.", "stage": "payoff"},
+                 {"say": "So who owes Steph the better apology, Arenas or Young?", "stage": "exit"}]
+        problems = script.repair_needed("Did Gilbert Arenas really call Ayesha Curry a blemish?", beats, {}, None, self.CLAIM)
+        self.assertTrue(any("changes what happened" in p for p in problems), problems)
+        self.assertIn("on-screen", script.PROMPT)
+        self.assertIn("MEANING WORDS", script.HUMANIZE)
+
+    def test_same_file_two_sources(self):
+        from picture_ids import already_shown, mark_shown
+        commons = _commons("Charles Bassey San Antonio Spurs 2024.jpg")
+        via_ov = {"kind": "photo", "source": "Wikimedia via Openverse", "title": "Charles Bassey San Antonio Spurs 2024",
+                  "page": "https://commons.wikimedia.org/w/index.php?curid=1", "url": "https://upload.wikimedia.org/x.jpg"}
+        shown = set()
+        mark_shown(commons, shown)
+        self.assertTrue(already_shown(via_ov, shown))
+
+    def test_full_name_as_one_phrase(self):
+        import media
+        self.assertFalse(media.names_together("Marcus Smart", "Profile portrait of a smart young man by S. M. Marcus (c.1840)"))
+        self.assertTrue(media.names_together("Marcus Smart", "Marcus Smart (51688317634) basketball"))
+        self.assertTrue(media.names_together("Shai Gilgeous-Alexander", "Shai Gilgeous-Alexander dunks"))
+        self.assertTrue(media.names_together("Stephen Curry", "stephen curry warriors"))
+
+    def test_description_links_the_article(self):
+        import inspect
+        import script
+        self.assertIn("s.get('url') or s['link']", inspect.getsource(script))
 
 
 if __name__ == "__main__":

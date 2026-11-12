@@ -536,8 +536,10 @@ def not_a_person(name: str) -> bool:
             or bool(set(words) & NOT_NAME_WORDS) or bool(set(words) & TEAM_WORDS))
 
 
-def ask_claude(prompt: str, folder: str | None = None, timeout: int = 240, model: str = "") -> dict:
-    """No tools except reading the images in its own folder (contact sheets only)."""
+def ask_claude(prompt: str, folder: str | None = None, timeout: int = 240, model: str = "",
+               raw: bool = False) -> dict | str:
+    """No tools except reading the images in its own folder (contact sheets only). raw=True
+    returns the answer's text unparsed (photo_tags.py salvages a partly broken JSON answer)."""
     with tempfile.TemporaryDirectory() as empty:
         cwd = folder or empty
         disallowed = NO_TOOLS + ("" if folder else ",Read")
@@ -549,6 +551,8 @@ def ask_claude(prompt: str, folder: str | None = None, timeout: int = 240, model
         raise RuntimeError(f"exit {res.returncode}: {(res.stdout or '')[-400:]} {(res.stderr or '')[-300:]}")
     log_claude_usage(res.stdout, "media")
     text = json.loads(res.stdout).get("result", "")
+    if raw:
+        return text
     return json.loads(text[text.find("{"):text.rfind("}") + 1])
 
 
@@ -1860,9 +1864,12 @@ def person_photos(person: str, shown: set) -> list[dict]:
     school photo (no line asked for it), and the ones with his face clearly seen first."""
     pool = photos(person)
     tagged = any(c.get("tag") for c in pool)
+    # run 43288011054: 45 of Curry's photos missed their tags (a broken answer) and one of them,
+    # two strangers on a golf course, filled the closing beat. When a person HAS tagged photos, an
+    # untagged one is never used unjudged: nobody has looked at it.
     ok = [c for c in pool[:photo_tags.MAX_PER_PERSON if tagged else 20]
           if not already_shown(c, shown, c["page"]) and c["page"] not in REJECTED
-          and solo_title(c, person) and photo_tags.fill_ok(c)]
+          and solo_title(c, person) and photo_tags.fill_ok(c) and (c.get("tag") or not tagged)]
     return sorted(ok, key=photo_tags.fill_rank) if tagged else sorted(ok, key=lambda c: not c.get("hoops"))
 
 

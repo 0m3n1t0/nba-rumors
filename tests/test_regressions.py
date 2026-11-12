@@ -61,6 +61,7 @@ the "Safety tests" step before anything is installed or made.
  37. every outlet's report of the same story is read (up to MAX_ARTICLES); "45.0" counts as 45
  38. the chosen hook with a detail the sources word differently is rewritten in their words, not dropped
  39. where a feud stands now: "silence" while a source tells of contact since -> repair, else REVIEW
+ 40. a broken tag answer keeps its good entries; an untagged photo never fills when the person has tags
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -1972,7 +1973,7 @@ class EveryPhotoLookedAt(unittest.TestCase):
         pool = [self.ph(n) for n in range(1, 12)]
         calls = []
 
-        def ask(prompt, folder=None, timeout=0):
+        def ask(prompt, folder=None, timeout=0, **kw):
             calls.append(sorted(os.listdir(folder)))
             self.assertIn("Steph Curry", prompt)
             return {"photos": [{"n": k, "v": "A" if k == 11 else "C", "s": "game", "e": "calm", "t": "plays"}
@@ -1995,7 +1996,7 @@ class EveryPhotoLookedAt(unittest.TestCase):
         pool = [self.ph(n) for n in range(1, 101)]
         calls = []
 
-        def ask(prompt, folder=None, timeout=0):
+        def ask(prompt, folder=None, timeout=0, **kw):
             calls.append(len(os.listdir(folder)))
             if len(calls) in (2, 4, 5):
                 raise ValueError("Expecting ',' delimiter")
@@ -2006,6 +2007,36 @@ class EveryPhotoLookedAt(unittest.TestCase):
         self.assertEqual(n, 90)                       # the last part failed twice: untagged this run
         self.assertTrue(all(c.get("tag") for c in pool[:90]))
         self.assertFalse(any(c.get("tag") for c in pool[90:]))
+
+    def test_a_broken_answer_keeps_its_good_entries(self):
+        """40. Run 43288011054: one broken spot in a 45-photo answer, twice, lost all 45 tags."""
+        broken = ('{"photos":[{"n":1,"v":"C","s":"game","e":"sad","t":"walks off"},\n'
+                  '{"n":2,"v":"C","s":"game","e":"calm","t":"holds the "MVP" trophy"},\n'
+                  '{"n":3,"v":"A","s":"other","e":"unclear","t":"popcorn"}\n'
+                  '{"n":4,"v":"S","s":"bench","e":"calm","t":"sits"}],"same":[[1,4]]}')
+        out = self.t.parse_answer(broken)
+        self.assertEqual([p["n"] for p in out["photos"]], [1, 3, 4])      # only the broken entry is lost
+        self.assertEqual(out["same"], [[1, 4]])
+        self.assertEqual(self.t.parse_answer({"photos": []}), {"photos": []})
+        with self.assertRaises(ValueError):
+            self.t.parse_answer("Sorry, I cannot see the sheets.")
+        pool = [self.ph(n) for n in range(1, 5)]
+        n = self.t.tag_person("Steph Curry", pool, lambda *a, **k: broken, "ua", self.m.photo_era, self.m.scene_of)
+        self.assertEqual(n, 3)
+        self.assertEqual([bool(c.get("tag")) for c in pool], [True, False, True, True])
+
+    def test_untagged_photo_never_fills_when_the_person_has_tags(self):
+        m = self.m
+        pool = [{**self.ph(1), "title": "Steph Curry golf.jpg"},                       # nobody looked at it
+                {**self.ph(2), "title": "Steph Curry game.jpg", "tag": {"v": "C", "s": "game"}, "hoops": True}]
+        saved = m.photos
+        try:
+            m.photos = lambda who: pool
+            self.assertEqual([c["page"] for c in m.person_photos("Steph Curry", set())], ["p2"])
+            m.photos = lambda who: [{**self.ph(1), "title": "Steph Curry golf.jpg"}]   # nobody tagged: as before
+            self.assertEqual([c["page"] for c in m.person_photos("Steph Curry", set())], ["p1"])
+        finally:
+            m.photos = saved
 
     def test_thumbnails_one_at_a_time_and_stop_on_a_second_429(self):
         import urllib.error
@@ -2057,7 +2088,7 @@ class EveryPhotoLookedAt(unittest.TestCase):
             ("O", "game", "calm", "Jokic shoots")])]
         seen = {}
 
-        def ask(prompt, folder=None, timeout=0):
+        def ask(prompt, folder=None, timeout=0, **kw):
             seen["prompt"] = prompt
             return {"beats": [{"beat": 0, "photos": ["a1", "a0", "a2", "zz", "a1"]}, {"beat": "x"}]}
         got = self.t.shortlists([{"say": "Curry left with an abdominal injury."}], [{"person": "Steph Curry"}],

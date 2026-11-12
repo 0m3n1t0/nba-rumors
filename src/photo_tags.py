@@ -207,6 +207,42 @@ def sheets(photos: list[dict], thumbs: list[Path], folder: Path, era) -> list[st
     return names
 
 
+PHOTO_OBJ = re.compile(r"\{[^{}]*?\"n\"\s*:\s*\d+[^{}]*\}")
+SAME_LIST = re.compile(r"\"same\"\s*:\s*(\[[\s\d,\[\]]*\])")
+
+
+def parse_answer(answer) -> dict:
+    """The tag answer as {"photos": [...], "same": [...]}. Run 43288011054: Claude broke the JSON of
+    one 45-photo answer at the same place twice, and all 45 photos lost their tags. Now a broken
+    answer is read object by object: only a broken photo entry is lost, the rest are kept."""
+    if isinstance(answer, dict):
+        return answer
+    text = str(answer or "")
+    try:
+        out = json.loads(text[text.find("{"):text.rfind("}") + 1])
+        if isinstance(out, dict):
+            return out
+    except ValueError:
+        pass
+    photos = []
+    for m in PHOTO_OBJ.finditer(text):
+        try:
+            photos.append(json.loads(m.group(0)))
+        except ValueError:
+            continue
+    same = []
+    m = SAME_LIST.search(text)
+    if m:
+        try:
+            same = json.loads(m.group(1))
+        except ValueError:
+            same = []
+    if not photos:
+        raise ValueError(f"no photo entries in the answer: {text[:80]}")
+    print(f"[!] photo tags: answer was not valid JSON, {len(photos)} entries read one by one")
+    return {"photos": photos, "same": same}
+
+
 def parse_tags(out: dict, n: int) -> tuple[dict[int, dict], list[list[int]]]:
     """{tile number: tag} with only known values, and the same-moment groups."""
     tags = {}
@@ -262,9 +298,9 @@ def tag_person(person: str, pool: list[dict], ask, ua: str, era, scene_of) -> in
             out = None
             for _attempt in range(2):
                 try:
-                    out = ask(prompt, folder=str(folder), timeout=900)
+                    out = parse_answer(ask(prompt, folder=str(folder), timeout=900, raw=True))
                     break
-                except ValueError as exc:          # a broken JSON answer: ask once more
+                except ValueError as exc:          # nothing readable at all: ask once more
                     print(f"[!] photo tags for {person}: answer not readable ({str(exc)[:80]})")
             if out is None:
                 continue

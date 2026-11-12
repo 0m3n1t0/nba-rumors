@@ -55,6 +55,9 @@ the "Safety tests" step before anything is installed or made.
  34. the hook is a STATED shock (owner, 2026-11-12): statements rank first, a question loses
      points; name + shock in the first 8 words; a rumor hook opens with its source
  35. a historic beef follows the 48-hour feud rule too (also against this run's Shorts)
+ 36. every photo of the story's people is tagged once (kept), each beat gets a shortlist that fits
+     its line; never more than 3 photos of one scene; burst shots are one picture; political
+     photos only when the line is about them
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -81,6 +84,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import os  # noqa: E402
 # the tests must never write the pipeline's real history (it is saved to the private repo)
 os.environ.setdefault("NBA_OV_CACHE", str(Path(tempfile.gettempdir()) / "nba_test_openverse_cache.json"))
+os.environ.setdefault("NBA_TAG_CACHE", str(Path(tempfile.gettempdir()) / "nba_test_photo_tags.json"))
 
 import numpy as np  # noqa: E402  (in requirements.txt)
 
@@ -939,21 +943,28 @@ class SceneSpread(unittest.TestCase):
                  self.ph("Jaylen Brown Sixers.jpg", "Someone", "2026-10-30")]
         return h + other
 
-    def test_full_scene_waits_for_an_equal_fitting_photo(self):
+    def test_full_scene_goes_behind_everything_else(self):
+        """Owner, 2026-11-12: a 4th photo of one scene only when nothing else is left, then by
+        score (before: it waited only behind equally related photos scoring 6+)."""
         m, c = self.m, self._pool()
         scenes = self.Counter({m.scene_of(c[0]): 3})
         tier = lambda j: 3
         scores = {0: 8, 1: 8, 5: 7, 6: 6}
         self.assertEqual(m.spread_scenes([0, 1, 5, 6], c, tier, scores, scenes), [5, 6, 0, 1])
         self.assertEqual(m.spread_scenes([0, 1, 5], c, tier, scores, self.Counter()), [0, 1, 5])
+        self.assertEqual(m.spread_scenes([0, 1], c, tier, scores, scenes), [0, 1])  # nothing else: by score
+        # behind a less related or weaker photo too (the old rule kept it in front of those)
+        self.assertEqual(m.spread_scenes([0, 5], c, {0: 3, 5: 2}.get, {0: 8, 5: 9}, scenes), [5, 0])
+        self.assertEqual(m.spread_scenes([0, 5], c, tier, {0: 8, 5: 5}, scenes), [5, 0])
 
-    def test_never_behind_less_related_or_weak(self):
-        m, c = self.m, self._pool()
-        scenes = self.Counter({m.scene_of(c[0]): 3})
-        tiers = {0: 3, 5: 2}
-        self.assertEqual(m.spread_scenes([0, 5], c, tiers.get, {0: 8, 5: 9}, scenes), [0, 5])
-        self.assertEqual(m.spread_scenes([0, 5], c, lambda j: 3, {0: 8, 5: 5}, scenes), [0, 5])
-        self.assertEqual(m.spread_scenes([0, 1], c, lambda j: 3, {0: 8, 1: 8}, scenes), [0, 1])
+    def test_scene_from_the_file_name(self):
+        m = self.m
+        wh = {"kind": "photo", "author": "The White House", "date": "",
+              "title": "Joe Biden Steph Curry Steve Kerr P20230117AS-1347.jpg"}
+        self.assertEqual(m.scene_of(wh), ("the white house", "2023-01-17"))
+        self.assertEqual(m.scene_of(wh), m.scene_of({**wh, "title": "P20230117AS-2061 (52636052765).jpg",
+                                                     "date": "2023-01-17"}))
+        self.assertIsNone(m.TITLE_DAY.search("Steph Curry (51913909237).jpg"))   # a Flickr id is no date
 
     def test_replay_of_the_run(self):
         """The run's 13 shots in its own order, with two fitting photos of other games added to
@@ -967,14 +978,17 @@ class SceneSpread(unittest.TestCase):
         scenes, shown = self.Counter(), []
         for _ in range(13):
             order = [j for j in range(len(pool)) if j not in shown]
-            j = m.spread_scenes(order, pool, lambda j: 3, scores, scenes)[0]
+            left = m.spread_scenes(order, pool, lambda j: 3, scores, scenes)
+            if not left:
+                break
+            j = left[0]
             shown.append(j)
             scenes.update([m.scene_of(pool[j])])
-        wizards = sum(1 for j in shown if j < len(run))
-        # before B11: 9 of 13. Now 3, then the 8 other photos, then (pool used up) 2 more Wizards
-        # ones rather than an empty beat; the 2 All-Pro Reels photos are one scene, both fit
-        self.assertEqual(wizards, 5)
+        # before B11: 9 of 13 from the Wizards game. Now 3, then the 8 other photos, then (pool
+        # used up) 2 more Wizards shots rather than a frozen picture
+        self.assertEqual(sum(1 for j in shown if j < len(run)), 5)
         self.assertEqual(len(set(shown)), 13)
+        self.assertTrue(all(j >= len(run) for j in shown[3:11]))
         self.assertEqual(shown[:m.SCENE_MAX], [0, 1, 2])     # the best come first, as before
 
     def test_flickr_photos_know_their_day(self):
@@ -1010,7 +1024,7 @@ class SceneSpread(unittest.TestCase):
             items = [{**on[0], "file": "data/x.jpg", "match": 8, "alts": on[1:]}, None, None]
             got = m.fill_empty(items, 3, folder, set(), ["Jaylen Brown"], None)
             self.assertEqual(got[1]["title"], "Jaylen Brown 2022.jpg")       # another game first
-            self.assertEqual(got[2]["title"], "Celtics at Wizards 2024-12-011.jpg")  # then, not empty
+            self.assertEqual(got[2]["title"], "Celtics at Wizards 2024-12-011.jpg")  # nothing else left
         finally:
             for k, v in saved.items():
                 setattr(m, k, v)
@@ -1866,6 +1880,232 @@ class StatedShockHook(unittest.TestCase):
         self.assertFalse(C.bare_claims(cl, "Shams: the Lakers are shopping Austin Reaves before the deadline."))
         # a team name before the colon is a headline, not a source
         self.assertTrue(C.bare_claims(cl, "Lakers: they are shopping Austin Reaves before the deadline."))
+
+
+class EveryPhotoLookedAt(unittest.TestCase):
+    """36. Owner, 2026-11-12: the editor saw 3 of Curry's 94 photos per beat (the first 12 only),
+    and 5 White House shots went into an injury Short. Now every photo is tagged once, the tags
+    are kept, and each beat gets the photos that fit its line. Offline: Claude and downloads faked."""
+
+    def setUp(self):
+        import tempfile
+        import photo_tags
+        import media
+        self.t, self.m = photo_tags, media
+        self.tmp = Path(tempfile.mkdtemp())
+        self.saved = (photo_tags.CACHE, photo_tags.fetch_thumbs, photo_tags._sleep)
+        photo_tags.CACHE = self.tmp / "tags.json"
+        photo_tags._sleep = lambda s: None
+
+        def thumbs(urls, folder, ua):
+            out = []
+            for k, u in enumerate(urls):
+                p = folder / f"t{k}.jpg"
+                self.fake_download(u, p)
+                out.append(p)
+            return out
+        photo_tags.fetch_thumbs = thumbs
+
+    def tearDown(self):
+        self.t.CACHE, self.t.fetch_thumbs, self.t._sleep = self.saved
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def ph(self, n, date="2022-02-20", author="Erik Drost"):
+        return {"kind": "photo", "page": f"p{n}", "title": f"Steph Curry ({51900000000 + n}).jpg",
+                "url": f"https://x/{n}.jpg", "author": author, "date": date}
+
+    def fake_download(self, url, path, timeout=60):
+        from PIL import Image
+        Image.new("RGB", (500, 400), (int(url.split("/")[-1].split(".")[0]) * 7 % 255, 80, 80)).save(path)
+        return True
+
+    def test_parse_keeps_only_known_values(self):
+        tags, groups = self.t.parse_tags({"photos": [
+            {"n": 1, "v": "C", "s": "game", "e": "sad", "t": "walks off head down"},
+            {"n": 2, "v": "a", "s": "made-up", "e": "x", "t": ""},
+            {"n": 9, "v": "C"}, {"n": "x"}, {"v": "C"}],
+            "same": [[1, 2], [3], ["7", 8, 99]]}, 8)
+        self.assertEqual(set(tags), {1, 2})
+        self.assertEqual(tags[2]["s"], "other")
+        self.assertEqual(groups, [[1, 2], [7, 8]])
+
+    def test_tagged_once_kept_and_same_moment_marked(self):
+        pool = [self.ph(n) for n in range(1, 12)]
+        calls = []
+
+        def ask(prompt, folder=None, timeout=0):
+            calls.append(sorted(os.listdir(folder)))
+            self.assertIn("Steph Curry", prompt)
+            return {"photos": [{"n": k, "v": "A" if k == 11 else "C", "s": "game", "e": "calm", "t": "plays"}
+                               for k in range(1, 12)], "same": [[2, 3]]}
+        n = self.t.tag_person("Steph Curry", pool, ask, "ua", self.m.photo_era, self.m.scene_of)
+        self.assertEqual(n, 11)
+        self.assertEqual(calls, [["tags_1.jpg", "tags_2.jpg"]])          # 9 a sheet
+        self.assertEqual(pool[1]["moment"], pool[2]["moment"])
+        self.assertFalse(self.t.usable(pool[10]))
+        fresh = [self.ph(n) for n in range(1, 12)]
+        self.assertEqual(self.t.tag_person("Steph Curry", fresh, ask, "ua",
+                                           self.m.photo_era, self.m.scene_of), 0)
+        self.assertEqual(len(calls), 1)                                   # kept: no second look
+        self.assertEqual(fresh[0]["tag"]["s"], "game")
+        self.assertEqual(fresh[1]["moment"], fresh[2]["moment"])
+
+    def test_big_pools_are_asked_in_parts_and_a_broken_answer_once_more(self):
+        """Preview 43222583073: one call for 120+ photos returned broken JSON and the whole Short
+        fell back. Now 45 a call; a broken answer is asked again once, then only that part waits."""
+        pool = [self.ph(n) for n in range(1, 101)]
+        calls = []
+
+        def ask(prompt, folder=None, timeout=0):
+            calls.append(len(os.listdir(folder)))
+            if len(calls) in (2, 4, 5):
+                raise ValueError("Expecting ',' delimiter")
+            n = min(45, 100 - 45 * (0 if len(calls) == 1 else 1 if len(calls) == 3 else 2))
+            return {"photos": [{"n": k, "v": "C", "s": "game", "e": "calm", "t": "x"} for k in range(1, n + 1)]}
+        n = self.t.tag_person("Steph Curry", pool, ask, "ua", self.m.photo_era, self.m.scene_of)
+        self.assertEqual(calls, [5, 5, 5, 2, 2])      # 45 + 45 + 10 photos; part 2 asked twice
+        self.assertEqual(n, 90)                       # the last part failed twice: untagged this run
+        self.assertTrue(all(c.get("tag") for c in pool[:90]))
+        self.assertFalse(any(c.get("tag") for c in pool[90:]))
+
+    def test_thumbnails_one_at_a_time_and_stop_on_a_second_429(self):
+        import urllib.error
+        import urllib.request
+        t = self.t
+        t.fetch_thumbs = self.saved[1]
+        seen, slept = [], []
+        t._sleep = slept.append
+
+        class Resp:
+            def __init__(self, b): self.b = b
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return self.b
+
+        def fake_open(req, timeout=0):
+            seen.append(req.full_url)
+            if req.full_url.endswith("/2.jpg"):
+                raise urllib.error.HTTPError(req.full_url, 429, "slow down", {"Retry-After": "7"}, None)
+            from io import BytesIO
+            from PIL import Image
+            buf = BytesIO()
+            Image.new("RGB", (50, 50)).save(buf, "JPEG")
+            return Resp(buf.getvalue())
+        saved_open = urllib.request.urlopen
+        urllib.request.urlopen = fake_open
+        try:
+            got = t.fetch_thumbs([f"https://upload.wikimedia.org/{k}.jpg" for k in range(1, 7)], self.tmp, "ua")
+        finally:
+            urllib.request.urlopen = saved_open
+        self.assertEqual([bool(x) for x in got], [True, False, False, False, False, False])
+        self.assertEqual(len(seen), 3)                # 1 ok; 2: 429, waited 7 s, 429 again: stop
+        self.assertIn(7.0, slept)
+        self.assertIn(t.PACE, slept)
+
+    def test_same_moment_is_one_picture(self):
+        from picture_ids import already_shown, mark_shown
+        a, b = {**self.ph(33), "moment": "p33"}, {**self.ph(34), "moment": "p33"}
+        shown = set()
+        mark_shown(a, shown, a["page"])
+        self.assertTrue(already_shown(b, shown, b["page"]))
+        self.assertFalse(already_shown(self.ph(35), shown, "p35"))
+
+    def test_shortlist_reads_tags_and_skips_absent(self):
+        curry = [{**self.ph(n), "tag": {"v": v, "s": s, "e": e, "t": t}} for n, (v, s, e, t) in enumerate([
+            ("C", "political", "smiling", "with Biden at the White House"),
+            ("C", "game", "sad", "walks off head down, Warriors jersey"),
+            ("A", "other", "unclear", "popcorn bucket"),
+            ("O", "game", "calm", "Jokic shoots")])]
+        seen = {}
+
+        def ask(prompt, folder=None, timeout=0):
+            seen["prompt"] = prompt
+            return {"beats": [{"beat": 0, "photos": ["a1", "a0", "a2", "zz", "a1"]}, {"beat": "x"}]}
+        got = self.t.shortlists([{"say": "Curry left with an abdominal injury."}], [{"person": "Steph Curry"}],
+                                ["Steph Curry"], "Curry hurt", {"Steph Curry": curry}, ask,
+                                self.m.photo_era, self.m.scene_of)
+        self.assertEqual([c["page"] for c in got[0]], ["p1", "p0"])       # absent / unknown ids dropped
+        self.assertNotIn("popcorn", seen["prompt"])
+        self.assertNotIn("Jokic", seen["prompt"])
+        self.assertIn("walks off head down", seen["prompt"])
+        self.assertIn('"political"', seen["prompt"])
+        self.assertIsNone(self.t.shortlists([{"say": "x"}], [{}], ["Steph Curry"], "s",
+                                            {"Steph Curry": curry[2:]}, ask, self.m.photo_era, self.m.scene_of))
+
+    def test_beat_sees_the_shortlist(self):
+        m = self.m
+        tagged = [{**self.ph(n), "tag": {"v": "C", "s": "game", "e": "calm", "t": "x"}} for n in range(20)]
+        untagged = [self.ph(100 + n) for n in range(5)]
+        saved = {k: getattr(m, k) for k in ("photos", "download", "image_ok", "commons_videos", "pixabay_videos")}
+        try:
+            m.photos = lambda who: tagged if who == "Steph Curry" else untagged
+            m.download, m.image_ok = self.fake_download, (lambda p: True)
+            m.commons_videos = lambda *a, **k: []
+            m.pixabay_videos = lambda q: []
+            got = m.candidates({"person": "Steph Curry", "queries": []}, self.tmp, 0, set(), "Steph Curry",
+                               ("Kevin Durant",), tagged[5:13])
+            self.assertEqual([c["page"] for c in got], [f"p{n}" for n in range(5, 13)] + ["p100", "p101", "p102"])  # Durant untagged: as before
+            old = m.candidates({"person": "Steph Curry", "queries": []}, self.tmp, 0, set(), "Steph Curry", (), None)
+            self.assertEqual(len(old), m.MAX_PHOTOS)                      # no tags: the old way
+        finally:
+            for k, v in saved.items():
+                setattr(m, k, v)
+
+    def test_big_beats_get_more_sheets(self):
+        m = self.m
+        from PIL import Image
+        cands = []
+        for n in range(17):
+            p = self.tmp / f"c{n}.jpg"
+            Image.new("RGB", (600, 800), "gray").save(p)
+            cands.append({"kind": "photo", "thumb": str(p)})
+        m.contact_sheet(cands, self.tmp / "beat_3.jpg", "BEAT 3: x")
+        names = sorted(x.name for x in self.tmp.glob("beat_3*.jpg"))
+        self.assertEqual(names, ["beat_3.jpg", "beat_3_2.jpg"])           # 4 a row, 3 rows a sheet
+        with Image.open(self.tmp / "beat_3.jpg") as im:
+            self.assertLessEqual(im.height, 1600)
+        self.assertIn("beat_0_2.jpg", m.PICK_PROMPT)
+
+    def test_unjudged_top_ups_use_the_tags(self):
+        m = self.m
+        pool = [{**self.ph(1), "title": "Steph Curry White House.jpg", "tag": {"v": "C", "s": "political"}},
+                {**self.ph(6), "title": "Steph Curry Davidson.jpg", "team": "pre-nba"},
+                {**self.ph(2), "title": "Steph Curry popcorn.jpg", "tag": {"v": "A", "s": "other"}},
+                {**self.ph(3), "title": "Steph Curry stage.jpg", "tag": {"v": "C", "s": "stage"}},
+                {**self.ph(4), "title": "Steph Curry far.jpg", "tag": {"v": "S", "s": "game"}, "hoops": True},
+                {**self.ph(5), "title": "Steph Curry game.jpg", "tag": {"v": "C", "s": "game"}, "hoops": True}]
+        saved = m.photos
+        try:
+            m.photos = lambda who: pool
+            self.assertEqual([c["page"] for c in m.person_photos("Steph Curry", set())], ["p5", "p4"])
+        finally:
+            m.photos = saved
+
+    def test_rules_in_the_prompts(self):
+        m, t = self.m, self.t
+        self.assertIn("POLITICAL event", m.PICK_PROMPT)
+        self.assertIn("the line is about that very event or that politician", m.PICK_PROMPT)
+        for need in ('"A" = he is NOT in it', '"O" = the photo is about SOMEONE ELSE', "THE SAME MOMENT", "Never guess"):
+            self.assertIn(need, t.TAG_PROMPT)
+        for need in ("WHO first", "Fit the MOMENT", "at most 3 photos with the same sc", '"political"'):
+            self.assertIn(need, t.PICK_PROMPT)
+
+    def test_a_failure_falls_back_to_the_first_photos(self):
+        m = self.m
+        saved = {k: getattr(m, k) for k in ("photos", "people")}
+        errors = list(m.MEDIA_ERRORS)
+        try:
+            m.people = lambda short: ["Steph Curry"]
+
+            def boom(who):
+                raise ValueError("Commons down")
+            m.photos = boom
+            self.assertIsNone(m.shortlist_photos({"headline": "x"}, [{"say": "x"}], [{"person": "Steph Curry"}]))
+            self.assertTrue(any("photo tags" in e for e in m.MEDIA_ERRORS))
+        finally:
+            for k, v in saved.items():
+                setattr(m, k, v)
+            m.MEDIA_ERRORS[:] = errors
 
 
 if __name__ == "__main__":

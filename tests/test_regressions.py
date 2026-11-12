@@ -59,6 +59,7 @@ the "Safety tests" step before anything is installed or made.
      its line; never more than 3 photos of one scene; burst shots are one picture; political
      photos only when the line is about them
  37. every outlet's report of the same story is read (up to MAX_ARTICLES); "45.0" counts as 45
+ 38. the chosen hook with a detail the sources word differently is rewritten in their words, not dropped
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2143,6 +2144,65 @@ class EveryPhotoLookedAt(unittest.TestCase):
             for k, v in saved.items():
                 setattr(m, k, v)
             m.MEDIA_ERRORS[:] = errors
+
+
+class HookDetailInSourceWords(unittest.TestCase):
+    """38. Run 43262308476: the fan's pick "...cussed him out over one radio comment in 2012." lost
+    to a weaker hook because the source says "on ESPN 1000's Waddle & Silvy", never "radio". The
+    detail is put in the sources' words; the new line must pass the checks again."""
+
+    SRC = [{"title": "Charles Barkley recalls Michael Jordan", "summary": "", "tier": 1, "publisher": "ES",
+            "text": "On ESPN 1000's Waddle & Silvy, Barkley said Jordan needed to stop hiring yes-men. "
+                    "Jordan didn't take it well. And he is cussing me up and down, that's the last time we spoke."}]
+    HOOK = "Charles Barkley says Michael Jordan cussed him out over one radio comment in 2012."
+
+    def run_fix(self, answer):
+        import script
+        import compliance
+        hook = {"text": self.HOOK, "score": 51, "question": True, "intrigue_pick": True,
+                "unsupported_details": compliance.unsupported_details(self.HOOK, self.SRC)}
+        self.assertEqual(hook["unsupported_details"], ["radio"])
+        saved = script.ask_claude
+        seen = {}
+
+        def ask(prompt, model=""):
+            seen["prompt"], seen["model"] = prompt, model
+            if isinstance(answer, Exception):
+                raise answer
+            return {"text": answer}
+        script.ask_claude = ask
+        try:
+            return script.fix_hook_detail(hook, self.SRC), hook, seen
+        finally:
+            script.ask_claude = saved
+
+    def test_detail_in_the_sources_words_keeps_the_hook(self):
+        import script
+        ok, hook, seen = self.run_fix("Charles Barkley says Michael Jordan cussed him out over one ESPN 1000 comment.")
+        self.assertTrue(ok)
+        self.assertNotIn("radio", hook["text"])
+        self.assertEqual(hook["unsupported_details"], [])
+        self.assertEqual(hook["detail_fixed"], ["radio"])
+        self.assertTrue(hook["intrigue_pick"])
+        self.assertIn("radio", seen["prompt"])
+        self.assertIn("Waddle & Silvy", seen["prompt"])
+        self.assertEqual(seen["model"], script.CLAUDE_MODEL_LIGHT)
+
+    def test_a_bad_rewrite_changes_nothing(self):
+        for answer in ("Charles Barkley says Jordan cussed him out on the radio in 2012.",   # still radio
+                       "Barkley. Jordan. Cussed out.",                                      # not one line
+                       ValueError("broken JSON")):
+            ok, hook, _ = self.run_fix(answer)
+            self.assertFalse(ok)
+            self.assertEqual(hook["text"], self.HOOK)
+            self.assertEqual(hook["unsupported_details"], ["radio"])
+
+    def test_wired_in_before_the_hook_order(self):
+        import inspect
+        import script
+        src = inspect.getsource(script.build_short)
+        self.assertLess(src.index("fix_hook_detail(hooks[0], sources)"),
+                        src.index('hooks.sort(key=lambda h: (bool(h["unsupported_details"])'))
 
 
 if __name__ == "__main__":

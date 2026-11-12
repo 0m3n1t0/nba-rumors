@@ -60,6 +60,7 @@ the "Safety tests" step before anything is installed or made.
      photos only when the line is about them
  37. every outlet's report of the same story is read (up to MAX_ARTICLES); "45.0" counts as 45
  38. the chosen hook with a detail the sources word differently is rewritten in their words, not dropped
+ 39. where a feud stands now: "silence" while a source tells of contact since -> repair, else REVIEW
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2203,6 +2204,49 @@ class HookDetailInSourceWords(unittest.TestCase):
         src = inspect.getsource(script.build_short)
         self.assertLess(src.index("fix_hook_detail(hooks[0], sources)"),
                         src.index('hooks.sort(key=lambda h: (bool(h["unsupported_details"])'))
+
+
+class WhereTheFeudStandsNow(unittest.TestCase):
+    """39 (D13). Run 43262308476: "they stopped talking ... still no update on a reunion", while the
+    source said Vince Coleman got them talking and Barkley planned golf with Jordan."""
+
+    SRC = [{"title": "Charles Barkley recalls Michael Jordan", "summary": "",
+            "text": "Jordan didn't take it well. It stayed that way for more than a decade. The man who reunited "
+                    "them was former St. Louis Cardinals outfielder Vince Coleman. While golfing with Jordan at "
+                    "The Grove, Coleman called Barkley and told them it was time to talk. There has been no update "
+                    "on it yet."}]
+    SPOKEN = ("Barkley says Jordan cussed him out, and they stopped talking. He later called the silence "
+              "stubborn, and there's still no update on a reunion. So who should've picked up the phone first?")
+
+    def test_silence_while_a_source_tells_of_contact(self):
+        import compliance as C
+        self.assertIn("reunited", C.missed_turn(self.SPOKEN, self.SRC))
+        fixed = self.SPOKEN.replace("there's still no update on a reunion",
+                                    "Vince Coleman finally got them talking again")
+        self.assertEqual(C.missed_turn(fixed, self.SRC), "")
+        # a turn about other people (no name the Short says nearby) is not this feud's turn
+        other = [{"title": "", "summary": "", "text": "Nick Young apologized to Ayesha Curry on his podcast."}]
+        self.assertEqual(C.missed_turn(self.SPOKEN, other), "")
+        # no silence in the Short: nothing to check
+        self.assertEqual(C.missed_turn("Barkley and Jordan were Dream Team teammates.", self.SRC), "")
+
+    def test_repair_then_gate(self):
+        import compliance as C
+        import script
+        beats = [{"say": s} for s in compliance_split(self.SPOKEN)]
+        problems = script.repair_needed("Charles Barkley says Michael Jordan cussed him out.", beats,
+                                        {"stages": [], "hard": [], "soft": []}, self.SRC, [])
+        self.assertTrue(any("contact since" in p for p in problems))
+        verdict, notes, _ = C.check_claims([{"text": "Barkley says Jordan cussed him out", "status": "CONFIRMED",
+                                             "source": 1}], self.SRC, self.SPOKEN)
+        self.assertEqual(verdict, C.REVIEW)
+        self.assertTrue(any("contact since" in n for n in notes))
+        self.assertIn("where a feud or a friendship stands NOW", script.PROMPT)
+
+
+def compliance_split(text):
+    import compliance
+    return compliance.split_sentences(text)
 
 
 if __name__ == "__main__":

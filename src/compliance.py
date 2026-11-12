@@ -176,6 +176,35 @@ def dropped_meaning(claims: list[dict], spoken: str) -> list[str]:
     return out
 
 
+# D13 (run 43262308476): the Barkley-Jordan Short ended "they stopped talking ... still no update
+# on a reunion", but its source said Vince Coleman got them talking and Barkley planned golf with
+# Jordan. Where a feud stands NOW is part of the story: a Short that says "silence" while a source
+# tells of contact since leaves out the latest turn.
+SILENT = re.compile(r"\b(no update|still (?:no|not|silent|hasn't|haven't|feuding)|never (?:spoke|spoken|talked|"
+                    r"made up)(?: again)?|stopped (?:talking|speaking)|(?:haven't|hasn't|have not|has not) "
+                    r"(?:spoken|talked)|the silence|no reunion|went silent|cut (?:him|each other) off)\b", re.I)
+TURN = re.compile(r"\b(reunit\w*|reconcil\w*|made up|patched (?:it|things) up|buried the hatchet|"
+                  r"apologi[sz]\w*|time to talk|talking again|spoke again|spoken again|reached out|"
+                  r"squashed|hugged|back on good terms)\b", re.I)
+NAME = re.compile(r"\b[A-Z][a-z]{2,}\b")
+
+
+def missed_turn(spoken: str, sources: list[dict]) -> str:
+    """A source sentence telling of contact since the falling-out (with a name the Short says
+    within two sentences of it), when the Short speaks of silence and never of that turn. ""=fine."""
+    if not SILENT.search(spoken) or TURN.search(spoken):
+        return ""
+    said = {w.lower() for w in NAME.findall(spoken)}
+    for s in sources:
+        sentences = split_sentences(f"{s.get('summary', '')} {s.get('text', '')}")
+        for k, x in enumerate(sentences):
+            if TURN.search(x):
+                near = " ".join(sentences[max(0, k - 2):k + 3])
+                if said & {w.lower() for w in NAME.findall(near)}:
+                    return x.strip()[:160]
+    return ""
+
+
 def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[str, list[str], list[dict]]:
     """Every important claim carries CONFIRMED / REPORTED / RUMOR / UNVERIFIED, written by the
     script writer and CHECKED here against the sources. A status is downgraded when the evidence
@@ -220,6 +249,10 @@ def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[
     for text in bare_claims(out, spoken):
         verdict = worst(verdict, REVIEW)
         notes.append(f"a rumor / anonymous report / opinion sounds like a fact: {text[:80]}")
+    turn = missed_turn(spoken, sources)
+    if turn:
+        verdict = worst(verdict, REVIEW)
+        notes.append(f"the Short speaks of silence, but a source tells of contact since: \"{turn[:100]}\"")
     return verdict, notes, out
 
 

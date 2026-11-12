@@ -279,6 +279,11 @@ TWO VERSIONS (the channel lives on them): before choosing the angle, search the 
      Giannis now plays for Miami);
    - a FORMER role stays former: "his former coach", "his ex-teammate", never words that make
      it sound current ("Giannis's Milwaukee coach" for a coach who no longer coaches him);
+   - where a feud or a friendship stands NOW, as the latest source tells it: an apology, a
+     reconciliation, talking again, a planned meeting, or still silent. Never "no update",
+     "never spoke again" or "still silent" when a source tells of contact since (the Barkley-
+     Jordan Short said "no update on a reunion" while its source said Vince Coleman got them
+     talking and Barkley planned to play golf with Jordan: that turn IS the story's ending);
    - a word that changes what happened stays: "on-screen", "in a movie", "in an ad", "alleged",
      "joked", "parody" ("Ayesha Curry's on-screen kiss", never just "her kiss": without it a
      movie scene sounds like a real scandal about a real person).
@@ -1468,6 +1473,11 @@ def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[d
         for text in compliance.bare_claims(claims, said):
             problems.append(f"this rumor / anonymous report / opinion sounds like a fact: \"{text[:90]}\": "
                             "say in the same sentence what it is (reportedly, sources say, he thinks)")
+    if sources is not None:
+        turn = compliance.missed_turn(" ".join([hook] + [b.get("say", "") for b in beats]), sources)
+        if turn:
+            problems.append(f"the Short speaks of silence or no update, but a source tells of contact since: "
+                            f"\"{turn[:140]}\": say where they stand now, in the sources' words")
     if sources is not None:
         # the beats only: the hook is fixed here (a detail in it is held by the gate instead)
         said = " ".join([b.get("say", "") for b in beats] + [b.get("on_screen", "") for b in beats])

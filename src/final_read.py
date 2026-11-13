@@ -38,8 +38,13 @@ it, against the SOURCE TEXTS it was written from. Report only CLEAR errors of th
    the wrong person, or cut so it says something else.
 3. NOT IN THE SOURCES: a fact, number, name or claim the sources do not support, or a rumor
    said as a fact.
-4. WRONG PICTURE: the picture's person is not the one the line is about (another man with
-   the same name, the wrong team for the time the line speaks of, a picture of someone else).
+4. WRONG PICTURE: the viewer would take the wrong man for the one the line is about: another
+   man with the same name; someone else shown while the line says what HE said or did ("He
+   wrote...", "Murray deleted it" over a teammate's photo); or, when the line names a team or a
+   time ("as a Laker", "in 2004"), a picture from another team or time. NOT an error (at most a
+   doubt): another person from this story on a line about the team or the story as a whole, or
+   the right man in a former team's jersey when the line names no team or time (the channel's
+   picture rules allow both when better photos are missing).
 5. BROKEN PROMISE: the opening line promises something the Short never delivers.
 
 Style, taste, a weak line, a better hook: NOT errors (the channel's style is bold, dramatic,

@@ -1041,7 +1041,6 @@ def main() -> None:
     # (the run's logs are public too); printed only when run by hand
     if not os.environ.get("GITHUB_STEP_SUMMARY"):
         print(text)
-    import os
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
             fh.write(text + "\n")

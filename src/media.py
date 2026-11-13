@@ -575,7 +575,7 @@ def not_a_person(name: str) -> bool:
 
 
 def ask_claude(prompt: str, folder: str | None = None, timeout: int = 240, model: str = "",
-               raw: bool = False) -> dict | str:
+               raw: bool = False, where: str = "media") -> dict | str:
     """No tools except reading the images in its own folder (contact sheets only). raw=True
     returns the answer's text unparsed (photo_tags.py salvages a partly broken JSON answer)."""
     with tempfile.TemporaryDirectory() as empty:
@@ -587,7 +587,7 @@ def ask_claude(prompt: str, folder: str | None = None, timeout: int = 240, model
     check_limit(res.stdout, res.stderr)
     if res.returncode != 0:   # the CLI often reports the reason on stdout, not stderr
         raise RuntimeError(f"exit {res.returncode}: {(res.stdout or '')[-400:]} {(res.stderr or '')[-300:]}")
-    log_claude_usage(res.stdout, "media")
+    log_claude_usage(res.stdout, where)   # which step: the budget table shows each one (D16)
     text = json.loads(res.stdout).get("result", "")
     if raw:
         return text
@@ -626,7 +626,7 @@ def plan(short: dict) -> list[dict]:
     rows = [{"beat": i, "say": b.get("say", ""), "note": b.get("on_screen", "")} for i, b in enumerate(beats)]
     try:
         out = ask_claude(PLAN_PROMPT.replace("PEOPLE_LIST", ", ".join(who) or "(none)")
-                         .replace("BEATS_JSON", json.dumps(rows, indent=1)), model=CLAUDE_MODEL_LIGHT)
+                         .replace("BEATS_JSON", json.dumps(rows, indent=1)), model=CLAUDE_MODEL_LIGHT, where="media_plan")
         picks = {p.get("beat"): p for p in out.get("beats", []) if isinstance(p, dict)}
         MOOD[0] = out.get("mood") if out.get("mood") in MUSIC_QUERIES else MOOD[0]
         if len(picks) >= len(beats):
@@ -846,6 +846,7 @@ def commons_photos(person: str) -> list[dict]:
             "date": date,
             "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4) + (1000 if hoops else 0),
             "hoops": hoops,
+            "own_category": title in in_category,   # filed under this very player on Commons
             "team": photo_team(person, text + " " + clean(meta.get("Categories", "")), year if year > 2000 else None),
         })
     if sum(f["hoops"] for f in found) >= 2:   # enough real basketball photos: drop the namesakes
@@ -1087,10 +1088,14 @@ def photos(person: str) -> list[dict]:
             if flickr_id(f["page"]) not in seen:
                 seen.add(flickr_id(f["page"]))
                 found.append(f)
-        other = [f for f in found if look_alike_name(person, f.get("title", ""))]
+        # a file in his OWN Commons category is his, however its title spells him (run 43407418420:
+        # 27 Flickr photos titled "Dejonte Murray" were Dejounte Murray and were all left out)
+        other = [f for f in found if not f.get("own_category") and look_alike_name(person, f.get("title", ""))]
         if other:
-            print(f"   {person}: {len(other)} photo(s) of another man with his surname left out: "
-                  + ", ".join(f.get("title", "")[:40] for f in other[:3]))
+            note = (f"{person}: {len(other)} photo(s) of another man with his surname left out: "
+                    + ", ".join(f.get("title", "")[:40] for f in other[:3]))
+            print(f"   {note}")
+            TAG_DIAG.append(note)
             found = [f for f in found if f not in other]
         # among his photos, today's uniform first, then photos that do not show a team, then a
         # former team's (stable: inside each group the old order, newest first, is kept).
@@ -1558,7 +1563,8 @@ def shortlist_photos(short: dict, beats: list[dict], plans: list[dict]) -> dict[
         return None
     try:
         for person in who:
-            new = photo_tags.tag_person(person, photos(person), ask_claude, UA, photo_era, scene_of)
+            new = photo_tags.tag_person(person, photos(person), lambda *a, **k: ask_claude(*a, where="media_tags", **k),
+                                        UA, photo_era, scene_of)
             # final law (run 43353547001): a game photo in the jersey of a team he never played for
             # is another man (Isaiah Thomas, Wizards #4, shown as Isiah Thomas): out of his pool,
             # for every later step (shortlist, fill, the VS frame)
@@ -1576,7 +1582,8 @@ def shortlist_photos(short: dict, beats: list[dict], plans: list[dict]) -> dict[
         story = f"{short.get('headline', '')} (people: {people_line(people(short)) or 'see the beats'})"
         lists = photo_tags.shortlists(beats, plans, who, story,
                                       {p: photos(p)[:photo_tags.MAX_PER_PERSON] for p in who},
-                                      ask_claude, photo_era, scene_of)
+                                      lambda *a, **k: ask_claude(*a, where="media_shortlist", **k),
+                                      photo_era, scene_of)
         if lists is not None:
             TAG_DIAG.append(f"{short.get('_name', '')}: shortlist per beat: "
                             + " ".join(str(len(lists.get(i, []))) for i in range(len(plans))))
@@ -1618,7 +1625,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 for i, b in enumerate(beats)]
         try:
             out = ask_claude(PICK_PROMPT.replace("BEATS_JSON", json.dumps(rows, indent=1)).replace("STORY_LINE", story),
-                             folder=str(sheets), timeout=600)
+                             folder=str(sheets), timeout=600, where="media_pick")
             picks = {x.get("beat"): x for x in out.get("beats", []) if isinstance(x, dict)}
         except UsageLimit:
             raise
@@ -1655,7 +1662,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                                  .replace("one contact sheet per beat: beat_0.jpg, beat_1.jpg, ...",
                                           "one contact sheet for each of these beats: "
                                           + ", ".join(f"beat_{i}.jpg" for i in weak)),
-                                 folder=str(sheets), timeout=600)
+                                 folder=str(sheets), timeout=600, where="media_pick2")
                 for x in out.get("beats", []):
                     if isinstance(x, dict) and x.get("beat") in weak:
                         picks[x["beat"]] = {**x, "_round": 2}

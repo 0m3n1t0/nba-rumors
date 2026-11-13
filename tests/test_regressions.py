@@ -86,6 +86,13 @@ the "Safety tests" step before anything is installed or made.
      could not read, is held by the gate; an error without real evidence is only a doubt
  54. D16: contact sheets are opened all at once (one step), not one per step: each step re-reads
      everything before it (run 43395656602: a 5-sheet tag call cost 136k tokens); turns logged
+ 55. no name is used in a function before that function imports it (run 43407418420: render.py
+     crashed after making both videos, so the gate never ran)
+ 56. a photo in the player's OWN Commons category is his, however the title spells his first name
+     (run 43407418420: 27 "Dejonte Murray" photos of Dejounte Murray were left out by rule 47)
+ 57. the final reader's WRONG PICTURE follows the picture rules already agreed: a former team's
+     jersey with no team or time in the line, or a teammate on a line about the team, is at
+     most a doubt (run 43407418420); each media Claude call is named in the budget (D16)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3009,6 +3016,79 @@ class SheetsOpenedAtOnce(unittest.TestCase):
                     mod.log_claude_usage(out, "t")
                 row = json.loads((Path(d) / "data" / "claude_usage.jsonl").read_text(encoding="utf-8"))
             self.assertEqual((row["turns"], row["in"]), (6, 15))
+
+
+
+class NoNameBeforeItsImport(unittest.TestCase):
+    """55 (run 43407418420). The audit's "print only without GITHUB_STEP_SUMMARY" (e54499d) put
+    os.environ before a leftover "import os" inside render.main: Python then treats os as a local
+    name, the stage crashed after both videos were made, and the gate never ran. Checked for
+    every function in every stage, so no stage can fail this way again."""
+
+    def test_every_function(self):
+        import ast
+        found = []
+        for path in sorted((ROOT / "src").glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for fn in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+                first = {}
+                for n in ast.walk(fn):
+                    if isinstance(n, (ast.Import, ast.ImportFrom)):
+                        for a in n.names:
+                            name = (a.asname or a.name).split(".")[0]
+                            first[name] = min(first.get(name, n.lineno), n.lineno)
+                found += [f"{path.name}:{n.lineno} {fn.name} uses {n.id} before line {first[n.id]}"
+                          for n in ast.walk(fn) if isinstance(n, ast.Name) and n.id in first and n.lineno < first[n.id]]
+        self.assertEqual(found, [])
+
+
+
+class HisOwnCategoryIsHim(unittest.TestCase):
+    """56 (run 43407418420). Rule 47 (another man with his surname) took 27 of Dejounte Murray's
+    31 Commons photos: Flickr titled them "Dejonte Murray". They were in his OWN Commons category,
+    which people file by hand under that very player. A wrong-team photo still meets the jersey law."""
+
+    def test_own_category_is_kept(self):
+        m = self.m = __import__("media")
+        saved = (m.commons_photos, m.flickr_photos, m.openverse_photos, dict(m._all_photos))
+        m._all_photos.clear()
+        pool = [{"page": "a", "score": 30, "title": "Dejonte Murray (51915001522).jpg", "own_category": True},
+                {"page": "b", "score": 20, "title": "Dejonte Murray (51915008527).jpg"},
+                {"page": "c", "score": 10, "title": "Dejounte Murray Pelicans.jpg"}]
+        try:
+            m.commons_photos = lambda person: [dict(p) for p in pool]
+            m.flickr_photos = m.openverse_photos = lambda person: []
+            self.assertEqual([p["page"] for p in m.photos("Dejounte Murray")], ["a", "c"])
+        finally:
+            m.commons_photos, m.flickr_photos, m.openverse_photos = saved[:3]
+            m._all_photos.clear()
+            m._all_photos.update(saved[3])
+
+    def test_commons_records_the_category(self):
+        src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
+        self.assertIn('"own_category": title in in_category,', src)
+
+
+
+class FinalReadKeepsThePictureRules(unittest.TestCase):
+    """57 (run 43407418420). The first real final read held Luka in a Dallas jersey on "no word
+    from Luka" and Zion on "the Pelicans are 1 and 8 with Murray": both are allowed by the agreed
+    picture rules (a former team scores lower, another person from the story fits a team line).
+    Zion over "He wrote that the sabotage is real, deleted it" stays an error: the viewer takes
+    Zion for the one who wrote it."""
+
+    def test_prompt(self):
+        import final_read
+        p = " ".join(final_read.PROMPT.split())
+        self.assertIn("someone else shown while the line says what HE said or did", p)
+        self.assertIn("the right man in a former team's jersey when the line names no team or time", p)
+        self.assertIn("NOT an error (at most a doubt)", p)
+
+    def test_media_calls_are_named(self):
+        src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
+        for step in ("media_plan", "media_tags", "media_shortlist", "media_pick", "media_pick2"):
+            self.assertIn(f'where="{step}"', src)
+        self.assertIn("log_claude_usage(res.stdout, where)", src)
 
 
 if __name__ == "__main__":

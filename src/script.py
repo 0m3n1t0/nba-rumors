@@ -1291,6 +1291,25 @@ def check_hook_truth(hook: dict, sources: list[dict]) -> str:
     return "overstated"
 
 
+def hook_order_key(h: dict) -> tuple:
+    return (bool(h["unsupported_details"]), bool(h.get("recycled")), bool(h.get("overstated")))
+
+
+def truth_order(hooks: list[dict], sources: list[dict]) -> None:
+    """D17: the chosen hook is read against the sources (check_hook_truth), then the hooks are
+    ordered: unsupported details, recycled, overstated go behind. Audit 2026-11-13: when the first
+    hook was overstated and stepped behind, the one that took its place is read too (one more
+    call, only in that case), so no unread hook ever leads."""
+    first = hooks[0] if hooks else None
+    if first and not first["unsupported_details"] and not first.get("recycled"):
+        check_hook_truth(first, sources)
+    hooks.sort(key=hook_order_key)
+    if first and first.get("overstated") and hooks[0] is not first \
+            and not hooks[0]["unsupported_details"] and not hooks[0].get("recycled"):
+        check_hook_truth(hooks[0], sources)
+        hooks.sort(key=hook_order_key)
+
+
 def fix_hook_detail(hook: dict, sources: list[dict]) -> bool:
     """Run 43262308476: the fan's pick, "Charles Barkley says Michael Jordan cussed him out over one
     radio comment in 2012." (51), lost to a weaker line (34) because the source says "on ESPN 1000's
@@ -1798,9 +1817,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     # the chosen hook keeps its place when only a detail's wording is off (fix_hook_detail)
     if hooks and hooks[0]["unsupported_details"] and not hooks[0].get("recycled"):
         fix_hook_detail(hooks[0], sources)
-    if hooks and not hooks[0]["unsupported_details"] and not hooks[0].get("recycled"):
-        check_hook_truth(hooks[0], sources)      # bold but true (D17)
-    hooks.sort(key=lambda h: (bool(h["unsupported_details"]), bool(h.get("recycled")), bool(h.get("overstated"))))
+    truth_order(hooks, sources)              # bold but true (D17)
 
     thumb = draft.get("thumbnail_text", "")
     titles = [niche_adjust(titlecheck.check(t, thumb)) for t in draft.get("titles", [])[:10]]

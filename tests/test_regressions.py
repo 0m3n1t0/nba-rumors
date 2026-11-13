@@ -2274,8 +2274,8 @@ class HookDetailInSourceWords(unittest.TestCase):
         import inspect
         import script
         src = inspect.getsource(script.build_short)
-        self.assertLess(src.index("fix_hook_detail(hooks[0], sources)"),
-                        src.index('hooks.sort(key=lambda h: (bool(h["unsupported_details"])'))
+        # (audit 2026-11-13: the ordering moved into truth_order, still after the detail fix)
+        self.assertLess(src.index("fix_hook_detail(hooks[0], sources)"), src.index("truth_order(hooks, sources)"))
 
 
 class WhereTheFeudStandsNow(unittest.TestCase):
@@ -2453,8 +2453,32 @@ class BoldButTrue(unittest.TestCase):
         self.assertIn("BOLD BUT TRUE", script.PROMPT)
         self.assertIn("never past it", script.PROMPT)
         src = inspect.getsource(script.build_short)
-        self.assertLess(src.index("check_hook_truth(hooks[0], sources)"),
-                        src.index('bool(h.get("overstated"))'))
+        self.assertIn("truth_order(hooks, sources)", src)
+
+    def test_the_next_hook_is_read_too_when_the_first_was_overstated(self):
+        """Audit 2026-11-13: the hook that takes an overstated one's place is read as well."""
+        import script
+        saved = script.ask_claude
+        read = []
+
+        def ask(prompt, model=""):
+            line = prompt.split("THE LINE (untrusted script text): ")[1].split("\n")[0]
+            read.append(line)
+            return {"verdict": "overstated", "why": "x", "text": ""} if line.startswith("A ") else {"verdict": "ok"}
+        script.ask_claude = ask
+        try:
+            hooks = [{"text": "A Draymond Green says nobody owes Luka Doncic respect.", "unsupported_details": []},
+                     {"text": "B Draymond Green just told a rookie to make Luka earn it.", "unsupported_details": []},
+                     {"text": "C third", "unsupported_details": []}]
+            script.truth_order(hooks, self.SRC)
+            self.assertEqual([h["text"][0] for h in hooks], ["B", "C", "A"])
+            self.assertEqual([x[0] for x in read], ["A", "B"])          # B read once, C never
+            read.clear()
+            hooks = [{"text": "B fine", "unsupported_details": []}, {"text": "C", "unsupported_details": []}]
+            script.truth_order(hooks, self.SRC)
+            self.assertEqual([x[0] for x in read], ["B"])               # a good first hook: one call only
+        finally:
+            script.ask_claude = saved
 
 
 class OneEventTheRightEra(unittest.TestCase):

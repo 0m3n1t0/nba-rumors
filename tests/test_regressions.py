@@ -3776,6 +3776,14 @@ class HisAnswersOnTheOlderRules(unittest.TestCase):
         for p in ("heavy", "fadeaway world", "essentiallysports", "sportskeeda"):
             self.assertNotIn(p, sources.TIER1_PUBLISHERS)
 
+    def test_new_details(self):
+        import compliance as C
+        src = [{"text": "Barkley said it on the show. Mitchell spoke after the game.", "title": ""}]
+        self.assertEqual(C.unsupported_details("Barkley said it on live TV, postgame.", src), [])
+        self.assertEqual(sorted(C.unsupported_details("He was in tears courtside, then posted on Instagram.", src)),
+                         ["courtside", "in tears", "on social media"])
+        self.assertEqual(C.unsupported_details("He laughed in the tunnel.", src), ["tunnel", "laughed"])
+
 
 if __name__ == "__main__":
     unittest.main()

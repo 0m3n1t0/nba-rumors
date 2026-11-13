@@ -342,6 +342,16 @@ DETAILS = [
     ("reporter", r"\breporters?\b", r"\breport"),
     ("broadcaster", r"\b(?:broadcasters?|commentators?|anchors?)\b", r"\b(?:broadcast|commentat|anchor|announcer|tv)"),
     ("agent", r"\bagents?\b", r"\bagent"),
+    # his answer (2026-11-14): where and how something was said, checked on 34 real Shorts (no false hold)
+    ("on TV", r"\b(?:on (?:live )?(?:tv|television)|live on air)\b", r"\btv\b|televis|broadcast|on air|aired|show\b"),
+    ("press conference", r"\b(?:press conference|presser|podium)\b", r"press conference|presser|podium|told reporters|media (?:session|availability)"),
+    ("courtside", r"\bcourtside\b", r"courtside"),
+    ("tunnel", r"\btunnel\b", r"tunnel"),
+    ("huddle", r"\b(?:huddle|timeout|time-out)\b", r"huddle|timeout|time-out"),
+    ("postgame", r"\b(?:postgame|post-game|pregame|pre-game)\b", r"postgame|post-game|pregame|pre-game|after the game|before the game|after the loss|after the win"),
+    ("in tears", r"\b(?:in tears|tearful|tears up|teared up|crying|cried)\b", r"\btear|\bcry|\bcried|\bemotional"),
+    ("laughed", r"\b(?:laugh(?:s|ed|ing)?|smirk(?:s|ed|ing)?)\b", r"\blaugh|\bsmirk|\bsmil|\bchuckl"),
+    ("on social media", r"\bon (?:instagram|x|twitter|social media|tiktok|threads)\b", r"instagram|twitter|\bx\b|social media|tiktok|threads|\bposted|\btweet"),
 ]
 
 

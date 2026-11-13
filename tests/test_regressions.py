@@ -113,6 +113,8 @@ the "Safety tests" step before anything is installed or made.
      cannot list the folder and opened them one guess per step (15-19 steps, up to 169k tokens)
  65. D26 (owner): a conflict between popular players/teams weighs slightly more than other drama
      around a popular player: +6 for any conflict, plus up to +4 by star power (0 at 5, 4 at 10)
+ 66. who said it, and is it still true: an outlet's conclusion is never given to the insider it
+     reports on; an ended fact (a streak) is never said as still running (writer, critic, final read)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3516,6 +3518,31 @@ class PopularConflictWeighsMore(unittest.TestCase):
         self.assertGreater(self.score(star_power=9, conflict=True), self.score(star_power=9, conflict=False, debate=9))
         self.assertGreater(self.score(star_power=10, conflict=False, drama=9, virality=9, youtube_heat=9),
                            self.score(star_power=6, conflict=True))
+
+
+class WhoSaidItAndIsItStillTrue(unittest.TestCase):
+    """66. Run 43446225184 (D2 notes): "Shams Charania told ESPN that's just a checkpoint" - the
+    word was the Yahoo writer's conclusion, not Shams's; "eight straight wins now rest on
+    Lendeborg" - the streak had ended. The final read saw the second only as a doubt. Now the
+    writer and the critic give each claim to its owner and say an ended fact as over, and the
+    final read counts both as errors (with the source's words as evidence)."""
+
+    def test_writer_and_critic(self):
+        import script
+        p = " ".join(script.PROMPT.split())
+        self.assertIn("WHO SAID IT, AND IS IT STILL TRUE", p)
+        self.assertIn("is the outlet's, never the insider's or player's it writes about", p)
+        h = " ".join(script.HUMANIZE.split())
+        self.assertIn("- WHO SAID IT: every \"X said / told / says\" gives X only what X said in the sources", h)
+        self.assertIn("A fact that has ended (a streak, a spell, a record) is said as over", h)
+        self.assertIn("WHO SAID IT", script.HUMANIZE.format(voice="v", sources="s", draft="d"))   # no stray braces
+
+    def test_final_read_errors(self):
+        import final_read
+        p = " ".join(final_read.PROMPT.split())
+        self.assertIn("Also when \"X said / told / says\" gives X a claim that, in the sources, is the outlet's own "
+                      "conclusion and not X's words", p)
+        self.assertIn("a fact the sources show has ENDED or changed, said as still true now", p)
 
 
 if __name__ == "__main__":

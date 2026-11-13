@@ -1809,6 +1809,13 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     material = sum(len(src["text"]) for src in sources)
     if material < MIN_MATERIAL:
         raise ValueError(f"only {material} characters of article text, not enough for a true script")
+    if not judged.get("evergreen") and not any(src.get("main") for src in sources):
+        # a fresh story whose own article could not be read in ANY copy is only a headline: other
+        # stories' articles cannot give it depth (run 43407418420: Cunningham's claim about Luka,
+        # its one copy unread, two Luka-injury pieces read, a Short that could only say "an outlet
+        # I can't verify", held). Skipped before any Claude call: the next story is tried.
+        raise ValueError("the story's own article could not be read in any copy (only a headline): "
+                         "the next story is tried")
 
     prompt = PROMPT.format(
         skill_script=SKILLS["yt-script"], skill_package=SKILLS["yt-package"], skill_seo=SKILLS["yt-seo"],

@@ -93,6 +93,8 @@ the "Safety tests" step before anything is installed or made.
  57. the final reader's WRONG PICTURE follows the picture rules already agreed: a former team's
      jersey with no team or time in the line, or a teammate on a line about the team, is at
      most a doubt (run 43407418420); each media Claude call is named in the budget (D16)
+ 58. a fresh story whose own article cannot be read in any copy is skipped before writing and
+     the next story is tried; evergreens keep their own rule (run 43407418420)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -515,7 +517,8 @@ class Script(unittest.TestCase):
         script.ask_claude = fake
         script.gather_sources = lambda topic, editor, tid: [
             {"publisher": "Yahoo Sports", "title": "Luka trolls Hawks fans", "link": "https://sports.yahoo.com/x",
-             "url": "https://sports.yahoo.com/x", "text": self.TEXT, "trusted": True, "tier": 1}]
+             "url": "https://sports.yahoo.com/x", "text": self.TEXT, "trusted": True, "tier": 1,
+             "main": True}]      # the story's own article, read (as gather_sources marks it; rule 58)
         nbadata.annotate = lambda claims: None
         try:
             editor = {"topics": [{"headline": "Luka Doncic trolls Hawks fans", "search_phrases": []}],
@@ -3089,6 +3092,35 @@ class FinalReadKeepsThePictureRules(unittest.TestCase):
         for step in ("media_plan", "media_tags", "media_shortlist", "media_pick", "media_pick2"):
             self.assertIn(f'where="{step}"', src)
         self.assertIn("log_claude_usage(res.stdout, where)", src)
+
+
+
+class OnlyAHeadlineIsSkipped(unittest.TestCase):
+    """58 (run 43407418420). Cunningham's claim about Luka: its one copy unread, two Luka-injury
+    pieces read instead, so the 600-character bar passed and the Short could only say "from an
+    outlet I can't verify" (held). Replay on 29 Shorts: only that one is a fresh story with its
+    own article unread; the evergreens without it (two of them PASS) are untouched."""
+
+    def build(self, evergreen, main):
+        import script
+        editor = {"topics": [{"headline": "Cunningham says Luka wanted the fan gone", "items": []}],
+                  "ranked": [{"id": 0, **({"evergreen": "k"} if evergreen else {})}]}
+        src = [{"publisher": "HITC", "title": "Luka injury update", "text": "x" * 3000, "main": main, "link": "l",
+                "tier": 2, "summary": ""}]
+        with patch.object(script, "gather_sources", return_value=src), \
+                patch.object(script, "ask_claude", side_effect=RuntimeError("written")):
+            try:
+                script.build_short(1, 0, editor, "", {"hooks": [], "rules": []})
+            except Exception as exc:          # noqa: BLE001
+                return str(exc)
+        return ""
+
+    def test_fresh_story_unread_is_skipped_before_claude(self):
+        self.assertIn("could not be read in any copy", self.build(evergreen=False, main=False))
+
+    def test_read_story_and_evergreens_go_on(self):
+        self.assertEqual(self.build(evergreen=False, main=True), "written")   # reached the writer
+        self.assertEqual(self.build(evergreen=True, main=False), "written")
 
 
 if __name__ == "__main__":

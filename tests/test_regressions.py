@@ -2455,6 +2455,16 @@ class BoldButTrue(unittest.TestCase):
         src = inspect.getsource(script.build_short)
         self.assertIn("truth_order(hooks, sources)", src)
 
+    def test_an_overstated_leading_hook_holds_the_short(self):
+        """Audit 2026-11-13: if every checked hook stayed overstated, the Short is held (REVIEW)."""
+        import inspect
+        import script
+        src = inspect.getsource(script.build_short)
+        hold = src.index('if hooks and hooks[0].get("overstated"):')
+        self.assertIn('retention["hard"].append(f"the hook says more than the sources', src[hold:hold + 200])
+        self.assertLess(hold, src.index('"ready": bool(hooks)'))
+        self.assertIn('not retention["hard"]', src[src.index('"ready": bool(hooks)'):][:200])
+
     def test_the_next_hook_is_read_too_when_the_first_was_overstated(self):
         """Audit 2026-11-13: the hook that takes an overstated one's place is read as well."""
         import script

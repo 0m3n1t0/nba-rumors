@@ -1888,6 +1888,10 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
                 else:
                     print("[!] repair pass not better or not safe: the original beats stay")
     softened += hook_softened
+    # audit 2026-11-13: when every checked hook was overstated (no bold true rewrite passed), the
+    # leading hook may still say more than the sources: the Short is held, never published as is
+    if hooks and hooks[0].get("overstated"):
+        retention["hard"].append(f"the hook says more than the sources ({hooks[0]['overstated'][:80]})")
     for k in (hook_repeats(hooks[0]["text"], beats) if hooks else []):
         retention["hard"].append(f"beat {k + 1} repeats the hook")
     if beats and weak_payoff(beats):

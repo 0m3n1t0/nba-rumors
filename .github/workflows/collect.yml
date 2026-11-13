@@ -1,11 +1,13 @@
 name: NBA pipeline
 
 on:
-  schedule:
-    # 2 runs a day, 2 Shorts each = 4 Shorts a day. 12:17 and 22:17 UTC (morning and late
-    # afternoon in the US). The second channel runs at 03:17 and 17:17, so every run gets its
-    # own 5-hour Claude Pro window (runs are always 5 or more hours apart).
-    - cron: "17 12,22 * * *"
+  # PAUSED (owner, 2026-11-13): no automatic runs while the content quality is being worked on;
+  # only the "Run workflow" button. To switch back on, restore these lines (DEFERRED.md D18):
+  # schedule:
+  #   # 2 runs a day, 2 Shorts each = 4 Shorts a day. 12:17 and 22:17 UTC (morning and late
+  #   # afternoon in the US). The second channel runs at 03:17 and 17:17, so every run gets its
+  #   # own 5-hour Claude Pro window (runs are always 5 or more hours apart).
+  #   - cron: "17 12,22 * * *"
   workflow_dispatch:          # "Run workflow" button for manual tests
 
 # This repository is public, so the run's Summary page is SHORT (how many Shorts, the gate's

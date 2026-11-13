@@ -25,7 +25,9 @@ jobs:
         env:
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-        run: python src/benchmark.py
+        run: |
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/private_summary.md"   # the competitor scan stays private
+          python src/benchmark.py
 
       - name: Save report
         if: always()

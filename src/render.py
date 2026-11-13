@@ -1033,7 +1033,10 @@ def main() -> None:
     if ERRORS:
         lines += ["", "**Render errors:**", ""] + [f"- `{e}`" for e in ERRORS]
     text = "\n".join(lines)
-    print(text)
+    # this repository is public: on GitHub the full report goes ONLY to the private summary file
+    # (the run's logs are public too); printed only when run by hand
+    if not os.environ.get("GITHUB_STEP_SUMMARY"):
+        print(text)
     import os
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:

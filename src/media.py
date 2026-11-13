@@ -2284,7 +2284,10 @@ def main() -> None:
             ok = "✅" if v.get("bed", 0) >= 5 else "❌"
             report.append(f"| {k} | {v.get('bpm', '-')} | {v.get('beat', '-')} | {v.get('steady', '-')} | {ok} {v.get('bed', 0)} |")
     text = "\n".join(report)
-    print(text)
+    # this repository is public: on GitHub the full report goes ONLY to the private summary file
+    # (the run's logs are public too); printed only when run by hand
+    if not os.environ.get("GITHUB_STEP_SUMMARY"):
+        print(text)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
             fh.write(text + "\n")

@@ -534,7 +534,10 @@ def write_summary(data: dict, topics: list[dict]) -> None:
         lines.append(f"| {r['id']} | {r.get('drama')} | {r.get('virality')} | {r.get('kind')} | {nba} | "
                      f"{topics[r['id']]['headline']} |")
     text = "\n".join(lines)
-    print(text)
+    # this repository is public: on GitHub the full report goes ONLY to the private summary file
+    # (the run's logs are public too); printed only when run by hand
+    if not os.environ.get("GITHUB_STEP_SUMMARY"):
+        print(text)
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if path:
         with open(path, "a", encoding="utf-8") as fh:

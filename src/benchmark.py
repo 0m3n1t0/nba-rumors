@@ -210,7 +210,10 @@ def main() -> None:
         lines += ["", "### Channels with the most views in the niche", ""]
         lines += [f"- {c}: {n:,} views" for c, n in by_channel.most_common(10)]
     text = "\n".join(lines)
-    print(text)
+    # this repository is public: on GitHub the full report goes ONLY to the private summary file
+    # (the run's logs are public too); printed only when run by hand
+    if not os.environ.get("GITHUB_STEP_SUMMARY"):
+        print(text)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
             fh.write(text + "\n")

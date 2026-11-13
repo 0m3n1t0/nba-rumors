@@ -1,8 +1,9 @@
 name: Weekly skills
 
 on:
-  schedule:
-    - cron: "43 6 * * 1"   # every Monday, 06:43 UTC (10:43 in Tbilisi)
+  # PAUSED (owner, 2026-11-13) with the daily runs; restore with them (DEFERRED.md D18):
+  # schedule:
+  #   - cron: "43 6 * * 1"   # every Monday, 06:43 UTC (10:43 in Tbilisi)
   workflow_dispatch:
 
 permissions:
@@ -52,6 +53,7 @@ jobs:
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           WIKIMEDIA_TOKEN: ${{ secrets.WIKIMEDIA_TOKEN }}   # optional: Wikimedia limits per account, not per shared IP
         run: |
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/private_summary.md"   # public repository: report stays private
           python src/collect.py
           python src/signals.py
 
@@ -60,7 +62,9 @@ jobs:
         env:
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-        run: python src/benchmark.py
+        run: |
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/private_summary.md"   # the competitor scan stays private
+          python src/benchmark.py
 
       - name: Install Claude Code
         run: |

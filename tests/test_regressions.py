@@ -67,6 +67,7 @@ the "Safety tests" step before anything is installed or made.
  43. bold but true: the chosen hook is read against the sources; an overstated one gets its boldest true line
  44. one event (All-Star 2022...) counts like one scene; college photos marked PRE-NBA; small figures
      and other eras/teams kept for when the line asks for them
+ 45. the full reports never reach the public logs or run summaries (audit, 2026-11-13)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2475,6 +2476,33 @@ class OneEventTheRightEra(unittest.TestCase):
         self.assertIn("a small figure (v S) only when no clear photo", photo_tags.PICK_PROMPT)
         self.assertIn("the team on his jersey", photo_tags.TAG_PROMPT)
         self.assertFalse(photo_tags.fill_ok({"tag": {"v": "S", "s": "game"}}))
+
+
+class PrivateReportsStayPrivate(unittest.TestCase):
+    """45 (audit, 2026-11-13). This repository is public, and so are its Actions logs and run
+    summaries. The owner's decision (2026-11-11): the full report is private. Every stage still
+    PRINTED its full report into the public log, and the weekly / benchmark runs wrote the
+    stories, signals and the competitor scan into the public run summary."""
+
+    STAGES = ("collect", "editor", "media", "render", "script", "signals", "budget", "benchmark")
+
+    def test_stages_print_the_report_only_by_hand(self):
+        import re
+        for name in self.STAGES:
+            src = (ROOT / "src" / f"{name}.py").read_text(encoding="utf-8")
+            prints = [m.start() for m in re.finditer(r"\n\s*print\(text\)", src)]
+            self.assertTrue(prints, name)
+            for at in prints:
+                self.assertIn('if not os.environ.get("GITHUB_STEP_SUMMARY"):', src[max(0, at - 120):at], name)
+
+    def test_weekly_and_benchmark_keep_their_summary_private(self):
+        for wf, steps in (("weekly.yml", ("python src/collect.py", "python src/benchmark.py")),
+                          ("benchmark.yml", ("python src/benchmark.py",))):
+            text = (ROOT / ".github" / "workflows" / wf).read_text(encoding="utf-8")
+            for step in steps:
+                before = text[:text.index(step)]
+                self.assertIn('export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/private_summary.md"',
+                              before[before.rfind("run: |"):], f"{wf}: {step}")
 
 
 if __name__ == "__main__":

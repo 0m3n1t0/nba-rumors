@@ -407,7 +407,10 @@ def main() -> None:
     matched = list(dict.fromkeys(p for t in topics[:TOP_TOPICS] for p in t.get("search_phrases", [])))
     lines += ["", "**What people are typing about today's stories:** " + (" · ".join(matched[:25]) or "none yet")]
     text = "\n".join(lines)
-    print(text)
+    # this repository is public: on GitHub the full report goes ONLY to the private summary file
+    # (the run's logs are public too); printed only when run by hand
+    if not os.environ.get("GITHUB_STEP_SUMMARY"):
+        print(text)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
             fh.write(text + "\n")

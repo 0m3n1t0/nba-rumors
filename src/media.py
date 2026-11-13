@@ -86,6 +86,7 @@ MAX_PHOTOS, MAX_CLIPS = 3, 9          # candidates shown to Claude per beat
 MIN_CLIPS = 6                         # every beat gets at least this many clips to choose from
 CLIP_MARGIN = 1                       # a clip wins over a photo only when nearly as relevant
 ALT_MIN = 6                           # a second shot must be close relevance or better
+SPARE_MIN = 8                         # D30 top-ups from the scored ones: the person the line is about (his answer)
 # a stock clip must belong to the world of the story (sport, arena, media), not random life scenes
 SPORT_WORDS = re.compile(r"\b(basketball|sport|sports|athlete|player|arena|stadium|court|ball|hoop|"
                          r"dunk|game|match|crowd|fans?|referee|whistle|gym|training|coach|locker|"
@@ -1827,7 +1828,8 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             # photos Claude scored 6+ for THIS beat that did not fit in its first shots are kept, by
             # score, for the top-ups of a long beat; only after them an unscored photo (fill_empty)
             if chosen and choice:
-                fits = [j for j in ranked if scores.get(j, 0) >= ALT_MIN and cands[j]["kind"] == "photo"]
+                # his answers (2026-11-14): 8+ only (the person the line is about), clips too, by score
+                fits = [j for j in ranked if scores.get(j, 0) >= SPARE_MIN]
                 chosen["_spare"] = [{**{k2: v for k2, v in cands[j].items() if k2 not in ("score", "thumb", "frames", "preview")},
                                      "match": int(scores[j])}
                                     for j in fits if not already_shown(cands[j], shown, cands[j].get("id") or cands[j]["page"])]
@@ -2069,22 +2071,37 @@ LINE_TEAM_OR_TIME = re.compile(r"\b(" + "|".join(sorted({re.escape(w) for t, ws 
                                + r")\b|\b(?:19|20)\d\d\b|\b(?:this|last|next) (?:season|year)\b|\bnow\b|\btonight\b|\btoday\b", re.I)
 
 
+def teams_in(line: str) -> set[str]:
+    """The NBA teams a line names (full names): "the Cavs" -> {"cleveland cavaliers"}."""
+    f = fold(line or "")
+    return {t for t, ws in NBA_TEAMS.items() if any(re.search(rf"\b{re.escape(w)}\b", f) for w in [t] + ws)}
+
+
 def topup_ok(c: dict, line: str, person: str) -> bool:
-    """D30 (owner, 2026-11-14: "team and face are both important and both must be right"). An
-    unscored top-up must pass BOTH: he is clearly seen (tag "C"), and his jersey fits the line -
-    when the line names a team or a time, never a former team's photo or another team's jersey
-    (run 43485568700: Mitchell in a Jazz jersey on "Are the Cavs the same failing team?"); when it
-    names neither, a former team stays allowed (the agreed picture rules)."""
+    """D30 (owner, 2026-11-14: "team and face are both important and both must be right"; his
+    answers the same day). An unscored top-up must pass BOTH:
+    - he is in it, face seen or from behind (tag "C" or "B");
+    - his jersey fits the line: a line naming a team allows that team (also a former one: "his
+      Utah years" may show the Jazz); a line naming only a time ("now", "this season", "last
+      year", a year) allows today's team or no team; a line naming neither allows a former team
+      too (the agreed picture rules). Run 43485568700: Mitchell in a Jazz jersey on "Are the Cavs
+      the same failing team?"."""
     t = c.get("tag") or {}
-    if t.get("v") != "C":
+    if t.get("v") not in ("C", "B"):
         return False
-    if LINE_TEAM_OR_TIME.search(fold(line or "")):
-        if c.get("team") in ("former", "pre-nba"):
-            return False
-        jersey, current = jersey_team(t), teams_of(person)[0] if person else ""
-        if jersey and current and jersey != current:
-            return False
-    return True
+    if not LINE_TEAM_OR_TIME.search(fold(line or "")):
+        return True
+    if c.get("team") == "pre-nba":
+        return False
+    named = teams_in(line)
+    jersey, current = jersey_team(t), (teams_of(person)[0] if person else "")
+    if named:
+        if jersey:
+            return jersey in named
+        return c.get("team") != "former"     # a former team we cannot name never proves the named team (his answer)
+    if c.get("team") == "former":
+        return False
+    return not (jersey and current and jersey != current)
 
 
 def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str] | None = None,
@@ -2109,24 +2126,33 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
     scenes = count_scenes(x for it in items if it for x in [it] + list(it.get("alts") or []))
 
     def next_spare(it: dict, i: int, tag: str) -> dict | None:
-        """D30: the next photo Claude scored 6+ for this beat (best first), never shown before."""
+        """D30: the next photo or clip Claude scored 8+ for this beat (best first), never shown before."""
         for full_ok in (False, True):
-            for c in list(it.get("_spare") or []):
-                if already_shown(c, shown, c["page"]) or (scene_full(c, scenes) and not full_ok):
+            for c in sorted(it.get("_spare") or [], key=lambda x: -(x.get("match") or 0)):   # best score first
+                key = c.get("id") or c["page"]
+                if already_shown(c, shown, key) or (c["kind"] == "video" and c.get("id") in used) \
+                        or (scene_full(c, scenes) and not full_ok):
                     continue
                 it["_spare"].remove(c)
-                path = folder / f"beat{i}_{tag}.jpg"
                 try:
-                    if download(c["url"], path, 60) and image_ok(path):
+                    if c["kind"] == "video":
+                        path = folder / f"beat{i}_{tag}.mp4"
+                        if not download(c["url"], path, 180):
+                            continue
+                        used.add(c["id"])
+                    else:
+                        path = folder / f"beat{i}_{tag}.jpg"
+                        if not (download(c["url"], path, 60) and image_ok(path)):
+                            continue
                         h = picture_hash(path)
                         if seen_before(h, looks):
                             path.unlink(missing_ok=True)
                             continue
                         if h is not None:
                             looks.append(h)
-                        mark_shown(c, shown, c["page"])
-                        count_scene(c, scenes)
-                        return {**c, "file": str(path.relative_to(ROOT)), "beat": i}
+                    mark_shown(c, shown, key)
+                    count_scene(c, scenes)
+                    return {**c, "file": str(path.relative_to(ROOT)), "beat": i}
                 except Exception:
                     pass
         return None

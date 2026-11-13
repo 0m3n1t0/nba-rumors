@@ -121,9 +121,9 @@ the "Safety tests" step before anything is installed or made.
      Fedor of Cleveland.com") is a reliable source: no "provenance unclear" hold, no RUMOR downgrade
  69. D28: unjudged top-up photos keep the team order (today's team / no team first, a former
      team after, never dropped): Mitchell's Jazz photos had filled Cavs lines
- 70. D30 (owner): top-ups by relevance - the photos Claude scored 6+ for the beat first, best
-     first; an unscored one only after them and only with his face clearly seen AND the right
-     jersey for a line that names a team or a time
+ 70. D30 (owner): top-ups by relevance - photos and clips Claude scored 8+ for the beat first,
+     best first; an unscored one only after them, only if he is seen (face or from behind) AND
+     the jersey fits the line (a named team allows that team; a time only: today's team)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3473,6 +3473,7 @@ class TitleBoldButTrue(unittest.TestCase):
         src = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
         self.assertIn("titles = check_title_truth(titles, sources)", src)
         self.assertIn('if titles and titles[0].get("all_overstated"):', src)
+        self.assertEqual(script.TITLES_CHECKED, 10)   # his answer: every title is read
         p = " ".join(script.TITLE_TRUTH.split())
         self.assertIn('"Is X a LIE?"', p)
         self.assertIn("BOLD BUT TRUE", p)
@@ -3612,7 +3613,9 @@ class OnRecordBeatReporter(unittest.TestCase):
         import compliance as C
         cases = {'“Chuck ain’t here,” Mitchell told Chris Fedor of Cleveland.com. Barkley said': ["chris fedor (cleveland.com)"],
                  '“We are fine,” he said, according to The Athletic’s Joe Vardon.': ["joe vardon (the athletic)"],
-                 '“Who gives a f—k?” Mitchell said, per Cleveland.com. “Chuck': [],
+                 '“Who gives a f—k?” Mitchell said, per Cleveland.com. “Chuck': ["(cleveland.com)"],   # his answer: an outlet is enough
+                 '“I hate him,” a league source said, per ESPN.': [],                                # anonymous never
+                 '“Let’s go,” Brown told Tatum before the game.': [],                                 # "told X" alone: X may be a player
                  'Chris Fedor of Cleveland.com reported the Cavs are shopping Allen.': [],
                  '“I hate him,” a source told Bleacher Report.': [],
                  'Mitchell told Chris Fedor of Cleveland.com he is not worried.': []}   # no quote: not on record
@@ -3696,7 +3699,16 @@ class TopUpsByRelevanceTeamAndFace(unittest.TestCase):
         line = "Are the Cavs the same failing team, or should Mitchell tune Chuck out?"
         self.assertFalse(ok(self.ph("Mitchell Utah", "former", "free throw, Jazz jersey"), line, "Donovan Mitchell"))
         self.assertFalse(ok(self.ph("Mitchell 2019", "", "shoots, Jazz jersey"), line, "Donovan Mitchell"))
-        self.assertFalse(ok(self.ph("Mitchell back", "current", v="B"), line, "Donovan Mitchell"))   # face not seen
+        self.assertTrue(ok(self.ph("Mitchell back", "current", v="B"), line, "Donovan Mitchell"))    # his answer: from behind is fine
+        self.assertFalse(ok(self.ph("Mitchell far", "current", v="S"), line, "Donovan Mitchell"))    # a small figure never
+        # a line naming his former team allows that team (his answer); today's team still fits a Cavs line
+        utah = "In his Utah years Mitchell carried the Jazz."
+        self.assertTrue(ok(self.ph("Mitchell Utah", "former", "free throw, Jazz jersey"), utah, "Donovan Mitchell"))
+        self.assertFalse(ok(self.ph("Mitchell Cavs", "current", "dribbles, Cavaliers white"), utah, "Donovan Mitchell"))
+        self.assertFalse(ok(self.ph("Mitchell 2018", "former", "lines up a free throw"), utah, "Donovan Mitchell"))  # which old team? unknown: no
+        # a time only ("last year", "now"): today's team or no team
+        self.assertFalse(ok(self.ph("Mitchell 2019", "former", "shoots"), "He was great last year.", "Donovan Mitchell"))
+        self.assertTrue(ok(self.ph("Mitchell 2024", "current", "shoots"), "He was great last year.", "Donovan Mitchell"))
         self.assertFalse(ok(self.ph("Mitchell 2018", "former", "lines up a free throw"), line, "Donovan Mitchell"))  # no jersey word
         self.assertTrue(ok(self.ph("Mitchell Cavs", "current", "dribbles, Cavaliers white"), line, "Donovan Mitchell"))
         # a line with no team and no time: a former team stays allowed (agreed picture rules)
@@ -3711,18 +3723,21 @@ class TopUpsByRelevanceTeamAndFace(unittest.TestCase):
         m.beat_seconds = lambda short, i: 12.0          # 4 shots: the first + 3 top-ups
         m.person_photos = lambda person, shown: [self.ph("Mitchell Utah", "former", "free throw, Jazz jersey"),
                                                  self.ph("Mitchell Cavs 2023", "current", "dribbles, Cavaliers white")]
+        clip = {"kind": "video", "id": "v1", "title": "Mitchell clip", "page": "pv1", "url": "uv1", "author": "a", "match": 9}
         first = {**self.ph("Mitchell podium", "current"), "file": "data/x.jpg", "match": 8, "alts": [],
-                 "_spare": [{**self.ph("Mitchell Cavs 2024", "current"), "match": 7},
-                            {**self.ph("Mitchell Cavs 2022", "current"), "match": 6}]}
+                 "_spare": [{**self.ph("Mitchell Cavs 2024", "current"), "match": 8}, clip]}   # best score first
         got = m.fill_empty([first], 1, self.folder, set(), ["Donovan Mitchell"], {"beats": [{"say": line}]})
         titles = [a["title"] for a in got[0]["alts"]]
-        self.assertEqual(titles, ["Mitchell Cavs 2024", "Mitchell Cavs 2022", "Mitchell Cavs 2023"])
-        self.assertEqual([a.get("match") for a in got[0]["alts"]], [7, 6, None])
+        self.assertEqual(titles, ["Mitchell clip", "Mitchell Cavs 2024", "Mitchell Cavs 2023"])   # clips too, by score
+        self.assertEqual([a.get("match") for a in got[0]["alts"]], [9, 8, None])
         self.assertNotIn("_spare", got[0])
 
     def test_spares_are_kept_in_the_pick(self):
         src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
         self.assertIn('chosen["_spare"] = [', src)
+        self.assertIn("scores.get(j, 0) >= SPARE_MIN", src)
+        import media
+        self.assertEqual(media.SPARE_MIN, 8)       # his answer: only the person the line is about
         self.assertIn("next_spare(it, i, f\"more{k}\") or next_face(i, f\"more{k}\")", src)
 
 

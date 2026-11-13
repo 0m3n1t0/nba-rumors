@@ -74,26 +74,34 @@ def original_reporters(sources: list[dict]) -> dict:
 
 
 # D29 (owner, 2026-11-13: "კი" - an on-record quote that a team's beat journalist published is a
-# reliable source). Run 43485568700 held Mitchell vs Barkley as "only secondary outlets": the quotes
-# were on record, "Mitchell told Chris Fedor of Cleveland.com", but Fedor is a beat writer, not
-# one of the national INSIDERS. A NAMED reporter of a NAMED outlet credited for a direct quote
-# (quote marks just before) makes the provenance clear; an outlet alone ("per Cleveland.com") or
-# a reporter with no quote does not.
+# reliable source; his answers 2026-11-14). Run 43485568700 held Mitchell vs Barkley as "only
+# secondary outlets": the quotes were on record ("Mitchell told Chris Fedor of Cleveland.com").
+# Counted, with a direct quote right before: a named reporter of a named outlet ("told Chris
+# Fedor of Cleveland.com", "The Athletic's Joe Vardon"), or a named outlet after per / via /
+# according to ("Mitchell said, per Cleveland.com"). Not counted: "told X" alone (X may be another
+# player), and an anonymous speaker ("a source told...", "people close to...").
 _NAME = r"[A-Z][a-z]+(?: [A-Z][\w'’-]+){1,2}"
 _OUTLET = r"[A-Z][\w&'’-]*(?:\.[a-z]{2,4})?(?: [A-Z][\w&'’-]*(?:\.[a-z]{2,4})?){0,3}"   # "Cleveland.com", "The Athletic"
 ON_RECORD = re.compile(
-    rf"[”\"]\s*,?\s*(?:[^.”\"]{{0,60}}?)\b(?:told|said to|to|via|per|according to)\s+"
-    rf"(?:(?P<who>{_NAME})\s+of\s+(?P<outlet>{_OUTLET})|(?P<outlet2>{_OUTLET})['’]s\s+(?P<who2>{_NAME}))")
+    rf"[”\"]\s*,?\s*(?P<gap>[^.”\"]{{0,60}}?)\b(?:"
+    rf"(?:told|said to|to|via|per|according to)\s+(?:(?P<who>{_NAME})\s+of\s+(?P<outlet>{_OUTLET})"
+    rf"|(?P<outlet2>{_OUTLET})['’]s\s+(?P<who2>{_NAME}))"
+    rf"|(?:via|per|according to)\s+(?P<outlet3>{_OUTLET}))")
+ANONYMOUS = re.compile(r"\b(?:sources?|people|person|insiders?|officials?|executives?|someone)\b", re.I)
 
 
 def on_record_reporters(sources: list[dict]) -> list[str]:
-    """Named beat reporters credited for an on-record quote in the articles read (D29)."""
+    """Named reporters / outlets credited for an on-record quote in the articles read (D29)."""
     found = set()
     for s in sources:
         for m in ON_RECORD.finditer(s.get("text") or ""):
+            if ANONYMOUS.search(m.group("gap") or ""):
+                continue
             who, outlet = m.group("who") or m.group("who2"), m.group("outlet") or m.group("outlet2")
             if who and outlet:
                 found.add(f"{fold(who)} ({fold(outlet)})")
+            elif m.group("outlet3"):
+                found.add(f"({fold(m.group('outlet3'))})")
     return sorted(found)
 
 

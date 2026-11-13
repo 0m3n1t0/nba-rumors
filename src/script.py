@@ -36,7 +36,7 @@ import hookscore  # noqa: E402  (youtube-agent-skill)
 import title as titlecheck  # noqa: E402  (youtube-agent-skill)
 import compliance  # noqa: E402  (monetization safety checks, enforced in code)
 import nbadata  # noqa: E402  (official NBA results: confirms scores and records in claims)
-from editor import MIN_SCORE, near_miss, niche_data, score_line, short_score  # noqa: E402  (same order and niche scan as the editor)
+from editor import MIN_SCORE, headline_people, near_miss, niche_data, score_line, short_score  # noqa: E402  (same order and niche scan as the editor)
 
 # ---- Claude Pro budget: model choice + clean stop when the plan's usage limit is reached ----
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")             # writing, judging, looking at pictures
@@ -1324,7 +1324,7 @@ SOURCES_TEXT
 Return ONLY JSON: {"verdict": "ok" or "overstated", "why": "a few words", "text": "the bold true line if overstated, else empty"}"""
 
 
-def check_hook_truth(hook: dict, sources: list[dict]) -> str:
+def check_hook_truth(hook: dict, sources: list[dict], lead: str = "") -> str:
     """D17 (owner, 2026-11-13: every hook bold, at the edge of the truth, never past it). One light
     call reads the chosen hook against the sources. "ok": kept. "overstated": its bold true
     rewrite replaces it if that passes every hook check again; else the hook steps behind the
@@ -1344,7 +1344,7 @@ def check_hook_truth(hook: dict, sources: list[dict]) -> str:
     why = str(ans.get("why", ""))[:120]
     text = str(ans.get("text", "")).strip()
     if text and one_question(text) and not banned_check(text) and not compliance.unsupported_details(text, sources) \
-            and not fact_check(text, sources):
+            and not fact_check(text, sources) and rewrite_keeps_hook_rules(text, hook["text"], lead):
         parts, verdict, formula = nba_hook_score(text)
         hook.update({"text": text, "score": verdict, "band": hookscore.band(verdict), "properties": parts,
                      "question": True, "truth_fixed": why})
@@ -1402,25 +1402,50 @@ def check_title_truth(titles: list[dict], sources: list[dict]) -> list[dict]:
 
 
 def hook_order_key(h: dict) -> tuple:
-    return (bool(h["unsupported_details"]), bool(h.get("recycled")), bool(h.get("overstated")))
+    # D27: a hook with profanity (spelled out or masked, "f—k") never leads: the gate rejects it
+    return (bool(compliance.PROFANITY.search(h["text"])), bool(h["unsupported_details"]),
+            bool(h.get("recycled")), bool(h.get("overstated")))
 
 
-def truth_order(hooks: list[dict], sources: list[dict]) -> None:
+def first_words(text: str, n: int = 8) -> str:
+    return " ".join(text.split()[:n])
+
+
+def rewrite_keeps_hook_rules(new: str, old: str, lead: str = "") -> bool:
+    """D27 (run 43485568700): a rewritten hook (truth or detail fix) must keep the rules every hook
+    is chosen by, not only the facts. The truth rewrite gave Mitchell's Short "...: 'Who gives a
+    f—k?'..." (the gate REJECTED it, a slot lost) and Arenas's opened on Curry's old injury with
+    Arenas only at word 9. Now: no profanity, and the story's lead person (the first person the
+    headline names: "arenas") stays in the first 8 words when the old line named him; without a
+    lead, a name the old line had in its first 8 words stays in the first 8."""
+    if compliance.PROFANITY.search(new):
+        return False
+    lead = compliance.fold(lead or "")
+    if lead and re.search(rf"\b{re.escape(lead)}\b", compliance.fold(old)):
+        return bool(re.search(rf"\b{re.escape(lead)}\b", compliance.fold(first_words(new))))
+    names = compliance.names_in(first_words(old))
+    return not names or bool(names & compliance.names_in(first_words(new)))
+
+
+def truth_order(hooks: list[dict], sources: list[dict], lead: str = "") -> None:
     """D17: the chosen hook is read against the sources (check_hook_truth), then the hooks are
     ordered: unsupported details, recycled, overstated go behind. Audit 2026-11-13: when the first
     hook was overstated and stepped behind, the one that took its place is read too (one more
-    call, only in that case), so no unread hook ever leads."""
+    call, only in that case), so no unread hook ever leads. D27: the order is applied FIRST too,
+    so the hook that is read is the one that can lead (never a profane one, never one with an
+    unsupported detail while a clean one waits)."""
+    hooks.sort(key=hook_order_key)
     first = hooks[0] if hooks else None
     if first and not first["unsupported_details"] and not first.get("recycled"):
-        check_hook_truth(first, sources)
+        check_hook_truth(first, sources, lead)
     hooks.sort(key=hook_order_key)
     if first and first.get("overstated") and hooks[0] is not first \
             and not hooks[0]["unsupported_details"] and not hooks[0].get("recycled"):
-        check_hook_truth(hooks[0], sources)
+        check_hook_truth(hooks[0], sources, lead)
         hooks.sort(key=hook_order_key)
 
 
-def fix_hook_detail(hook: dict, sources: list[dict]) -> bool:
+def fix_hook_detail(hook: dict, sources: list[dict], lead: str = "") -> bool:
     """Run 43262308476: the fan's pick, "Charles Barkley says Michael Jordan cussed him out over one
     radio comment in 2012." (51), lost to a weaker line (34) because the source says "on ESPN 1000's
     Waddle & Silvy", never "radio". The check was right; dropping the whole hook for one word was
@@ -1436,7 +1461,8 @@ def fix_hook_detail(hook: dict, sources: list[dict]) -> bool:
         print(f"[!] hook detail fix skipped: {exc}")
         return False
     text = str((ans or {}).get("text", "")).strip()
-    if not text or not one_question(text) or banned_check(text) or compliance.unsupported_details(text, sources):
+    if not text or not one_question(text) or banned_check(text) or compliance.unsupported_details(text, sources) \
+            or not rewrite_keeps_hook_rules(text, hook["text"], lead):
         print(f"[!] hook detail fix not clean, the hook stays behind: {text[:80]}")
         return False
     parts, verdict, formula = nba_hook_score(text)
@@ -1969,10 +1995,11 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     # a hook with a detail no source has (venue, crowd, someone's job) goes behind every clean one
     for h in hooks:
         h["unsupported_details"] = compliance.unsupported_details(h["text"], sources)
+    lead = (headline_people(topic) or [""])[0]    # D27: the story's lead person ("arenas")
     # the chosen hook keeps its place when only a detail's wording is off (fix_hook_detail)
     if hooks and hooks[0]["unsupported_details"] and not hooks[0].get("recycled"):
-        fix_hook_detail(hooks[0], sources)
-    truth_order(hooks, sources)              # bold but true (D17)
+        fix_hook_detail(hooks[0], sources, lead)
+    truth_order(hooks, sources, lead)        # bold but true (D17); D27: the lead stays up front
 
     thumb = draft.get("thumbnail_text", "")
     titles = [niche_adjust(titlecheck.check(t, thumb)) for t in draft.get("titles", [])[:10]]

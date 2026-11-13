@@ -115,6 +115,8 @@ the "Safety tests" step before anything is installed or made.
      around a popular player: +6 for any conflict, plus up to +4 by star power (0 at 5, 4 at 10)
  66. who said it, and is it still true: an outlet's conclusion is never given to the insider it
      reports on; an ended fact (a streak) is never said as still running (writer, critic, final read)
+ 67. D27: a rewritten hook (truth or detail fix) keeps every hook rule: no profanity, the story's
+     lead person in the first 8 words; a profane hook never leads (run 43485568700)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2323,7 +2325,7 @@ class HookDetailInSourceWords(unittest.TestCase):
         import script
         src = inspect.getsource(script.build_short)
         # (audit 2026-11-13: the ordering moved into truth_order, still after the detail fix)
-        self.assertLess(src.index("fix_hook_detail(hooks[0], sources)"), src.index("truth_order(hooks, sources)"))
+        self.assertLess(src.index("fix_hook_detail(hooks[0], sources, lead)"), src.index("truth_order(hooks, sources, lead)"))   # D27: + lead
 
 
 class WhereTheFeudStandsNow(unittest.TestCase):
@@ -2501,7 +2503,7 @@ class BoldButTrue(unittest.TestCase):
         self.assertIn("BOLD BUT TRUE", script.PROMPT)
         self.assertIn("never past it", script.PROMPT)
         src = inspect.getsource(script.build_short)
-        self.assertIn("truth_order(hooks, sources)", src)
+        self.assertIn("truth_order(hooks, sources, lead)", src)   # D27: + the lead person
 
     def test_an_overstated_leading_hook_holds_the_short(self):
         """Audit 2026-11-13: if every checked hook stayed overstated, the Short is held (REVIEW)."""
@@ -3543,6 +3545,51 @@ class WhoSaidItAndIsItStillTrue(unittest.TestCase):
         self.assertIn("Also when \"X said / told / says\" gives X a claim that, in the sources, is the outlet's own "
                       "conclusion and not X's words", p)
         self.assertIn("a fact the sources show has ENDED or changed, said as still true now", p)
+
+
+class RewriteKeepsTheHookRules(unittest.TestCase):
+    """67. D27 (run 43485568700): the bold-true rewrite of a hook only had to pass the fact checks.
+    It gave Mitchell's Short "Donovan Mitchell fires back at Barkley: 'Who gives a f—k?'..." (gate
+    REJECT, one of the run's two Shorts lost) and Arenas's "Steph Curry is out at least two weeks,
+    and Gilbert Arenas warns..." (the story's lead at word 9). Now a rewrite keeps every hook rule
+    (no profanity, the lead person in the first 8 words), else the old order stays; a profane hook
+    never leads, and the order is applied before the truth read so the read hook can lead."""
+
+    def test_the_two_real_rewrites_fail(self):
+        import script
+        r = script.rewrite_keeps_hook_rules
+        self.assertFalse(r("Steph Curry is out at least two weeks, and Gilbert Arenas warns Draymond Green will "
+                           "struggle without him.", "Gilbert Arenas just buried Draymond Green without Steph Curry.",
+                           "arenas"))
+        self.assertFalse(r("Donovan Mitchell fires back at Barkley: 'Who gives a f—k?' after Cavs 'suck' remark.",
+                           "Donovan Mitchell told Barkley nobody in Cleveland cares.", "mitchell"))
+        self.assertTrue(r("Gilbert Arenas warns Draymond Green will struggle without Steph Curry.",
+                          "Gilbert Arenas just buried Draymond Green without Steph Curry.", "arenas"))
+        # the 7 real rewrites of 43395656602-43485568700: 4 keep passing; Kyrie's (run 43446225184) put
+        # Kyrie at word 9 behind Ujiri, so the next hook leads now ("Dallas is winning with Kyrie Irving...")
+        self.assertFalse(r("Masai Ujiri said the Mavs truly believe in Kyrie Irving, yet rival teams still eye him.",
+                           "Masai Ujiri says the Mavs are keeping Kyrie Irving, but rivals want him.", "irving"))
+        self.assertTrue(r("Dejounte Murray deleted two angry posts after the Nets blowout, Pelicans sinking at 4-8.",
+                          "Dejounte Murray blasted the Pelicans, then deleted it.", "murray"))
+        self.assertTrue(r("Charles Barkley calls out Kyle Kuzma on live TV for not letting Luka Doncic land.",
+                          "Charles Barkley ripped Kyle Kuzma for hurting Luka Doncic.", "barkley"))
+        # no lead known: a name of the old first 8 words stays in the first 8
+        self.assertFalse(r("After a long night in Boston, the fans saw Tatum snub Brown.", "Tatum snubbed Brown again.", ""))
+
+    def test_profane_never_leads_and_order_first(self):
+        import script
+        hooks = [{"text": "Mitchell to Barkley: 'Who gives a f—k?'", "unsupported_details": []},
+                 {"text": "Charles Barkley said the Cavs suck, and Donovan Mitchell fired straight back.",
+                  "unsupported_details": []}]
+        read = []
+        saved = script.check_hook_truth
+        script.check_hook_truth = lambda h, s, lead="": read.append(h["text"]) or "ok"
+        try:
+            script.truth_order(hooks, [], "barkley")
+        finally:
+            script.check_hook_truth = saved
+        self.assertTrue(hooks[0]["text"].startswith("Charles Barkley said"))
+        self.assertEqual(read, [hooks[0]["text"]])      # the hook that leads is the one that was read
 
 
 if __name__ == "__main__":

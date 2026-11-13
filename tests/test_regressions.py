@@ -80,6 +80,8 @@ the "Safety tests" step before anything is installed or made.
      kept run (a change is tried on real Shorts before it reaches main)
  51. the opening line says the day's news (a suspension, a trade, an injury...): a line that
      leaves it out loses to one that says it (run 43353547001)
+ 52. a question is never the payoff's answer: "Why was Luka even back in up 20? I'd blame that."
+     goes to the repair pass (run 43395656602)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2872,6 +2874,24 @@ class TheNewsInTheHook(unittest.TestCase):
         with patch.object(script, "ask_claude", return_value={"best": 1}):
             got = script.intrigue_pick(hooks, self.HEAD, "story")
         self.assertEqual(got[0]["text"], hooks[0]["text"])
+
+
+
+class AQuestionIsNoAnswer(unittest.TestCase):
+    """52 (run 43395656602). The payoff "Why was Luka even back in up 20? I'd blame that." passed
+    as an answer (10 words). It is a question and a 3-word scrap (blame what? whom?)."""
+
+    def test_question_payoff_is_weak(self):
+        import script
+        bad = [{"say": "Why was Luka even back in up 20? I'd blame that.", "stage": "payoff"}]
+        self.assertTrue(script.weak_payoff(bad))
+        self.assertTrue(script.weak_payoff([{"say": "So was it dirty, or just a bad landing for Luka?", "stage": "payoff"}]))
+        good = [{"say": "Why was Luka even in? Redick left him out there up 20, and that is on him.", "stage": "payoff"}]
+        self.assertFalse(script.weak_payoff(good))
+        self.assertFalse(script.weak_payoff([{"say": "Doc was half right and fully clumsy.", "stage": "payoff"}]))
+        problems = script.repair_needed("Barkley called out Kuzma.", bad + [{"say": "So was Kuzma dirty, Barkley?", "stage": "exit"}],
+                                        {"hard": [], "soft": []})
+        self.assertTrue(any("or a question" in p for p in problems))
 
 
 if __name__ == "__main__":

@@ -1567,7 +1567,10 @@ def weak_payoff(beats: list[dict]) -> bool:
     def answer(say: str) -> bool:
         n = len(say.split())
         return n >= 5 and not (re.search(r"\d", say) and n < PAYOFF_MIN_WORDS)
-    return not any(answer(b.get("say", "")) for b in beats if stage_of(b) == "payoff")
+    # a question is never her answer, and neither is a scrap after one: run 43395656602's payoff
+    # "Why was Luka even back in up 20? I'd blame that." (blame what? whom?) counted as 10 words
+    return not any(answer(s) for b in beats if stage_of(b) == "payoff"
+                   for s in compliance.split_sentences(b.get("say", "")) if not s.strip().endswith("?"))
 
 
 AGREE_ONLY = re.compile(
@@ -1641,8 +1644,9 @@ def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[d
     problems += [f"{x}: cut the repeated part or replace it with something new from the sources"
                  for x in retention.get("hard", []) if "repeats what was already said" in x]
     if weak_payoff(beats):
-        problems.append("the payoff is only a stat or a fragment: make it her own answer in one or two "
-                        "sentences (what it means, who it costs, why it matters), from the sources")
+        problems.append("the payoff is only a stat, a fragment or a question: make it her own answer in "
+                        "one or two statements (what it means, who it costs, why it matters, naming who), "
+                        "from the sources")
     elif borrowed_take(beats):
         problems.append("the payoff only agrees with someone else's view (\"I think that's right\"): "
                         "give her OWN reason or a point that view did not make, in one sentence, "
@@ -1977,7 +1981,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     for k in (hook_repeats(hooks[0]["text"], beats) if hooks else []):
         retention["hard"].append(f"beat {k + 1} repeats the hook")
     if beats and weak_payoff(beats):
-        retention["soft"].append("the payoff is only a stat or a fragment, not her answer")
+        retention["soft"].append("the payoff is only a stat, a fragment or a question, not her answer")
     if NO_DEPTH.match((draft.get("strategy") or {}).get("headline_gap") or ""):
         # the hook's question has no answer in the sources and the Short adds nothing to the
         # headline: a broken promise and a reused-content risk, so a person decides

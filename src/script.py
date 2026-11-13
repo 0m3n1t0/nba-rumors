@@ -793,7 +793,14 @@ def _source_words(sources: list[dict]) -> tuple[list[str], list[str], list[int]]
     (so a matched passage can be given back in the source's own words)."""
     words, toks, owner = [], [], []
     for src in sources:
-        for w in f"{src.get('title', '')} {src.get('summary', '')} {src.get('text', '')}".split():
+        text = f"{src.get('title', '')} {src.get('summary', '')} {src.get('text', '')}"
+        # a quote glued to the words around it (an embedded tweet in run 43395656602: 'hurt Luka
+        # Doncic:"Not a good play right there. That's not cool man, not letting guys land"When
+        # will...') is split off, so a quote never starts with "hurt Luka Doncic:" or runs on
+        # into the next sentence
+        text = re.sub(r'([:;,])(["\u201c])(?=\w)', r"\1 \2", text)
+        text = re.sub(r'([\w.!?,])(["\u201d])(?=\w)', r"\1\2 ", text)
+        for w in text.split():
             words.append(w)
             for t in _toks(w):
                 toks.append(t)
@@ -841,11 +848,15 @@ def source_passage(quote: str, words: list[str], toks: list[str], owner: list[in
                 r"(said|says|told|asked|added|reporters|him|them)\b", words[first - 1], re.I):
             break
         first -= 1
-    # finish the sentence the passage is in (a quote never stops mid-sentence)
+    # finish the sentence the passage is in (a quote never stops mid-sentence); its closing quote
+    # mark ends it too ('right there," said Barkley': the quote ends at "there")
     for k in range(last, min(last + 8, len(words))):
-        if re.search(r"[.!?][\"\u201d']?$", words[k]):
+        if re.search(r"[.!?][\"\u201d']?$|[\w,][\"\u201d]$", words[k]):
             last = k
             break
+    else:
+        if re.search(r"(\u2026|\.\.\.)$", words[last]):
+            return 0.0, ""          # the source itself is cut off here ("That's not..."): no quote
     text = " ".join(words[first:last + 1]).replace('"', "").replace("\u201c", "").replace("\u201d", "")
     return best, re.sub(r"^[^\w']+|[^\w'.!?]+$", "", text)
 
@@ -1883,7 +1894,8 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
                         and not banned_check(spoken_of(cand)) and beat_words <= BEAT_WORDS_MAX + 10
                         and cand[-1].get("say", "").strip().endswith("?")):
                     repaired = [p.split(":")[0] for p in problems if p not in left]
-                    beats, softened, retention = cand, cand_soft, cand_ret
+                    # the quotes corrected before the repair stay on record (run 43395656602 lost them)
+                    beats, softened, retention = cand, softened + cand_soft, cand_ret
                     print(f"[+] repair pass fixed: {'; '.join(repaired)}")
                 else:
                     print("[!] repair pass not better or not safe: the original beats stay")

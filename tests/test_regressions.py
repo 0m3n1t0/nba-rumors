@@ -69,6 +69,10 @@ the "Safety tests" step before anything is installed or made.
      and other eras/teams kept for when the line asks for them
  45. the full reports never reach the public logs or run summaries (audit, 2026-11-13)
  46. captions and voice split sentences like the script checks (initials); Pillow 14 ready
+ 47. another man with his surname and a look-alike first name (Isaiah for Isiah Thomas) is never
+     his photo (run 43353547001)
+ 48. a corrected quote is only the quote: never the words glued before it ("hurt Luka Doncic:"),
+     never "said Barkley", never a cut-off source (run 43395656602)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2596,6 +2600,97 @@ class OneSentenceSplitEverywhere(unittest.TestCase):
             self.assertEqual(render.picture_hash(p), old)
         for name in ("media", "render"):
             self.assertNotIn("list(g.getdata())", (ROOT / "src" / f"{name}.py").read_text(encoding="utf-8"))
+
+
+
+class NotTheOtherThomas(unittest.TestCase):
+    """47 (run 43353547001). Isiah Thomas's Commons pool held two Flickr photos titled
+    "Isaiah Thomas (50639077836).jpg": the Wizards #4, not the Pistons legend. Both play
+    basketball, so the photo tagger called them him (match 8 and 7) and they were shown for
+    "hands in 1991". A first name with the same first letter that is not his (nor a short form
+    or nickname of it) next to his surname = another man. Two players in one title are not."""
+
+    def setUp(self):
+        import media
+        self.m = media
+
+    def test_the_other_man_is_left_out(self):
+        f = self.m.look_alike_name
+        self.assertTrue(f("Isiah Thomas", "Isaiah Thomas (50639077836).jpg"))
+        self.assertTrue(f("Isaiah Thomas", "Isiah_Thomas_1989.jpg"))
+        self.assertTrue(f("Stephen Curry", "Seth Curry 2019.jpg"))
+        self.assertTrue(f("Stephen Curry", "Seth Curry.jpg"))            # the ".jpg" is not part of the name
+        self.assertTrue(f("Derek Fisher", "David_fisher_and_tex_winter_(3215053324).jpg"))
+
+    def test_his_own_name_and_other_players_are_kept(self):
+        f = self.m.look_alike_name
+        for person, title in [("Isiah Thomas", "Isiah Thomas 1989.jpg"), ("Stephen Curry", "Steph Curry.jpg"),
+                              ("Stephen Curry", "Stephen Curry and Seth Curry.jpg"),
+                              ("Michael Brown", "Mike Brown coach.jpg"), ("Shaq O'Neal", "Shaquille O'Neal.jpg"),
+                              ("Kevin Durant", "Harden_Durant_2013_playoffs.jpg"),
+                              ("Kevin Durant", "Iguodala,_Calderon,_Durant,_Westbrook_in_Barcelona.jpg"),
+                              ("Stephen Curry", "Seth Curry guards his brother Stephen.jpg"),
+                              ("Jalen Brunson", "Rick Brunson embraces Jalen after the game.jpg"),
+                              ("Marcus Smart", "Isaiah Thomas, Marcus Smart (34075954590).jpg"),
+                              ("LeBron", "LeBron James.jpg")]:
+            self.assertFalse(f(person, title), title)
+
+    def test_the_pool_never_holds_him(self):
+        m = self.m
+        saved = (m.commons_photos, m.flickr_photos, m.openverse_photos, dict(m._all_photos))
+        m._all_photos.clear()
+        pool = [{"page": "a", "score": 30, "title": "Isiah Thomas Pistons 1989.jpg"},
+                {"page": "b", "score": 20, "title": "Isaiah Thomas (50639077836).jpg"}]
+        try:
+            m.commons_photos = lambda person: [dict(p) for p in pool]
+            m.flickr_photos = lambda person: []
+            m.openverse_photos = lambda person: [{"page": "c", "score": 25, "title": "Isaiah Thomas (50639144552).jpg"}]
+            self.assertEqual([p["page"] for p in m.photos("Isiah Thomas")], ["a"])
+        finally:
+            m.commons_photos, m.flickr_photos, m.openverse_photos = saved[:3]
+            m._all_photos.clear()
+            m._all_photos.update(saved[3])
+
+
+
+class OnlyTheQuote(unittest.TestCase):
+    """48 (run 43395656602). Yahoo's article held a tweet glued to its quote: 'hurt Luka
+    Doncic:"Not a good play right there. That's not cool man, not letting guys land"When will'.
+    The quote correction took 'hurt Luka Doncic:Not a good play right there. That's not' and
+    the Short said it as Barkley's words (gate PASS). The article's own form, '"...right there,"
+    said Barkley. "Not letting...', gave "...right there, said Barkley." inside the quote."""
+
+    TWEET = ("Charles Barkley just called out Kyle Kuzma for his dirty play that hurt Luka Doncic:\"Not a good "
+             "play right there. That's not cool man, not letting guys land\"When will the NBA finally stop "
+             "these guys from their dirty hits on Luka Doncic? First time he's gotten this call.")
+    ARTICLE = ("While showing highlights Charles Barkley called out Kuzma in passing. \"That's not a good play "
+               "right there,\" said Barkley. \"Not letting guys land. That's not cool at all.\" Then it went on.")
+
+    def fix(self, text, quote):
+        import script
+        b = [{"say": f'Barkley said on Inside the NBA, "{quote}"'}]
+        script.soften_quotes(b, [{"title": "Barkley calls out Kuzma", "summary": "", "text": text}])
+        return b[0]["say"]
+
+    def test_the_glued_tweet(self):
+        said = self.fix(self.TWEET, "That's not a good play right there. Not letting guys land.")
+        self.assertEqual(said, 'Barkley said on Inside the NBA, "Not a good play right there. '
+                               'That\'s not cool man, not letting guys land"')
+
+    def test_said_barkley_is_not_his_words(self):
+        said = self.fix(self.ARTICLE, "That's not a good play right there. Not letting guys land.")
+        self.assertNotIn("said Barkley", said.split('"')[1])
+        self.assertIn('"That\'s not a good play right there"', said)
+
+    def test_a_cut_off_source_is_never_the_quote(self):
+        said = self.fix('Barkley on Kuzma: "Not a good play right there. That\'s not\u2026 https://t.co/x',
+                        "That's not a good play right there. Not letting guys land.")
+        self.assertNotIn("That's not\"", said)
+        self.assertNotIn("Kuzma:", said)
+
+    def test_the_record_survives_the_repair(self):
+        import inspect, script
+        self.assertIn("softened + cand_soft", inspect.getsource(script))
 
 
 if __name__ == "__main__":

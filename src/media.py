@@ -875,6 +875,37 @@ def names_together(person: str, text: str) -> bool:
     return bool(re.search(rf"\b{re.escape(parts[0])}\W+{re.escape(parts[1])}\b", fold(text)))
 
 
+# The same first name, written two ways: never a different person.
+NICKNAMES = [{"mike", "michael"}, {"nick", "nicholas", "nicolas"}, {"matt", "matthew"},
+             {"kenny", "kenneth"}, {"danny", "daniel"}, {"johnny", "jonathan", "john"},
+             {"jimmy", "jim", "james"}, {"tommy", "thomas"}, {"bobby", "bob", "robert"},
+             {"billy", "bill", "william"}, {"tony", "anthony"}, {"zach", "zachary"},
+             {"chris", "christopher"}, {"rob", "robert"}, {"ron", "ronald"}, {"dwy", "dwyane"}]
+
+
+def same_first(a: str, b: str) -> bool:
+    return a.startswith(b) or b.startswith(a) or any(a in s and b in s for s in NICKNAMES)
+
+
+def look_alike_name(person: str, title: str) -> bool:
+    """A photo of ANOTHER man with his surname and a look-alike first name. Run 43353547001
+    showed Isaiah Thomas (Wizards #4) as Isiah Thomas, in a Short about Isiah and Jordan in 1991:
+    both play basketball, so the photo tagger cannot tell them apart. Steph Curry and Seth Curry
+    are brothers. Only a first name with the same first letter counts (Isaiah/Isiah, Seth/Stephen,
+    David/Derek Fisher): "Harden Durant 2013 playoffs" or "James, Durant, Chandler" name two
+    players, not a second Durant. Kept: any title that also names the person himself."""
+    p = fold(person).split()
+    if len(p) < 2:
+        return False
+    first, sur = p[0], p[-1]
+    words = re.findall(r"[a-z]+(?:['-][a-z]+)*", fold(title.replace("_", " ")))
+    if any(same_first(w, first) and k + 1 < len(words) and words[k + 1] == sur
+           for k, w in enumerate(words)) or first in words:
+        return False
+    return any(w == sur and k and words[k - 1][0] == first[0] and len(words[k - 1]) >= 3
+               and not same_first(words[k - 1], first) for k, w in enumerate(words))
+
+
 def openverse_cached(person: str) -> list[dict]:
     """The last good Openverse search for this person, if it is younger than OV_CACHE_DAYS."""
     import datetime as _dt
@@ -1023,6 +1054,11 @@ def photos(person: str) -> list[dict]:
             if flickr_id(f["page"]) not in seen:
                 seen.add(flickr_id(f["page"]))
                 found.append(f)
+        other = [f for f in found if look_alike_name(person, f.get("title", ""))]
+        if other:
+            print(f"   {person}: {len(other)} photo(s) of another man with his surname left out: "
+                  + ", ".join(f.get("title", "")[:40] for f in other[:3]))
+            found = [f for f in found if f not in other]
         # among his photos, today's uniform first, then photos that do not show a team, then a
         # former team's (stable: inside each group the old order, newest first, is kept).
         # Relevance is still Claude's judgement: this only decides which photos it sees first.

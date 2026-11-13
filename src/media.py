@@ -2051,7 +2051,8 @@ def person_photos(person: str, shown: set) -> list[dict]:
     ok = [c for c in pool[:photo_tags.MAX_PER_PERSON if tagged else 20]
           if not already_shown(c, shown, c["page"]) and c["page"] not in REJECTED
           and solo_title(c, person) and photo_tags.fill_ok(c) and (c.get("tag") or not tagged)]
-    return sorted(ok, key=photo_tags.fill_rank) if tagged else sorted(ok, key=lambda c: not c.get("hoops"))
+    return sorted(ok, key=photo_tags.fill_rank) if tagged else \
+        sorted(ok, key=lambda c: (c.get("team") == "former", not c.get("hoops")))   # D28: a former team after
 
 
 def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str] | None = None,

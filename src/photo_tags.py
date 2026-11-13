@@ -392,10 +392,13 @@ def shortlists(beats: list[dict], plans: list[dict], who: list[str], story: str,
 
 def fill_rank(c: dict) -> tuple:
     """Order of the unjudged top-up photos: the person clearly seen in basketball first; photos
-    he is not in, and events that fit no line by default, never (see person_photos)."""
+    he is not in, and events that fit no line by default, never (see person_photos). D28 (run
+    43485568700: three Utah Jazz photos of Donovan Mitchell were the extra shots on Cavs lines):
+    the agreed team order holds here too - today's team or no team first, a former team after
+    (never dropped: used when nothing else is left)."""
     t = c.get("tag") or {}
-    return (not t, t.get("v") != "C", t.get("s") not in ("game", "warmup", "bench", "allstar", "national"),
-            not c.get("hoops"))
+    return (not t, c.get("team") == "former", t.get("v") != "C",
+            t.get("s") not in ("game", "warmup", "bench", "allstar", "national"), not c.get("hoops"))
 
 
 def fill_ok(c: dict) -> bool:

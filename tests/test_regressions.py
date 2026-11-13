@@ -119,6 +119,8 @@ the "Safety tests" step before anything is installed or made.
      lead person in the first 8 words; a profane hook never leads (run 43485568700)
  68. D29 (owner): a named beat reporter credited for an on-record quote ("Mitchell told Chris
      Fedor of Cleveland.com") is a reliable source: no "provenance unclear" hold, no RUMOR downgrade
+ 69. D28: unjudged top-up photos keep the team order (today's team / no team first, a former
+     team after, never dropped): Mitchell's Jazz photos had filled Cavs lines
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3624,6 +3626,35 @@ class OnRecordBeatReporter(unittest.TestCase):
         self.assertEqual(out[0]["status"], "REPORTED")
         _, _, out = C.check_claims(claim, [plain], "Mitchell reportedly said Chuck ain't here.")
         self.assertEqual(out[0]["status"], "RUMOR")
+
+
+class TopUpsKeepTheTeamOrder(unittest.TestCase):
+    """69. D28 (run 43485568700): the unjudged extra shots ranked only by face and game, so three
+    Utah Jazz photos of Donovan Mitchell (2018-19) filled Cavs lines ("Are the Cavs the same
+    failing team...?") while Cavs photos were left. The agreed order now holds for top-ups too:
+    today's team or no team first, a former team after - never dropped."""
+
+    def test_order(self):
+        import photo_tags
+        clear = {"v": "C", "s": "game", "t": "drives"}
+        pool = [{"page": "utah", "team": "former", "tag": clear, "hoops": True},
+                {"page": "cavs", "team": "current", "tag": clear, "hoops": True},
+                {"page": "plain", "team": "", "tag": {"v": "B", "s": "game", "t": "back turned"}, "hoops": True},
+                {"page": "untagged", "team": "", "hoops": True}]
+        self.assertEqual([c["page"] for c in sorted(pool, key=photo_tags.fill_rank)],
+                         ["cavs", "plain", "utah", "untagged"])
+
+    def test_person_photos_both_ways(self):
+        import media
+        saved = (media.photos, media.solo_title)
+        media.solo_title = lambda c, p: True
+        try:
+            pool = [{"page": "u", "team": "former", "hoops": True, "title": "Donovan Mitchell Utah"},
+                    {"page": "c", "team": "current", "hoops": False, "title": "Donovan Mitchell"}]
+            media.photos = lambda person: [dict(p) for p in pool]
+            self.assertEqual([c["page"] for c in media.person_photos("Donovan Mitchell", set())], ["c", "u"])
+        finally:
+            media.photos, media.solo_title = saved
 
 
 if __name__ == "__main__":

@@ -239,7 +239,7 @@ TWO VERSIONS (the channel lives on them): before choosing the angle, search the 
    SPECIFICITY (a number or a name, no hype adjectives), ADDRESS (a "you" may come AFTER the
    names and the clash, never as the opener), STAKES (what is at risk: a season, a contract, a title, a job), CURIOSITY
    (open a question and do NOT answer it in the same sentence: avoid "because"), and
-   BREVITY (10-18 words).
+   BREVITY (8-14 words: the hook rule above; the old "10-18" contradicted it).
 2. Write the spoken script AFTER the hook, on the chosen angle: 3-5 beats, 45-65 words total. The whole Short
    must land at 25-35 seconds read aloud: that is the length of the niche's top Shorts. ONE
    exception: up to 72 words when the MUST-KNOW CONTEXT (who someone is, who went where, who

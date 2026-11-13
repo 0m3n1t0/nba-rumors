@@ -1919,6 +1919,9 @@ class StatedShockHook(unittest.TestCase):
             self.assertIn(need, p, need)
         self.assertIn("8-14 words", script.HOOK_RETRY if hasattr(script, "HOOK_RETRY") else p)
         self.assertIn("PUNCH:", script.HUMANIZE)
+        # audit 2026-11-13: no other line of the prompt may give the hook another length
+        self.assertNotIn("10-18 words", p)
+        self.assertNotIn("10-24 words", p)
         # a stated rumor without its source is still caught by the rumor check (C2)
         import compliance as C
         cl = [{"status": "RUMOR", "text": "The Lakers are shopping Austin Reaves before the deadline", "source": 1}]

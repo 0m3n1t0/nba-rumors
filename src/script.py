@@ -508,7 +508,8 @@ def log_claude_usage(stdout: str, where: str) -> None:
         row = {"where": where, "cost_usd": env.get("total_cost_usd"),
                "in": (u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0)
                + (u.get("cache_creation_input_tokens") or 0),
-               "out": u.get("output_tokens") or 0, "seconds": round((env.get("duration_ms") or 0) / 1000)}
+               "out": u.get("output_tokens") or 0, "seconds": round((env.get("duration_ms") or 0) / 1000),
+               "turns": env.get("num_turns")}   # steps in one call: each step re-reads what came before
         path = Path(__file__).resolve().parent.parent / "data" / "claude_usage.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as fh:

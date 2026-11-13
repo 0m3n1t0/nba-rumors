@@ -84,6 +84,8 @@ the "Safety tests" step before anything is installed or made.
      goes to the repair pass (run 43395656602)
  53. an independent final read (final_read.py): a clear error with real evidence, or a Short it
      could not read, is held by the gate; an error without real evidence is only a doubt
+ 54. D16: contact sheets are opened all at once (one step), not one per step: each step re-reads
+     everything before it (run 43395656602: a 5-sheet tag call cost 136k tokens); turns logged
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2982,6 +2984,31 @@ class IndependentFinalRead(unittest.TestCase):
         wf = (ROOT / ".github" / "workflows" / "collect.yml").read_text(encoding="utf-8")
         self.assertLess(wf.index("python src/final_read.py"), wf.index("python src/gate.py"))
         self.assertIn("review/short_*.json", state.RUN_FILES)
+
+
+
+class SheetsOpenedAtOnce(unittest.TestCase):
+    """54 (D16). Claude Code re-sends the whole conversation at every step. Opening 5 sheets one
+    per step made a 45-photo tag call cost about 15k + 18k + 21k + 24k + 27k + 30k = 136k tokens
+    (run 43395656602's biggest call was 136,625); all at once: about 15k + 30k."""
+
+    def test_both_sheet_prompts_ask_for_one_step(self):
+        import media, photo_tags
+        for prompt in (photo_tags.TAG_PROMPT, media.PICK_PROMPT):
+            self.assertIn("ALL AT ONCE", prompt)
+            self.assertIn("never one sheet per step", " ".join(prompt.split()))
+
+    def test_turns_are_logged(self):
+        import media, script, tempfile
+        out = json.dumps({"usage": {"input_tokens": 5, "cache_read_input_tokens": 10}, "num_turns": 6,
+                          "duration_ms": 2000, "total_cost_usd": 0.1})
+        for mod in (media, script):
+            with tempfile.TemporaryDirectory() as d:
+                fake = Path(d) / "src" / "x.py"
+                with patch.object(mod, "__file__", str(fake)):
+                    mod.log_claude_usage(out, "t")
+                row = json.loads((Path(d) / "data" / "claude_usage.jsonl").read_text(encoding="utf-8"))
+            self.assertEqual((row["turns"], row["in"]), (6, 15))
 
 
 if __name__ == "__main__":

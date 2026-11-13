@@ -50,7 +50,9 @@ SCENES = ("game", "warmup", "bench", "interview", "practice", "allstar", "nation
 NOT_BY_DEFAULT = {"political", "stage", "community", "red_carpet", "pre_nba"}  # only when the line is about it
 
 TAG_PROMPT = """You tag photos for the photo editor of an NBA news channel. In this folder there are
-contact sheets: SHEETS. Open EVERY sheet with the Read tool. Each tile has a number.
+contact sheets: SHEETS. Open EVERY sheet with the Read tool, ALL AT ONCE: in your first step call
+Read for every sheet together (one Read per sheet, in parallel), never one sheet per step.
+Each tile has a number.
 Every photo is filed under PERSON_NAME, but files are often wrong: judge ONLY what you SEE, never a
 file name, never a guess. For EVERY number return:
   "v": "C" = PERSON_NAME is in it and his face is clearly visible (front or three-quarter, big

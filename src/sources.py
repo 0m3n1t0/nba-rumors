@@ -74,4 +74,6 @@ TIER1_PUBLISHERS = {
     "bleacher report", "the ringer", "associated press", "ap news", "nba.com",
     "sports illustrated", "usa today", "fox sports", "nbc sports",
     "the stein line", "marc stein", "reuters",
+    # his answer (2026-11-14): big newspapers and broadcasters seen in our topics
+    "washington post", "los angeles times", "boston globe", "sporting news", "sportsnet",
 }

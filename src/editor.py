@@ -398,9 +398,13 @@ def score_line(r: dict) -> str:
 
 
 FEUD_HOURS = 48
-MAJOR_TURN = re.compile(r"\b(trade[sd]?|signs?|signed|waive[sd]?|released|suspend\w*|fine[sd]?|"
-                        r"punish\w*|eject\w*|fight|altercation|brawl|arrest\w*|statement|"
-                        r"benched|banned|investigation)\b", re.I)
+# his answer (2026-11-14), checked on 287 real headlines: "trade" alone matched 62 ordinary trade
+# rumors (every rumor about the same pair counted as a turn), so only a real move counts now
+MAJOR_TURN = re.compile(r"\b(traded|trade request|requests? (?:a )?trade|demands? (?:a )?trade|signs|signed|"
+                        r"waive[sd]?|released|suspend\w*|fine[sd]|punish\w*|eject\w*|ejections?|punch\w*|"
+                        r"fistfight|fight broke out|got into (?:a|an) (?:fight|altercation)|altercation|scuffle|"
+                        r"brawl|arrest\w*|charged|lawsuit|sue[sd]?|statement|apolog\w*|reconcil\w*|hug(?:s|ged)?|"
+                        r"benched|banned|investigation|deleted|unfollow\w*|fired(?! (?:up|back|off|shots?|at)))\b", re.I)
 def headline_people(topic: dict) -> list[str]:
     """The story's people who are named IN ITS HEADLINE (surnames, in headline order). Only the
     editor's star names are used: headlines are in Title Case, so capitalised words alone would

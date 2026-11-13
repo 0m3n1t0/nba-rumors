@@ -78,8 +78,8 @@ the "Safety tests" step before anything is installed or made.
      never played for (media leaves it out, the gate holds it if it is still there)
  50. each Short's source texts are kept with the run, and replay.py runs today's checks on every
      kept run (a change is tried on real Shorts before it reaches main)
- 51. the opening line says the day's news (a suspension, a trade, an injury...): a line that
-     leaves it out loses to one that says it (run 43353547001)
+ 51. (changed 2026-11-14 by his rule) the hook must be scandalous, intriguing and effective; the
+     day's news is secondary: no line wins only because it says the news (run 43353547001 case kept)
  52. a question is never the payoff's answer: "Why was Luka even back in up 20? I'd blame that."
      goes to the repair pass (run 43395656602)
  53. an independent final read (final_read.py): a clear error with real evidence, or a Short it
@@ -113,6 +113,8 @@ the "Safety tests" step before anything is installed or made.
      cannot list the folder and opened them one guess per step (15-19 steps, up to 169k tokens)
  65. D26 (owner): a conflict between popular players/teams weighs slightly more than other drama
      around a popular player: +6 for any conflict, plus up to +4 by star power (0 at 5, 4 at 10)
+ 67b. (2026-11-14, his answers) hook 8-12 words (3-4 s at 2.8 words a second); MAJOR_TURN without
+     plain "trade"; articles read up to 6000 characters; tier 1 + 5 newspapers/broadcasters
  66. who said it, and is it still true: an outlet's conclusion is never given to the insider it
      reports on; an ended fact (a streak) is never said as still running (writer, critic, final read)
  67. D27: a rewritten hook (truth or detail fix) keeps every hook rule: no profanity, the story's
@@ -1955,8 +1957,9 @@ class StatedShockHook(unittest.TestCase):
     """34. Owner, 2026-11-12: "Did Gilbert Arenas really call...?" is not shocking enough;
     "Gilbert Arenas called Ayesha Curry the only blemish..." is. The first 3 seconds decide."""
 
-    STATED = "Gilbert Arenas just called Ayesha Curry the only blemish on Steph Curry's family."
-    ASKED = "Did Gilbert Arenas really call Ayesha Curry the only blemish in Stephen Curry's family?"
+    # his rule 2026-11-14: a hook fits the first 3-4 seconds = 8-12 words (the old fixtures had 13 and 15)
+    STATED = "Gilbert Arenas called Ayesha Curry the only blemish on Steph's family."
+    ASKED = "Did Gilbert Arenas really call Ayesha Curry the Curry family's blemish?"
 
     def test_statement_is_a_valid_hook_and_ranks_first(self):
         import script
@@ -1977,7 +1980,9 @@ class StatedShockHook(unittest.TestCase):
         for need in ("THE HOOK IS A SHOT, NOT A QUESTION", "first 8 words", "Shams: the Lakers",
                      "a question hook only when the story has no shocking fact"):
             self.assertIn(need, p, need)
-        self.assertIn("8-14 words", script.HOOK_RETRY if hasattr(script, "HOOK_RETRY") else p)
+        self.assertIn("8-12 words", script.HOOK_RETRY if hasattr(script, "HOOK_RETRY") else p)   # his rule 2026-11-14
+        self.assertNotIn("8-14 words", p)
+        self.assertFalse(script.one_question("Gilbert Arenas just called Ayesha Curry the only blemish on the Curry family."))  # 14: too long now
         self.assertIn("PUNCH:", script.HUMANIZE)
         # audit 2026-11-13: no other line of the prompt may give the hook another length
         self.assertNotIn("10-18 words", p)
@@ -2310,7 +2315,7 @@ class HookDetailInSourceWords(unittest.TestCase):
 
     def test_detail_in_the_sources_words_keeps_the_hook(self):
         import script
-        ok, hook, seen = self.run_fix("Charles Barkley says Michael Jordan cussed him out over one ESPN 1000 comment.")
+        ok, hook, seen = self.run_fix("Charles Barkley says Jordan cussed him out over an ESPN 1000 comment.")
         self.assertTrue(ok)
         self.assertNotIn("radio", hook["text"])
         self.assertEqual(hook["unsupported_details"], [])
@@ -2484,9 +2489,9 @@ class BoldButTrue(unittest.TestCase):
 
     def test_overstated_gets_the_bold_true_line(self):
         res, hook, _ = self.run_check({"verdict": "overstated", "why": "stronger than he said",
-                                       "text": "Draymond Green just told a rookie to make Luka Doncic earn his respect."})
+                                       "text": "Draymond Green told a rookie to make Luka Doncic earn respect."})
         self.assertEqual(res, "fixed")
-        self.assertEqual(hook["text"], "Draymond Green just told a rookie to make Luka Doncic earn his respect.")
+        self.assertEqual(hook["text"], "Draymond Green told a rookie to make Luka Doncic earn respect.")
         self.assertEqual(hook["truth_fixed"], "stronger than he said")
         self.assertFalse(hook.get("overstated"))
 
@@ -2899,19 +2904,16 @@ class TheNewsInTheHook(unittest.TestCase):
                      "Warriors on a tear", "Kuminga rips Gobert after loss"):
             self.assertTrue(f("Anything at all.", head), head)                  # no news event: nothing to check
 
-    def test_the_pick_prefers_the_news(self):
+    def test_the_fan_pick_decides_not_the_news(self):
+        # his rule (2026-11-14): the hook must be scandalous, intriguing and effective; the day's news
+        # is secondary. The "a line with the news always wins" order was mine and is gone: every good
+        # line goes to the fan's pick, and its choice leads.
         import script
         with patch.object(script, "ask_claude", return_value={"best": 1}) as ask:
             got = script.intrigue_pick(self.hooks(), self.HEAD, "story")
-        self.assertIn("suspended", got[0]["text"])
+        self.assertIn("below .500", ask.call_args[0][0].split("WHAT THE SHORT SAYS")[1])   # offered too
+        self.assertEqual(got[0]["text"], self.hooks()[0]["text"])
         self.assertTrue(got[0]["intrigue_pick"])
-        self.assertNotIn("below .500", ask.call_args[0][0].split("WHAT THE SHORT SAYS")[1])
-        one = self.hooks()[:2]
-        with patch.object(script, "ask_claude") as ask:
-            got = script.intrigue_pick(one, self.HEAD, "story")
-        ask.assert_not_called()                                                     # one news line: it leads
-        self.assertIn("suspended Smart", got[0]["text"])
-        self.assertEqual(len(got), 2)
 
     def test_no_news_line_changes_nothing(self):
         import script
@@ -3739,6 +3741,40 @@ class TopUpsByRelevanceTeamAndFace(unittest.TestCase):
         import media
         self.assertEqual(media.SPARE_MIN, 8)       # his answer: only the person the line is about
         self.assertIn("next_spare(it, i, f\"more{k}\") or next_face(i, f\"more{k}\")", src)
+
+
+class HisAnswersOnTheOlderRules(unittest.TestCase):
+    """71. 2026-11-14, his answers on sub-logics of the older code (each was mine): the hook fits
+    the first 3-4 seconds (8-12 words at our voice's measured 2.8 words a second); "trade" alone is
+    no major turn (62 of 287 real headlines were plain rumors); an article is read up to 6000
+    characters; five big newspapers / broadcasters are tier 1."""
+
+    def test_hook_length(self):
+        import script
+        self.assertEqual((script.HOOK_MIN, script.HOOK_MAX), (8, 12))
+        self.assertTrue(script.one_question("Shams says Stephen Curry is out closer to a month."))       # 10
+        self.assertFalse(script.one_question("Steph Curry is out at least two weeks, and Gilbert Arenas warns Draymond."))  # 14
+        self.assertFalse(script.one_question("Curry is out a month."))                                    # 5
+
+    def test_major_turn(self):
+        import editor
+        t = editor.MAJOR_TURN.search
+        for h in ("Kyrie Irving Trade Rumors Updated by NBA Insider", "Lakers sign center to two-way contract",
+                  "Celtics in a fight for the East", "Luka is fine with ankle tweak"):
+            self.assertIsNone(t(h), h)
+        for h in ("Nick Young: I Apologize Like a Man", "Bassey Rips Smart After Getting Punched",
+                  "Jaylen Brown requests a trade", "Smart suspended three games", "Pelicans waive Murray",
+                  "Bucks fired Doc Rivers"):
+            self.assertIsNotNone(t(h), h)
+        self.assertIsNone(t("Draymond fired back at Rivers"))
+
+    def test_article_and_tier1(self):
+        import script, sources
+        self.assertEqual(script.ARTICLE_CHARS, 6000)
+        for p in ("washington post", "los angeles times", "boston globe", "sporting news", "sportsnet"):
+            self.assertIn(p, sources.TIER1_PUBLISHERS)
+        for p in ("heavy", "fadeaway world", "essentiallysports", "sportskeeda"):
+            self.assertNotIn(p, sources.TIER1_PUBLISHERS)
 
 
 if __name__ == "__main__":

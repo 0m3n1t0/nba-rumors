@@ -1558,8 +1558,12 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             for i in weak:
                 extra = {"person": plans[i].get("person", ""),
                          "queries": (picks.get(i, {}).get("retry_queries") or [])[:3] or plans[i].get("queries")}
-                # the story's people stay in the pool: round 2 adds footage, it never drops the faces
-                more = [c for c in candidates(extra, work, 100 + i, used, (people(short) or [""])[0], tuple(people(short)[1:3]))
+                # the story's people stay in the pool: round 2 adds footage, it never drops the faces.
+                # Audit 2026-11-13: without a shortlist, round 2 went back to each person's FIRST
+                # photos, untagged order (the White House shots, a popcorn bucket): a tagged
+                # person's faces now come only from the tag shortlist kept in "faces" below
+                more = [c for c in candidates(extra, work, 100 + i, used, (people(short) or [""])[0], tuple(people(short)[1:3]),
+                                              [] if lists is not None else None)
                         if (c.get("id") or c["page"]) not in {x.get("id") or x["page"] for x in per_beat[i]}]
                 keep = [per_beat[i][k - 1] for k in (picks.get(i, {}).get("ranking") or [])[:2]
                         if isinstance(k, int) and 1 <= k <= len(per_beat[i])]

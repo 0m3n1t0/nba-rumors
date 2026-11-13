@@ -2141,6 +2141,26 @@ class EveryPhotoLookedAt(unittest.TestCase):
             for k, v in saved.items():
                 setattr(m, k, v)
 
+    def test_round_two_never_brings_back_untagged_first_photos(self):
+        """Audit 2026-11-13: round 2 called candidates() without the shortlist, so a tagged
+        person's first photos in the old order came back (absent, political...)."""
+        m = self.m
+        tagged = [{**self.ph(n), "tag": {"v": "C", "s": "game", "e": "calm", "t": "x"}} for n in range(10)]
+        saved = {k: getattr(m, k) for k in ("photos", "download", "image_ok", "commons_videos", "pixabay_videos")}
+        try:
+            m.photos = lambda who: tagged
+            m.download, m.image_ok = self.fake_download, (lambda p: True)
+            m.commons_videos = lambda *a, **k: []
+            m.pixabay_videos = lambda q: []
+            self.assertEqual(m.candidates({"person": "Steph Curry", "queries": []}, self.tmp, 100, set(),
+                                          "Steph Curry", (), []), [])
+        finally:
+            for k, v in saved.items():
+                setattr(m, k, v)
+        import inspect
+        src = inspect.getsource(m.collect_for)
+        self.assertIn('[] if lists is not None else None)', src[src.index("round 2 adds footage"):])
+
     def test_big_beats_get_more_sheets(self):
         m = self.m
         from PIL import Image

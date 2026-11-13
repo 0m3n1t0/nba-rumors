@@ -63,6 +63,7 @@ the "Safety tests" step before anything is installed or made.
  39. where a feud stands now: "silence" while a source tells of contact since -> repair, else REVIEW
  40. a broken tag answer keeps its good entries; an untagged photo never fills when the person has tags
  41. a beat that replays the hook in other order, and "that stretch" never said -> repair
+ 42. a fresh, spreading fight just under the line (55+) is made before an old feud fills the run
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2325,6 +2326,38 @@ class NoReplayNoDanglingReference(unittest.TestCase):
         problems = script.repair_needed(self.HOOK, self.BEATS, {"stages": [], "hard": [], "soft": []})
         self.assertTrue(any("that stretch" in p for p in problems))
         self.assertTrue(any("beat 1 repeats the hook" in p for p in problems))
+
+
+class FreshFightBeatsOldFeud(unittest.TestCase):
+    """42. Owner, 2026-11-13: Dejounte Murray's deleted "inside sabotage" tweet (59.5, rising +2
+    outlets) was skipped three runs in a row while old feuds filled the runs."""
+
+    # the real record of run 43317261723 (59.5)
+    MURRAY = {"id": 6, "nba": True, "kind": "player_vs_team", "conflict": True, "virality": 7, "drama": 8,
+              "star_power": 5, "debate": 7, "repeat": False, "search_hits": 0, "youtube_heat": 0,
+              "google_trend": 0, "momentum": 2, "reddit": 0.0, "star_fame": 0.0, "hours_old": 0.8}
+
+    def test_near_miss(self):
+        import editor as E
+        topic = {"verified": True, "outlets": 4}
+        r = dict(self.MURRAY)
+        self.assertEqual(E.short_score(r), 59.5)
+        self.assertTrue(E.near_miss(r, topic))
+        calm = {**r, "conflict": False, "virality": 10, "debate": 10}            # in range, but no fight
+        self.assertTrue(E.NEAR_SCORE <= E.short_score(calm) < E.MIN_SCORE)
+        self.assertFalse(E.near_miss(calm, topic))
+        self.assertFalse(E.near_miss({**r, "drama": 6}, topic))                 # not dramatic enough
+        self.assertFalse(E.near_miss({**r, "repeat": True}, topic))             # already made
+        self.assertFalse(E.near_miss({**r, "momentum": 0}, {"verified": True, "outlets": 2}))  # not spreading
+        self.assertTrue(E.near_miss({**r, "momentum": 0}, {"verified": True, "outlets": 3}))
+        self.assertFalse(E.near_miss({**r, "kind": "filler"}, topic))
+
+    def test_made_before_the_old_feuds(self):
+        import inspect
+        import script
+        src = inspect.getsource(script.main)
+        self.assertLess(src.index("queue += near"), src.index("for topic_id in queue:"))
+        self.assertLess(src.index("for topic_id in queue:"), src.index("fill_with_evergreen(shorts"))
 
 
 if __name__ == "__main__":

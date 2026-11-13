@@ -330,6 +330,19 @@ OPINION = re.compile(r"^(why|how|what|should|could|would|ranking|grading|grades|
 WEIGHTS = {"E": 22, "S": 22, "D": 18, "T": 12, "C": 10, "V": 10}
 CONFLICT_BONUS, NICHE_BONUS, DULL_PENALTY = 6, 4, 40
 MIN_SCORE = 60   # was 40: a 54-point story (Kuminga vs Gobert) is not a viral Short
+# Owner, 2026-11-13: Dejounte Murray's deleted "inside sabotage" tweet scored 52-59.5 in three runs
+# in a row and was skipped each time, while the runs filled up with old feuds. A FRESH story just
+# under the line still beats an old one when it is the channel's genre: a real conflict, high
+# drama, and still spreading (more outlets than at the last run, or 3+ outlets).
+NEAR_SCORE, NEAR_DRAMA = 55, 7
+
+
+def near_miss(r: dict, topic: dict) -> bool:
+    """A fresh fight just under MIN_SCORE that is made before an old feud fills the run."""
+    return (NEAR_SCORE <= short_score(r) < MIN_SCORE and r.get("nba") and r.get("kind") != "filler"
+            and not r.get("repeat") and r.get("conflict") and (r.get("drama") or 0) >= NEAR_DRAMA
+            and ((r.get("momentum") or 0) >= 1 or (topic.get("outlets") or 0) >= 3)
+            and (topic.get("verified") or (topic.get("outlets") or 0) >= 2))
 
 
 def score_parts(r: dict) -> dict:

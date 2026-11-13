@@ -35,7 +35,7 @@ import hookscore  # noqa: E402  (youtube-agent-skill)
 import title as titlecheck  # noqa: E402  (youtube-agent-skill)
 import compliance  # noqa: E402  (monetization safety checks, enforced in code)
 import nbadata  # noqa: E402  (official NBA results: confirms scores and records in claims)
-from editor import MIN_SCORE, niche_data, score_line, short_score  # noqa: E402  (same order and niche scan as the editor)
+from editor import MIN_SCORE, near_miss, niche_data, score_line, short_score  # noqa: E402  (same order and niche scan as the editor)
 
 # ---- Claude Pro budget: model choice + clean stop when the plan's usage limit is reached ----
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")             # writing, judging, looking at pictures
@@ -2129,6 +2129,10 @@ def main() -> None:
             SKIPPED.append(f"{editor['topics'][i]['headline'][:90]}: too weak (score {score[i]:.1f} < {MIN_SCORE}), not made")
     # one queue in drama/audience order; the editor's own picks get a small bonus
     queue = sorted(strong + backups, key=lambda i: -(score.get(i, 0) + (3 if i in picked else 0)))
+    # then fresh fights just under the line, before any old feud fills the run (near_miss)
+    near = [r["id"] for r in sorted(editor["ranked"], key=lambda r: -short_score(r))
+            if r["id"] < len(editor["topics"]) and r["id"] not in queue and near_miss(r, editor["topics"][r["id"]])]
+    queue += near
     top = sorted((r for r in editor["ranked"] if r.get("nba") and r.get("kind") != "filler"),
                  key=lambda r: -(score.get(r["id"], 0) + (3 if r["id"] in picked else 0)))[:8]
     QUEUE.extend(f"{score.get(r['id'], 0):.1f} ({score_line(r)}){' ⭐' if r['id'] in picked else ''}"
@@ -2163,6 +2167,11 @@ def main() -> None:
             continue
         judged = next((r for r in editor["ranked"] if r["id"] == topic_id), {})
         dupes.update(judged.get("same_as", []))
+        if topic_id in near:
+            head = editor["topics"][topic_id]["headline"][:90]
+            SKIPPED[:] = [x for x in SKIPPED if not x.startswith(f"{head}: too weak")]
+            SKIPPED.append(f"{head}: made although {score.get(topic_id, 0):.1f} < {MIN_SCORE}: a fresh, "
+                           f"spreading fight beats an old feud")
         (OUT / f"short_{n}.json").write_text(json.dumps(short, indent=2), encoding="utf-8")
         shorts.append(short)
         RECENT.append({"headline": short["headline"], "hook": (short.get("hook") or {}).get("text", ""),

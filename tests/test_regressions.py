@@ -95,6 +95,9 @@ the "Safety tests" step before anything is installed or made.
      most a doubt (run 43407418420); each media Claude call is named in the budget (D16)
  58. a fresh story whose own article cannot be read in any copy is skipped before writing and
      the next story is tried; evergreens keep their own rule (run 43407418420)
+ 59. every Google News search puts "when:1d" first (the podcast search ignored it and gave only
+     May items); a silent feed says why in the log and falls back to its outlet through Google
+     News (ESPN gave 0 items in every run, HoopsHype's feed answers 402)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3121,6 +3124,49 @@ class OnlyAHeadlineIsSkipped(unittest.TestCase):
     def test_read_story_and_evergreens_go_on(self):
         self.assertEqual(self.build(evergreen=False, main=True), "written")   # reached the writer
         self.assertEqual(self.build(evergreen=True, main=False), "written")
+
+
+
+class NoSilentFeeds(unittest.TestCase):
+    """59 (2026-11-13). Three sources were silent in every run and nobody saw it: ESPN (0 items
+    on GitHub's servers, 17 elsewhere), HoopsHype (402 Payment Required) and the podcast search
+    (39 items, all from May: "when:1d" at the end, after "-prediction", was ignored)."""
+
+    def test_when_first_in_every_search(self):
+        import sources
+        for f in sources.FEEDS:
+            for url in (f["url"], f.get("fallback") or ""):
+                if "news.google.com" in url:
+                    self.assertIn("search?q=when:1d+", url, f["name"])
+                    self.assertNotIn("+when:1d&", url, f["name"])
+
+    def test_silent_feed_falls_back_and_says_why(self):
+        import collect, feedparser, io
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).timetuple()
+        D = feedparser.FeedParserDict
+
+        def entry(title):
+            return D(title=title, link="https://news.google.com/x/" + title.replace(" ", ""), published_parsed=now,
+                     summary="NBA", source=D(title="ESPN"))
+        feeds = [{"name": "ESPN", "url": "https://espn/rss", "tier": 1, "fallback": "https://news.google.com/rss/search?q=when:1d+site:espn.com/nba"},
+                 {"name": "CBS Sports", "url": "https://cbs/rss", "tier": 1}]
+        answers = {"https://espn/rss": D(entries=[], status=403, bozo=0, feed=D()),
+                   feeds[0]["fallback"]: D(entries=[entry("Draymond rips Kerr after loss NBA")]
+                                           + [entry(f"Suns 101-96 Hornets (Nov 12, 2026) Game Recap {i}") for i in range(3)]
+                                           + [entry(f"Lakers NBA story number {i}") for i in range(40)], status=200, bozo=0, feed=D()),
+                   "https://cbs/rss": D(entries=[], status=200, bozo=0, feed=D())}
+        out = io.StringIO()
+        with patch.object(collect, "FEEDS", feeds), patch.object(collect.feedparser, "parse", lambda u, agent=None: answers[u]), \
+                patch("sys.stdout", out):
+            items = collect.fetch_all()
+        log = out.getvalue()
+        self.assertIn("ESPN gave nothing: HTTP 403", log)
+        self.assertEqual(len(items), collect.FALLBACK_MAX)
+        self.assertFalse(any("Game Recap" in i["title"] for i in items))
+        self.assertEqual({i["publisher"] for i in items}, {"ESPN"})
+        self.assertEqual(items[0]["tier"], 1)                       # ESPN stays a tier 1 outlet
+        self.assertIn("CBS Sports gave nothing: HTTP 200", log)    # no fallback: only the reason
 
 
 if __name__ == "__main__":

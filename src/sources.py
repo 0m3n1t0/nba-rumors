@@ -8,14 +8,21 @@ Google News searches act as a wide net: they pull headlines from hundreds of
 outlets, and the real publisher name is read from each item.
 """
 
-GOOGLE_NEWS = "https://news.google.com/rss/search?q={q}+when:1d&hl=en-US&gl=US&ceid=US:en"
+# "when:1d" FIRST: at the end, after a "-word" exclusion, Google ignored it (2026-11-13: the
+# podcast search returned 39 items, all from May, so every one was dropped as too old)
+GOOGLE_NEWS = "https://news.google.com/rss/search?q=when:1d+{q}&hl=en-US&gl=US&ceid=US:en"
 
 FEEDS = [
     # Direct outlet feeds
-    {"name": "ESPN", "url": "https://www.espn.com/espn/rss/nba/news", "tier": 1},
+    # "fallback": the same outlet through Google News, used when its own feed gives nothing (ESPN's
+    # feed gave 0 items on GitHub's servers in every run, 17 from elsewhere; HoopsHype's feed now
+    # answers 402 Payment Required)
+    {"name": "ESPN", "url": "https://www.espn.com/espn/rss/nba/news", "tier": 1,
+     "fallback": GOOGLE_NEWS.format(q="site:espn.com/nba")},
     {"name": "CBS Sports", "url": "https://www.cbssports.com/rss/headlines/nba/", "tier": 1},
     {"name": "Yahoo Sports", "url": "https://sports.yahoo.com/nba/rss/", "tier": 1},
-    {"name": "HoopsHype", "url": "https://hoopshype.com/feed/", "tier": 2},
+    {"name": "HoopsHype", "url": "https://hoopshype.com/feed/", "tier": 2,
+     "fallback": GOOGLE_NEWS.format(q="site:hoopshype.com+NBA")},
     {"name": "RealGM", "url": "https://basketball.realgm.com/rss/wiretap/0/0.xml", "tier": 2},
     # Google News searches (wide net, last 24 hours)
     {"name": "GN: trade rumors", "url": GOOGLE_NEWS.format(q="NBA+trade+rumors"), "tier": 2},

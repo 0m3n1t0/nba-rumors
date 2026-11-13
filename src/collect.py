@@ -88,6 +88,23 @@ STOPWORDS = set(
 )
 
 
+FALLBACK_MAX = 25   # newest headlines taken from an outlet's Google News fallback
+RECAP = re.compile(r"\bgame recap\b|\(\w{3} \d{1,2}, \d{4}\)", re.I)   # "Suns 101-96 Hornets (Nov 12, 2026) Game Recap"
+
+
+def why_empty(parsed) -> str:
+    """Why a feed gave nothing: the answer code, the parse error, the start of what came back
+    (a feed that went silent once was found only by reading the run log by hand)."""
+    head = ""
+    try:
+        head = re.sub(r"\s+", " ", (parsed.get("feed") or {}).get("title", "") or "")[:60]
+    except Exception:  # noqa: BLE001
+        pass
+    return (f"HTTP {parsed.get('status', '?')}, {len(parsed.entries)} entries"
+            + (f", parse error: {str(parsed.get('bozo_exception'))[:80]}" if parsed.get("bozo") else "")
+            + (f", feed title: {head}" if head else ""))
+
+
 def fetch_all() -> list[dict]:
     items = []
     for feed in FEEDS:
@@ -95,14 +112,27 @@ def fetch_all() -> list[dict]:
             parsed = feedparser.parse(feed["url"], agent=USER_AGENT)
         except Exception as exc:  # network errors must never kill the run
             print(f"[!] {feed['name']}: {exc}")
-            continue
+            parsed = None
         count = 0
-        for entry in parsed.entries:
+        for entry in (parsed.entries if parsed is not None else []):
             item = normalize(entry, feed)
             if item:
                 items.append(item)
                 count += 1
         print(f"[+] {feed['name']}: {count} items")
+        if count == 0:
+            if parsed is not None:
+                print(f"    [!] {feed['name']} gave nothing: {why_empty(parsed)}")
+            if feed.get("fallback"):
+                via = {"name": f"GN: {feed['name']} (fallback)", "url": feed["fallback"], "tier": feed["tier"]}
+                try:
+                    got = [it for it in (normalize(e, via) for e in feedparser.parse(via["url"], agent=USER_AGENT).entries)
+                           if it and not RECAP.search(it["title"])][:FALLBACK_MAX]
+                except Exception as exc:  # noqa: BLE001
+                    print(f"    [!] {via['name']}: {exc}")
+                    got = []
+                items.extend(got)
+                print(f"    [+] {via['name']}: {len(got)} items through Google News")
     return dedupe(items)
 
 

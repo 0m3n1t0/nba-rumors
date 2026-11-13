@@ -82,6 +82,8 @@ the "Safety tests" step before anything is installed or made.
      leaves it out loses to one that says it (run 43353547001)
  52. a question is never the payoff's answer: "Why was Luka even back in up 20? I'd blame that."
      goes to the repair pass (run 43395656602)
+ 53. an independent final read (final_read.py): a clear error with real evidence, or a Short it
+     could not read, is held by the gate; an error without real evidence is only a doubt
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2892,6 +2894,94 @@ class AQuestionIsNoAnswer(unittest.TestCase):
         problems = script.repair_needed("Barkley called out Kuzma.", bad + [{"say": "So was Kuzma dirty, Barkley?", "stage": "exit"}],
                                         {"hard": [], "soft": []})
         self.assertTrue(any("or a question" in p for p in problems))
+
+
+
+class IndependentFinalRead(unittest.TestCase):
+    """53 (owner, 2026-11-13). A fresh Claude reads the finished Short like a viewer, with the
+    picture under every line and the sources. It must quote real evidence: an invented reason
+    can never hold a good Short, and a Short it could not read is never published unread."""
+
+    SHORT = {"hook": {"text": "Charles Barkley calls out Kyle Kuzma on live TV."},
+             "beats": [{"say": 'Barkley said, "hurt Luka Doncic:Not a good play right there. That\'s not"'},
+                       {"say": "So was it dirty?"}]}
+    ITEMS = [{"beat": 0, "kind": "photo", "person": "Charles Barkley", "title": "Barkley 2019.jpg",
+              "tag": {"s": "stage", "t": "talks on a TV set"}},
+             {"beat": 1, "kind": "photo", "person": "Luka Doncic", "title": "Luka.jpg", "jersey": "los angeles lakers",
+              "tag": {"s": "game", "t": "drives, Lakers"}, "alts": [{"kind": "photo", "person": "Kyle Kuzma", "title": "Kuz.jpg"}]}]
+    SOURCES = [{"publisher": "Yahoo Sports", "title": "Barkley calls out Kuzma", "summary": "",
+                "text": "\"That's not a good play right there,\" said Barkley. \"Not letting guys land.\""}]
+
+    def test_every_line_gets_its_pictures(self):
+        import final_read
+        rows = final_read.lines_of(self.SHORT, self.ITEMS)
+        self.assertEqual([r["line"] for r in rows], [0, 1, 2])
+        self.assertIn("Charles Barkley", rows[0]["pictures"][0])
+        self.assertEqual(len(rows[1]["pictures"]), 2)                   # the picture and its alternate
+        self.assertIn("jersey: los angeles lakers", rows[1]["pictures"][0])
+
+    def test_only_real_evidence_holds(self):
+        import final_read
+        rows = final_read.lines_of(self.SHORT, self.ITEMS)
+        real = {"errors": [{"line": 1, "kind": "NONSENSE", "what": "broken quote",
+                            "evidence": "hurt Luka Doncic:Not a good play right there"}]}
+        self.assertEqual(final_read.judge(real, rows, self.SOURCES)["verdict"], "REVIEW")
+        made_up = {"errors": [{"line": 1, "kind": "WRONG WORDS", "what": "x",
+                               "evidence": "Barkley later apologized to Kuzma on air"}]}
+        got = final_read.judge(made_up, rows, self.SOURCES)
+        self.assertEqual(got["verdict"], "PASS")
+        self.assertIn("evidence not found", got["doubts"][0]["what"])
+        self.assertEqual(final_read.judge({"doubts": [{"line": 2, "what": "weak"}]}, rows, self.SOURCES)["verdict"], "PASS")
+
+    def test_the_gate_holds_and_never_publishes_unread(self):
+        import gate
+        self.assertEqual(gate.check_final_read(None), ("PASS", []))
+        self.assertEqual(gate.check_final_read({"verdict": "PASS", "errors": [], "doubts": [{"what": "x"}]})[0], "PASS")
+        self.assertEqual(gate.check_final_read({"verdict": "REVIEW", "errors": [{"line": 1, "what": "w"}]})[0], "REVIEW")
+        self.assertEqual(gate.check_final_read({"failed": "Claude limit reached"}),
+                         ("REVIEW", ["not read by the final reader: Claude limit reached"]))
+        src = (ROOT / "src" / "gate.py").read_text(encoding="utf-8")
+        self.assertIn('{"failed": "no final read for this Short"}) if REVIEW.is_dir() else None', src)
+
+    def test_the_stage_reads_every_short(self):
+        import final_read, script, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            for sub in ("scripts", "media", "sources", "review"):
+                (d / sub).mkdir()
+            for n in (1, 2, 3):
+                (d / "scripts" / f"short_{n}.json").write_text(json.dumps(self.SHORT), encoding="utf-8")
+            for n in (1, 3):
+                (d / "sources" / f"short_{n}.json").write_text(json.dumps(self.SOURCES), encoding="utf-8")
+            answers = iter([{"errors": [{"line": 1, "kind": "NONSENSE", "what": "broken",
+                                         "evidence": "hurt Luka Doncic:Not a good play right there"}]},
+                            script.UsageLimit("5-hour limit")])
+
+            def fake(*a, **k):
+                x = next(answers)
+                if isinstance(x, Exception):
+                    raise x
+                return x
+            saved = (final_read.SCRIPTS, final_read.MEDIA, final_read.SOURCES, final_read.REVIEW)
+            try:
+                final_read.SCRIPTS, final_read.MEDIA, final_read.SOURCES, final_read.REVIEW = (
+                    d / "scripts", d / "media", d / "sources", d / "review")
+                with patch.object(script, "ask_claude", side_effect=fake) as ask, patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": ""}):
+                    final_read.main()
+                self.assertEqual(ask.call_args_list[0].kwargs.get("where"), "final_read")
+                self.assertEqual(ask.call_args_list[0].args[1], script.CLAUDE_MODEL)    # the main model (his choice)
+            finally:
+                final_read.SCRIPTS, final_read.MEDIA, final_read.SOURCES, final_read.REVIEW = saved
+            got = {n: json.loads((d / "review" / f"short_{n}.json").read_text(encoding="utf-8")) for n in (1, 2, 3)}
+        self.assertEqual(got[1]["verdict"], "REVIEW")
+        self.assertIn("not kept", got[2]["failed"])                         # no sources: never "read"
+        self.assertIn("limit", got[3]["failed"])
+
+    def test_wired_into_the_run(self):
+        import state
+        wf = (ROOT / ".github" / "workflows" / "collect.yml").read_text(encoding="utf-8")
+        self.assertLess(wf.index("python src/final_read.py"), wf.index("python src/gate.py"))
+        self.assertIn("review/short_*.json", state.RUN_FILES)
 
 
 if __name__ == "__main__":

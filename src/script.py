@@ -686,7 +686,7 @@ def claude_error(result) -> str:
     return f"exit {result.returncode}: {(out or '')[-400:]} {(result.stderr or '').strip()[-400:]}".strip()
 
 
-def ask_claude(prompt: str, model: str = "") -> dict:
+def ask_claude(prompt: str, model: str = "", where: str = "script") -> dict:
     prompt = safe_text(prompt)
     for attempt in (1, 2):
         with tempfile.TemporaryDirectory() as empty:
@@ -702,7 +702,7 @@ def ask_claude(prompt: str, model: str = "") -> dict:
         if attempt == 2:
             raise RuntimeError(f"Claude failed: {claude_error(result)}")
         time.sleep(10)
-    log_claude_usage(result.stdout, "script")
+    log_claude_usage(result.stdout, where)
     text = json.loads(result.stdout).get("result", "")
     start, end = text.find("{"), text.rfind("}")
     return json.loads(text[start:end + 1])

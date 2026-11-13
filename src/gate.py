@@ -15,6 +15,8 @@ The 11 checks:
                              accepted open licence
   11 technical quality       1080x1920, 10-60 s, a video and an audio stream, the voice passed
                              its own check
+  12 final read              final_read.py: a fresh Claude read the finished Short against its
+                             sources; a clear error with real evidence, or no read, holds it
 
 Writes data/gate/<short>.json and the verdict into the script JSON ("gate"), plus a table in
 the run summary. Uploading (when it exists) reads ONLY "gate": "PASS".
@@ -35,6 +37,7 @@ import compliance as C  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 SCRIPTS, MEDIA, VIDEO, GATE = DATA / "scripts", DATA / "media", DATA / "video", DATA / "gate"
+REVIEW = DATA / "review"    # final_read.py: the independent final read of each Short
 AUDIO = DATA / "audio"
 MIN_HEARD = 0.85   # same bar as tts.py: Whisper must hear this share of the words
 MUSIC_LICENSES = DATA / "history" / "music_licenses.json"   # kept in the private state repository
@@ -185,7 +188,19 @@ def check_editorial(short: dict) -> tuple[str, list[str]]:
     return C.REVIEW, notes or ["the script stage held it for review"]
 
 
-def decide(short: dict, items: list, flags: dict, music: dict | None, video: Path) -> dict:
+def check_final_read(read: dict | None) -> tuple[str, list[str]]:
+    """final_read.py's verdict: a clear error with real evidence, or a Short it could not read,
+    is held. None = the stage did not run at all (nothing to add)."""
+    if read is None:
+        return C.PASS, []
+    if read.get("failed"):
+        return C.REVIEW, [f"not read by the final reader: {read['failed']}"]
+    notes = [f"line {e.get('line')}: {e.get('kind', '')}: {e.get('what', '')}" for e in read.get("errors") or []]
+    return (C.REVIEW, notes) if notes or read.get("verdict") != C.PASS else (C.PASS, [])
+
+
+def decide(short: dict, items: list, flags: dict, music: dict | None, video: Path,
+           read: dict | None = None) -> dict:
     checks = dict((short.get("compliance") or {}).get("checks") or {})
     if not checks:
         checks["script_checks"] = {"verdict": C.REVIEW, "notes": ["the script was not checked"]}
@@ -197,6 +212,9 @@ def decide(short: dict, items: list, flags: dict, music: dict | None, video: Pat
     checks["music_licensing"] = {"verdict": v, "notes": n}
     v, n = check_technical(video, short)
     checks["technical_quality"] = {"verdict": v, "notes": n}
+    if read is not None:
+        v, n = check_final_read(read)
+        checks["final_read"] = {"verdict": v, "notes": n}
     return {"verdict": C.worst(*(c["verdict"] for c in checks.values())), "checks": checks}
 
 
@@ -234,7 +252,9 @@ def main() -> None:
                 return default
         short["_heard"] = load(AUDIO / f"{name}.timing.json", {}).get("heard")
         result = decide(short, load(MEDIA / f"{name}_vs.json", []) + load(MEDIA / f"{name}.json", []), load(MEDIA / f"{name}_flags.json", {}),
-                        load(MEDIA / f"{name}_music.json", None), VIDEO / f"{name}.mp4")
+                        load(MEDIA / f"{name}_music.json", None), VIDEO / f"{name}.mp4",
+                        # the final read: none at all when the stage did not run; a missing file then is REVIEW
+                        load(REVIEW / f"{name}.json", {"failed": "no final read for this Short"}) if REVIEW.is_dir() else None)
         (GATE / f"{name}.json").write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
         short.pop("_heard", None)
         short["gate"] = result["verdict"]

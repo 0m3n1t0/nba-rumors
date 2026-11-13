@@ -58,7 +58,7 @@ RUNS_KEEP_DAYS = 14
 # what a run bundle holds (paths inside data/): small text and JSON only
 RUN_FILES = ["summary.md", "claude_usage.jsonl", "editor.json", "skip_reason.txt", "scripts/short_*.json",
              "media/short_*.json", "gate/short_*.json", "audio/short_*.timing.json",
-             "sources/short_*.json"]     # the source texts each Short was checked against (replay.py)
+             "sources/short_*.json", "review/short_*.json"]     # the source texts each Short was checked against (replay.py)
 
 
 def bundle_run(home: Path | None = None, today: datetime | None = None) -> Path | None:

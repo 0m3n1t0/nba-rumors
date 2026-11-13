@@ -413,11 +413,13 @@ TEAMS = {"lakers", "celtics", "warriors", "knicks", "bucks", "heat", "nuggets", 
          "jazz", "blazers", "grizzlies", "pelicans", "timberwolves", "wolves"}
 
 
-def jersey_ok(jersey: str, career: set[str] | list[str]) -> bool:
+def jersey_ok(jersey: str, career: set[str] | list[str], his_own: bool = False) -> bool:
     """A photo's jersey fits the man named: no jersey read, no known career, or a team he played
     for. The Hornets name moved: a "Hornets" jersey from 1988-2013 New Orleans counts for the
-    Pelicans franchise too (Chris Paul)."""
-    if not jersey or not career:
+    Pelicans franchise too (Chris Paul). D23 (run 43446225184): a photo that is HIS (his own
+    Commons category, or his exact name in its title) always fits: Wikidata's career can miss a
+    whole spell (Kyrie Irving: no Nets 2019-2023, and 12 real Nets photos were left out)."""
+    if not jersey or not career or his_own:
         return True
     return jersey in career or (jersey == "charlotte hornets" and "new orleans pelicans" in career)
 

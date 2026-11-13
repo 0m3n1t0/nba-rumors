@@ -62,7 +62,7 @@ def picture_findings(items: list, flags: dict) -> set[str]:
             if person and media.look_alike_name(person, x.get("title", "")):
                 found.add(f"another man with his surname: {x.get('title', '')[:50]} (as {person})")
             jersey = x.get("jersey") or media.jersey_team(x.get("tag"))
-            if not C.jersey_ok(jersey, careers.get(person, [])):
+            if not C.jersey_ok(jersey, careers.get(person, []), bool(x.get("his_own")) or media.his_own(person, x)):
                 found.add(f"{person} in a {jersey} jersey: {x.get('title', '')[:50]}")
     return found
 

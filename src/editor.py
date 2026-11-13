@@ -323,12 +323,16 @@ OPINION = re.compile(r"^(why|how|what|should|could|would|ranking|grading|grades|
 #   V  Surprise / virality   10  the editor's read of how unexpected and talked-about it is
 # + 6 a real public conflict (the channel's identity: beef), + 4 the people already win in
 #   our niche this week (competitor outliers).
+# + up to 4 more when the conflict is between POPULAR players/teams (owner, 2026-11-13, D26: a
+#   conflict of popular teams or players weighs slightly more than another kind of scandal,
+#   intrigue or drama around a popular player): 0 at star power 5 or less, +4 at 10.
 # Gates: a story that is neither dramatic nor hugely viral and that nobody is searching for
 # loses 40 (a big name alone never makes a dull story a Short). Only stories at MIN_SCORE or
 # above are made: fewer Shorts beat weak ones. The weights are a starting point; once the
 # channel has its own analytics, the weekly report tunes them.
 WEIGHTS = {"E": 22, "S": 22, "D": 18, "T": 12, "C": 10, "V": 10}
 CONFLICT_BONUS, NICHE_BONUS, DULL_PENALTY = 6, 4, 40
+STAR_CONFLICT_BONUS, STAR_CONFLICT_FROM = 4, 5   # D26: + up to 4 for a conflict of popular people
 MIN_SCORE = 60   # was 40: a 54-point story (Kuminga vs Gobert) is not a viral Short
 # Owner, 2026-11-13: Dejounte Murray's deleted "inside sabotage" tweet scored 52-59.5 in three runs
 # in a row and was skipped each time, while the runs filled up with old feuds. A FRESH story just
@@ -377,6 +381,8 @@ def short_score(r: dict) -> float:
     score = sum(WEIGHTS[k] * v / 10 for k, v in parts.items())
     if r.get("conflict"):
         score += CONFLICT_BONUS
+        # D26: the more popular the people in the fight, the more it weighs (star power above 5)
+        score += STAR_CONFLICT_BONUS * max(0.0, parts["S"] - STAR_CONFLICT_FROM) / (10 - STAR_CONFLICT_FROM)
     if r.get("niche_match"):
         score += NICHE_BONUS
     hits, heat, trend = r.get("search_hits", 0) or 0, r.get("youtube_heat", 0) or 0, r.get("google_trend", 0) or 0

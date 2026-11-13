@@ -44,7 +44,10 @@ it, against the SOURCE TEXTS it was written from. Report only CLEAR errors of th
    time ("as a Laker", "in 2004"), a picture from another team or time. NOT an error (at most a
    doubt): another person from this story on a line about the team or the story as a whole, or
    the right man in a former team's jersey when the line names no team or time (the channel's
-   picture rules allow both when better photos are missing).
+   picture rules allow both when better photos are missing). A picture marked PRE-NBA (high
+   school, college) on a line about his NBA career, his team or this season IS an error: the
+   viewer sees a college player, not the NBA player of the story (fine only on a line about his
+   school or college days).
 5. BROKEN PROMISE: the opening line promises something the Short never delivers.
 
 Style, taste, a weak line, a better hook: NOT errors (the channel's style is bold, dramatic,
@@ -75,6 +78,7 @@ def picture_line(x: dict) -> str:
     tag = x.get("tag") or {}
     parts = [x.get("person") or "", tag.get("t") or "", tag.get("s") or "",
              f"jersey: {x['jersey']}" if x.get("jersey") else "", (x.get("date") or "")[:4],
+             {"pre-nba": "PRE-NBA", "former": "OLD TEAM"}.get(x.get("team") or "", ""),   # D22
              f"file: {(x.get('title') or '')[:70]}"]
     return " | ".join(p for p in parts if p) or (x.get("title") or x.get("kind") or "")
 

@@ -101,6 +101,18 @@ the "Safety tests" step before anything is installed or made.
  60. the owner's source review: ClutchPoints, Hoops Rumors, SB Nation, Defector, TrueHoop, five
      new searches, seven podcast channels (titles only), r/nba rising as a signal; multi-sport
      feeds keep only NBA items
+ 61. D22: a photo taken before the DAY his NBA career began (Wikidata, dated to the day) is PRE-NBA
+     on every path, Openverse included (the day in the file name counts); the Commons copy of a
+     file wins over its Openverse copy; the final read calls a PRE-NBA picture on an NBA line an
+     error (run 43446225184: Lendeborg in Michigan #23 on "a 24-year-old rookie")
+ 62. D23: the jersey law trusts a photo that is HIS (own Commons category, or his first and last
+     name in the title): Wikidata had no Nets spell for Kyrie Irving and 12 real photos were lost
+ 63. D24: the titles are read against the sources too (bold but true): "Curry's two weeks is a
+     LIE?" steps behind a true title; every title overstated = the Short is held
+ 64. D25: the pick prompt names every contact sheet ("beat_0.jpg, beat_0_2.jpg, ..."): Claude
+     cannot list the folder and opened them one guess per step (15-19 steps, up to 169k tokens)
+ 65. D26 (owner): a conflict between popular players/teams weighs slightly more than other drama
+     around a popular player: +6 for any conflict, plus up to +4 by star power (0 at 5, 4 at 10)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3241,6 +3253,269 @@ class MoreSourcesForTheBeef(unittest.TestCase):
             titles, errors = signals.reddit_titles()
         self.assertEqual(titles, ["Smart punches Bassey"])
         self.assertTrue(any("rising" in e for e in errors))
+
+
+class CollegeDaysBeforeTheDraft(unittest.TestCase):
+    """61. D22 (run 43446225184): Yaxel Lendeborg, a Warriors rookie (Wikidata: Golden State from
+    2026-06-23), was shown in three Michigan #23 photos of 11 Feb 2026 on "a 24-year-old rookie" and
+    "8-4 start"; none was marked PRE-NBA. The copies shown came through Openverse (no date, no
+    categories), the Commons copy of the same file was the one with the facts, and a year alone
+    (2026 = 2026) can never mark a rookie's last college season."""
+
+    CLAIMS = {"Q123": [
+        {"mainsnak": {"datavalue": {"value": {"id": "Q7863702"}}}, "rank": "normal",
+         "qualifiers": {"P580": [{"datavalue": {"value": {"time": "+2023-00-00T00:00:00Z"}}}],
+                        "P582": [{"datavalue": {"value": {"time": "+2025-00-00T00:00:00Z"}}}]}},
+        {"mainsnak": {"datavalue": {"value": {"id": "Q6837797"}}}, "rank": "normal",
+         "qualifiers": {"P580": [{"datavalue": {"value": {"time": "+2025-00-00T00:00:00Z"}}}]}},
+        {"mainsnak": {"datavalue": {"value": {"id": "Q157376"}}}, "rank": "normal",
+         "qualifiers": {"P580": [{"datavalue": {"value": {"time": "+2026-06-23T00:00:00Z"}}}]}}],
+        "Q456": [   # a year-only start: he may have joined mid-season, so no day is trusted
+        {"mainsnak": {"datavalue": {"value": {"id": "Q157376"}}}, "rank": "normal",
+         "qualifiers": {"P580": [{"datavalue": {"value": {"time": "+2019-00-00T00:00:00Z"}}}]}}]}
+    LABELS = {"Q7863702": "UIC Flames men's basketball", "Q6837797": "Michigan Wolverines men's basketball",
+              "Q157376": "Golden State Warriors"}
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = (media.get, dict(media._wikidata), dict(media._teams), dict(media._nba_debut),
+                      dict(media._nba_debut_day), media.commons_photos, media.flickr_photos,
+                      media.openverse_photos, dict(media._all_photos))
+        for d in (media._wikidata, media._teams, media._nba_debut, media._nba_debut_day, media._all_photos):
+            d.clear()
+        media._wikidata.update({"Yaxel Lendeborg": "Q123", "Late Joiner": "Q456"})
+        claims, labels = self.CLAIMS, self.LABELS
+
+        def get(url, timeout=30):
+            q = dict(urllib.parse.parse_qsl(url.split("?", 1)[1]))
+            if q.get("action") == "wbgetclaims":
+                return json.dumps({"claims": {"P54": claims.get(q["entity"], [])}}).encode()
+            if q.get("action") == "wbgetentities":
+                return json.dumps({"entities": {i: {"labels": {"en": {"value": labels[i]}}}
+                                                for i in q["ids"].split("|") if i in labels}}).encode()
+            raise OSError("unexpected")
+        media.get = get
+        media.flickr_photos = lambda person: []
+
+    def tearDown(self):
+        m, s = self.m, self.saved
+        m.get, m.commons_photos, m.flickr_photos, m.openverse_photos = s[0], s[5], s[6], s[7]
+        for d, old in ((m._wikidata, s[1]), (m._teams, s[2]), (m._nba_debut, s[3]), (m._nba_debut_day, s[4]),
+                       (m._all_photos, s[8])):
+            d.clear()
+            d.update(old)
+
+    @staticmethod
+    def commons(title, date="", team=""):
+        return {"kind": "photo", "title": title, "source": "Wikimedia Commons", "date": date, "team": team,
+                "page": "https://commons.wikimedia.org/wiki/File:" + title.replace(" ", "_"),
+                "url": "https://upload.wikimedia.org/x/" + title.replace(" ", "_"), "score": 20}
+
+    @staticmethod
+    def openverse(title):
+        return {"kind": "photo", "title": title, "source": "Wikimedia via Openverse", "team": "",
+                "page": "https://commons.wikimedia.org/w/index.php?curid=" + str(abs(hash(title)) % 10**9),
+                "url": "https://upload.wikimedia.org/y/" + title.replace(" ", "_") + ".jpg", "score": 9}
+
+    def test_the_day_his_nba_career_began(self):
+        m = self.m
+        self.assertEqual(m.teams_of("Yaxel Lendeborg")[0], "golden state warriors")
+        self.assertEqual(m._nba_debut_day["Q123"], "2026-06-23")
+        m.teams_of("Late Joiner")
+        self.assertNotIn("Q456", m._nba_debut_day)
+        self.assertEqual(m.title_day("20260211 Yaxel Lendeborg 13"), "2026-02-11")
+        self.assertEqual(m.title_day("Celtics at Wizards 2024-12-15 (cropped).jpg"), "2024-12-15")
+        self.assertEqual(m.title_day("Yaxel Lendeborg (51831075412).jpg"), "")   # a Flickr id is no day
+
+    def test_lendeborg_pool(self):
+        m = self.m
+        m.commons_photos = lambda person: [self.commons("20260211 Yaxel Lendeborg 13.jpg", "2026-02-11"),
+                                           self.commons("Yaxel Lendeborg Warriors 2026.jpg", "2026-10-30", "current")]
+        m.openverse_photos = lambda person: [self.openverse("20260211 Yaxel Lendeborg 13"),   # the same file
+                                             self.openverse("20260211 Yaxel Lendeborg 05"),   # only here
+                                             self.openverse("20261105 Yaxel Lendeborg 02"),   # an NBA game
+                                             self.openverse("20260621 NBA Draft Yaxel Lendeborg")]
+        got = {p["title"]: p for p in m.photos("Yaxel Lendeborg")}
+        self.assertNotIn("20260211 Yaxel Lendeborg 13", got)              # one picture: the Commons copy
+        self.assertEqual(got["20260211 Yaxel Lendeborg 13.jpg"]["team"], "pre-nba")
+        self.assertEqual(got["20260211 Yaxel Lendeborg 05"]["team"], "pre-nba")
+        self.assertEqual(got["20260211 Yaxel Lendeborg 05"]["date"], "2026-02-11")
+        self.assertEqual(got["20261105 Yaxel Lendeborg 02"]["team"], "")
+        self.assertEqual(got["20260621 NBA Draft Yaxel Lendeborg"]["team"], "")   # says NBA: not school
+        self.assertEqual(got["Yaxel Lendeborg Warriors 2026.jpg"]["team"], "current")
+        self.assertEqual([p["team"] for p in m.photos("Yaxel Lendeborg")][-2:], ["pre-nba", "pre-nba"])
+
+    def test_nothing_changes_without_a_day(self):
+        m = self.m
+        m.commons_photos = lambda person: [self.commons("Late Joiner 2019.jpg", "2019-03-01")]
+        m.openverse_photos = lambda person: [self.openverse("20190301 Late Joiner")]
+        self.assertEqual([p["team"] for p in m.photos("Late Joiner")], ["", ""])
+        self.assertFalse(m.pre_nba_by_day("Yaxel Lendeborg", {"date": "2026-02-11", "team": "former"}))
+        self.assertFalse(m.pre_nba_by_day("Yaxel Lendeborg", {"date": "2026", "team": ""}))
+
+    def test_final_read_sees_it(self):
+        import final_read
+        p = " ".join(final_read.PROMPT.split())
+        self.assertIn("A picture marked PRE-NBA (high school, college) on a line about his NBA career", p)
+        self.assertIn("PRE-NBA", final_read.picture_line({"person": "Yaxel Lendeborg", "team": "pre-nba",
+                                                           "title": "20260211 Yaxel Lendeborg 13"}))
+
+
+class WikidataCanMissASpell(unittest.TestCase):
+    """62. D23 (run 43446225184): Kyrie Irving's Wikidata teams are Cavaliers, Celtics, Mavericks
+    (and Duke), with no Nets 2019-2023, so 12 real photos of him in a Nets jersey were left out as
+    "a team he never played for". A photo that is HIS (his own Commons category, or his first and
+    last name in the title) is trusted; the law still stops Isaiah Thomas shown as Isiah Thomas."""
+
+    CAREER = ["boston celtics", "cleveland cavaliers", "dallas mavericks"]
+
+    def test_his_own_photo_is_trusted(self):
+        import compliance as C
+        import media
+        nets = {"s": "game", "t": "brings ball up court, Nets jersey"}
+        cases = [({"title": "Kyrie Irving (51831075412).jpg", "tag": nets}, True),
+                 ({"title": "Kyrie_Irving_-_51832441040.jpg", "tag": nets}, True),
+                 ({"title": "Darius Garland (51830745547).jpg", "tag": nets, "own_category": True}, True),
+                 ({"title": "Darius Garland (51830745547).jpg", "tag": nets}, False),
+                 ({"title": "Irving dribbles (2021).jpg", "tag": nets}, False)]
+        for c, ok in cases:
+            self.assertEqual(media.his_own("Kyrie Irving", c), ok, c["title"])
+            self.assertEqual(C.jersey_ok(media.jersey_team(c["tag"]), self.CAREER, media.his_own("Kyrie Irving", c)),
+                             ok, c["title"])
+
+    def test_the_isaiah_law_still_holds(self):
+        import compliance as C
+        import media
+        c = {"title": "Isaiah Thomas (50639077836).jpg", "tag": {"s": "game", "t": "dribbles in Wizards jersey"}}
+        self.assertFalse(media.his_own("Isiah Thomas", c))
+        self.assertFalse(C.jersey_ok("washington wizards", ["detroit pistons"], media.his_own("Isiah Thomas", c)))
+        self.assertTrue(C.jersey_ok("brooklyn nets", self.CAREER, True))
+        self.assertFalse(C.jersey_ok("brooklyn nets", self.CAREER))
+
+    def test_the_pool_and_the_gate(self):
+        import gate
+        import media
+        self.assertIn("C.jersey_ok(jersey_team(c.get(\"tag\")), career, his_own(person, c))",
+                      (ROOT / "src" / "media.py").read_text(encoding="utf-8"))
+        self.assertIn('x["his_own"] = his_own(x.get("person") or "", x)',
+                      (ROOT / "src" / "media.py").read_text(encoding="utf-8"))
+        nets = {"kind": "photo", "person": "Kyrie Irving", "jersey": "brooklyn nets", "page": "p", "url": "u",
+                "author": "a", "license": "CC BY-SA 2.0", "match": 7, "title": "Kyrie Irving (51831075412)"}
+        flags = {"careers": {"Kyrie Irving": self.CAREER}}
+        _, notes = gate.check_visuals([dict(nets, his_own=True)], flags)
+        self.assertFalse(any("never played for" in n for n in notes), notes)
+        _, notes = gate.check_visuals([dict(nets, his_own=False, title="Isaiah Thomas", person="Isiah Thomas",
+                                            jersey="washington wizards")],
+                                      {"careers": {"Isiah Thomas": ["detroit pistons"]}})
+        self.assertTrue(any("never played for" in n for n in notes), notes)
+
+
+class TitleBoldButTrue(unittest.TestCase):
+    """63. D24 (run 43446225184): the title "Curry's two weeks is a LIE? 😳" called the Warriors'
+    "re-evaluated in two weeks" a lie; the hook was read against the sources (D17), the title never
+    was. Now one call reads the top titles: an overstated one steps behind, the best true one leads;
+    all of them overstated = the Short is held; a failed call changes nothing."""
+
+    TITLES = [{"title": "Curry's two weeks is a LIE? 😳", "score": 100},
+              {"title": "Stephen Curry is out WAY longer 😬", "score": 100},
+              {"title": "Warriors face a BIG Curry problem 😳", "score": 100}]
+    SOURCES = [{"publisher": "Yahoo Sports", "title": "Warriors brace", "text": "re-evaluated in two weeks", "tier": 1}]
+
+    def run_with(self, answer):
+        import script
+        saved = script.ask_claude
+        seen = []
+
+        def ask(prompt, *a, **k):
+            seen.append(prompt)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        script.ask_claude = ask
+        try:
+            return script.check_title_truth(copy.deepcopy(self.TITLES), self.SOURCES), seen
+        finally:
+            script.ask_claude = saved
+
+    def test_the_lie_steps_behind(self):
+        got, seen = self.run_with({"overstated": [1], "why": "nobody lied"})
+        self.assertEqual(len(seen), 1)
+        self.assertIn("1. Curry's two weeks is a LIE?", seen[0])
+        self.assertEqual(got[0]["title"], "Stephen Curry is out WAY longer 😬")
+        self.assertEqual(got[-1]["overstated"], "nobody lied")
+        self.assertFalse(got[0].get("all_overstated"))
+
+    def test_all_overstated_or_failed(self):
+        got, _ = self.run_with({"overstated": [1, 2, 3], "why": "x"})
+        self.assertTrue(got[0].get("all_overstated"))
+        got, _ = self.run_with(OSError("down"))
+        self.assertEqual([t["title"] for t in got], [t["title"] for t in self.TITLES])
+        self.assertFalse(any(t.get("overstated") for t in got))
+        got, _ = self.run_with({"overstated": [], "why": ""})
+        self.assertEqual(got[0]["title"], self.TITLES[0]["title"])
+
+    def test_wired_in(self):
+        import script
+        src = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
+        self.assertIn("titles = check_title_truth(titles, sources)", src)
+        self.assertIn('if titles and titles[0].get("all_overstated"):', src)
+        p = " ".join(script.TITLE_TRUTH.split())
+        self.assertIn('"Is X a LIE?"', p)
+        self.assertIn("BOLD BUT TRUE", p)
+
+
+class PickSheetsByName(unittest.TestCase):
+    """64. D25 (run 43446225184): the pick took 15 and 19 steps (169k and 138k tokens). Its prompt
+    said "beat_0.jpg, beat_1.jpg, ..." and Claude cannot list the folder (no Glob), so it opened one
+    sheet, then guessed the next name, a step each. The exact names let it open all in one step."""
+
+    def test_names_in_beat_order(self):
+        import media
+        with tempfile.TemporaryDirectory() as d:
+            for n in ("beat_10.jpg", "beat_0_2.jpg", "beat_1.jpg", "beat_0.jpg", "beat_2.jpg", "note.txt"):
+                (Path(d) / n).write_bytes(b"x")
+            self.assertEqual(media.sheet_names(Path(d)), "beat_0.jpg, beat_0_2.jpg, beat_1.jpg, beat_2.jpg, beat_10.jpg")
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(media.sheet_names(Path(d)), "none")
+
+    def test_both_pick_calls_name_the_sheets(self):
+        import media
+        p = " ".join(media.PICK_PROMPT.split())
+        self.assertIn("are exactly these contact sheets (one or more per beat): SHEETS.", p)
+        self.assertNotIn("beat_0.jpg, beat_1.jpg, ...", p)
+        src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
+        self.assertEqual(src.count('PICK_PROMPT.replace("SHEETS", sheet_names(sheets))'), 2)
+
+
+class PopularConflictWeighsMore(unittest.TestCase):
+    """65. D26 (owner, 2026-11-13): a conflict between popular teams or players weighs slightly more
+    than another kind of scandal, intrigue or drama around a popular player. Run 43446225184 gave a
+    Curry injury follow-up (no conflict) the slot. On top of the +6 for any real conflict: +0 at
+    star power 5 or less, up to +4 at 10. Replayed on every kept run: 3 runs (43253965466,
+    43262308476, 43294793044) would have made "Mike Brown calls out refs" (S8-9) instead of an old
+    feud; nothing else changes."""
+
+    BASE = {"drama": 7, "virality": 7, "debate": 7, "search_hits": 3, "youtube_heat": 5, "hours_old": 2,
+            "nba": True, "kind": "player_vs_player"}
+
+    def score(self, **k):
+        import editor
+        return editor.short_score({**self.BASE, **k})
+
+    def test_the_popular_fight_weighs_more(self):
+        calm = self.score(star_power=10, conflict=False)
+        self.assertAlmostEqual(self.score(star_power=10, conflict=True) - calm, 10.0, places=1)    # 6 + 4
+        self.assertAlmostEqual(self.score(star_power=5, conflict=True) - self.score(star_power=5, conflict=False), 6.0, places=1)
+        self.assertAlmostEqual(self.score(star_power=8, conflict=True) - self.score(star_power=8, conflict=False), 8.4, places=1)
+        self.assertAlmostEqual(self.score(star_power=3, conflict=True) - self.score(star_power=3, conflict=False), 6.0, places=1)
+
+    def test_only_slightly(self):
+        # a popular fight beats an equally popular non-fight of the same size, but a much bigger
+        # story without a fight still wins (popularity weighs as much as the beef: his earlier rule)
+        self.assertGreater(self.score(star_power=9, conflict=True), self.score(star_power=9, conflict=False, debate=9))
+        self.assertGreater(self.score(star_power=10, conflict=False, drama=9, virality=9, youtube_heat=9),
+                           self.score(star_power=6, conflict=True))
 
 
 if __name__ == "__main__":

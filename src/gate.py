@@ -85,7 +85,7 @@ def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:
     # another man with his name (Isaiah Thomas, Wizards, shown as Isiah Thomas)
     careers = flags.get("careers") or {}
     for x in shown:
-        if not C.jersey_ok(x.get("jersey", ""), careers.get(x.get("person", ""), [])):
+        if not C.jersey_ok(x.get("jersey", ""), careers.get(x.get("person", ""), []), bool(x.get("his_own"))):
             verdict = C.worst(verdict, C.REVIEW)
             notes.append(f"{x.get('person')} in a {x.get('jersey')} jersey, a team he never played for: "
                          f"{(x.get('title') or '')[:50]}")

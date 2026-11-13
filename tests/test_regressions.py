@@ -3475,7 +3475,7 @@ class TitleBoldButTrue(unittest.TestCase):
         self.assertIn('if titles and titles[0].get("all_overstated"):', src)
         self.assertEqual(script.TITLES_CHECKED, 10)   # his answer: every title is read
         p = " ".join(script.TITLE_TRUTH.split())
-        self.assertIn('"Is X a LIE?"', p)
+        self.assertNotIn('"Is X a LIE?"', p)    # his answer (2026-11-14): no special rule for question titles
         self.assertIn("BOLD BUT TRUE", p)
 
 

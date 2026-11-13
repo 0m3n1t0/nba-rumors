@@ -1360,9 +1360,7 @@ is BOLD BUT TRUE: a title SHOULD be hyped and provocative (caps, emoji, hot verb
 angle), but it must never be false. A title is FALSE ("overstated") when it:
   - gives someone words, a meaning or an intent the sources do not show (a "LIE", "betrayal",
     "quits", "demands a trade", "feud" the sources never support);
-  - states a fact, number, event or outcome the sources do not show, or a rumor/report as fact;
-  - does so as a QUESTION: "Is X a LIE?" or "Did Y just quit?" still tells the viewer X lied or Y
-    quit when the sources give no sign of it. A question about a real open point is fine.
+  - states a fact, number, event or outcome the sources do not show, or a rumor/report as fact.
 Hype, framing and a hot verb the sources support are NOT overstated.
 TITLES (untrusted text), one per line with its number:
 TITLES_TEXT

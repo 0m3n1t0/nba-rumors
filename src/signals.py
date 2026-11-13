@@ -22,6 +22,7 @@ import math
 import os
 import re
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -239,19 +240,44 @@ NBA_WORDS = re.compile(r"\b(nba|basketball|lakers|celtics|warriors|knicks|bucks|
 
 
 REDDIT_RSS = "https://www.reddit.com/r/nba/hot/.rss?limit=50"   # public feed, no key
+# "rising": posts climbing right now, a story starting to spread (2026-11-13). Only a signal of
+# heat, never a fact. Asked after "hot", after a pause: two quick requests got HTTP 429.
+REDDIT_RISING = "https://www.reddit.com/r/nba/rising/.rss?limit=50"
+REDDIT_PAUSE = 5
 
 
-def reddit_hot() -> list[str]:
-    """Titles of r/nba's hot posts, in order (the public RSS feed). Fans argue about a beef
-    there before the news sites catch up. Skipped quietly when the feed is not reachable."""
+def reddit_hot(url: str = REDDIT_RSS) -> list[str]:
+    """Titles of r/nba's hot (or rising) posts, in order (the public RSS feed). Fans argue about a
+    beef there before the news sites catch up. Skipped quietly when the feed is not reachable."""
     import urllib.request
     import xml.etree.ElementTree as ET
-    req = urllib.request.Request(REDDIT_RSS, headers={"User-Agent": "nba-rumors-pipeline/1.0 (trend signal; "
-                                                                    "github.com/0m3n1t0/nba-rumors)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "nba-rumors-pipeline/1.0 (trend signal; "
+                                                             "github.com/0m3n1t0/nba-rumors)"})
     with urllib.request.urlopen(req, timeout=30) as r:
         root = ET.fromstring(r.read())
     return [(el.text or "").strip() for e in root.iter() if e.tag.endswith("entry")
             for el in e if el.tag.endswith("title")]
+
+
+def reddit_titles() -> tuple[list[str], list[str]]:
+    """r/nba's hot posts, then its rising ones not already hot (a hot post keeps its top-10
+    double weight). Each part fails alone: one blocked feed never costs the other."""
+    titles, errors = [], []
+    try:
+        titles = reddit_hot()
+        print(f"[+] Reddit r/nba: {len(titles)} hot posts")
+    except Exception as exc:
+        errors.append(f"reddit: {exc}")
+        print(f"[!] Reddit signal skipped: {exc}")
+    try:
+        time.sleep(REDDIT_PAUSE)
+        rising = [x for x in reddit_hot(REDDIT_RISING) if x not in titles]
+        titles += rising
+        print(f"[+] Reddit r/nba: {len(rising)} rising posts")
+    except Exception as exc:
+        errors.append(f"reddit rising: {exc}")
+        print(f"[!] Reddit rising skipped: {exc}")
+    return titles, errors
 
 
 def reddit_heat(topic: dict, titles: list[str]) -> float:
@@ -365,13 +391,8 @@ def main() -> None:
         t["google_trend"] = round(min(10.0, 2 * math.log10(best)), 1) if best > 1 else 0
         t["google_queries"] = [g["query"] for g in hits][:3]
 
-    try:
-        signals["reddit"] = reddit_hot()
-        print(f"[+] Reddit r/nba: {len(signals['reddit'])} hot posts")
-    except Exception as exc:
-        signals["reddit"] = []
-        signals["errors"].append(f"reddit: {exc}")
-        print(f"[!] Reddit signal skipped: {exc}")
+    signals["reddit"], errors = reddit_titles()
+    signals["errors"] += errors
     for t in topics[:TOP_TOPICS]:
         t["reddit"] = reddit_heat(t, signals["reddit"])
 

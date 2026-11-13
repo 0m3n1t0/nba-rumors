@@ -151,7 +151,8 @@ def normalize(entry, feed) -> dict | None:
         if " - " in title:
             title = title.rsplit(" - ", 1)[0].strip()
         tier = 1 if any(p in publisher.lower() for p in TIER1_PUBLISHERS) else 2
-        # Wide-net searches leak other leagues; keep only clearly NBA stories.
+    if feed["name"].startswith("GN:") or feed.get("filter"):
+        # Wide-net searches and multi-sport feeds leak other leagues; keep only clearly NBA stories.
         text = f"{title} {entry.get('summary', '')}"
         if OTHER_LEAGUE.search(title) or not NBA_ANCHOR.search(text):
             return None

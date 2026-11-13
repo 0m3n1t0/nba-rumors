@@ -567,10 +567,17 @@ def _read_config():
 READ_CONFIG = _read_config()
 
 
+VIDEO_PAGE = re.compile(r"(^|//|\.)(youtube\.com|youtu\.be)/", re.I)
+
+
 def read_article(it: dict, real: dict) -> bool:
     """Fetch and keep the article's text (a Google News redirect needs its decoded address)."""
     url = real.get(it["link"], it["link"])
     if "news.google.com" in url:
+        return False
+    if VIDEO_PAGE.search(url):
+        # a podcast's video page (its TITLE is only a beef radar, C3): never read as an article,
+        # so its description can never pass as the story's own article
         return False
     text = None
     for _ in range(READ_TRIES):            # a slow site gets the time it needs, and a 2nd try

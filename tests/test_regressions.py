@@ -98,6 +98,9 @@ the "Safety tests" step before anything is installed or made.
  59. every Google News search puts "when:1d" first (the podcast search ignored it and gave only
      May items); a silent feed says why in the log and falls back to its outlet through Google
      News (ESPN gave 0 items in every run, HoopsHype's feed answers 402)
+ 60. the owner's source review: ClutchPoints, Hoops Rumors, SB Nation, Defector, TrueHoop, five
+     new searches, seven podcast channels (titles only), r/nba rising as a signal; multi-sport
+     feeds keep only NBA items
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3167,6 +3170,77 @@ class NoSilentFeeds(unittest.TestCase):
         self.assertEqual({i["publisher"] for i in items}, {"ESPN"})
         self.assertEqual(items[0]["tier"], 1)                       # ESPN stays a tier 1 outlet
         self.assertIn("CBS Sports gave nothing: HTTP 200", log)    # no fallback: only the reason
+
+
+
+class MoreSourcesForTheBeef(unittest.TestCase):
+    """60 (owner, 2026-11-13: ChatGPT's source list, checked one by one). Kept only what is free,
+    answers GitHub's servers (run 43441957341) and brings beef, scandal or intrigue."""
+
+    def test_the_new_sources_are_there(self):
+        import sources
+        names = {f["name"] for f in sources.FEEDS}
+        for n in ("ClutchPoints", "Hoops Rumors", "SB Nation", "Defector", "TrueHoop", "GN: statements", "GN: scandal",
+                  "GN: vs coach or teammate", "GN: viral", "GN: insiders", "Gil's Arena (podcast)",
+                  "The Draymond Green Show (podcast)", "Pablo Torre Finds Out (podcast)", "Club 520 (podcast)",
+                  "All the Smoke (podcast)"):
+            self.assertIn(n, names)
+        pods = [f for f in sources.FEEDS if f["name"].endswith("(podcast)")]
+        self.assertTrue(all(f.get("filter") and "channel_id=UC" in f["url"] for f in pods))
+        self.assertTrue(next(f for f in sources.FEEDS if f["name"] == "Defector").get("filter"))
+        self.assertEqual(len(names), len(sources.FEEDS))                   # no source twice
+
+    def test_multi_sport_feeds_keep_only_nba(self):
+        import collect, feedparser
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).timetuple()
+        D = feedparser.FeedParserDict
+        feed = {"name": "Dan Patrick Show (podcast)", "url": "u", "tier": 2, "filter": True, "video": True}
+        nfl = D(title="Kurt Warner Looks At J.J. McCarthy's Results With The Giants", link="https://y/1",
+                published_parsed=now, summary="NFL quarterbacks")
+        nba = D(title="Luka Doncic Hits His 5th Three-Pointer Of The Game For The Lakers", link="https://y/2",
+                published_parsed=now, summary="")
+        self.assertIsNone(collect.normalize(nfl, feed))
+        got = collect.normalize(nba, feed)
+        self.assertEqual((got["publisher"], got["tier"]), ("Dan Patrick Show (podcast)", 2))
+        plain = {"name": "ClutchPoints", "url": "u", "tier": 2}            # an NBA-only feed: not filtered
+        self.assertIsNotNone(collect.normalize(D(title="Jeff Teague says Brunson needs help", link="https://c/1",
+                                                 published_parsed=now, summary=""), plain))
+
+    def test_reddit_rising_follows_hot_after_a_pause(self):
+        import signals
+        calls = []
+
+        def fake(url=signals.REDDIT_RSS):
+            calls.append(url)
+            return ["Smart punches Bassey", "Curry out"] if url == signals.REDDIT_RSS else ["Curry out", "Kuminga wants out"]
+        topics = [{"headline": "Kuminga wants out", "items": [{"title": "Jonathan Kuminga wants out of Golden State"}]}]
+        with patch.object(signals, "reddit_hot", side_effect=fake), patch.object(signals.time, "sleep") as nap:
+            got = signals.reddit_titles()
+        self.assertEqual(calls, [signals.REDDIT_RSS, signals.REDDIT_RISING])
+        nap.assert_called_with(signals.REDDIT_PAUSE)
+        self.assertEqual(got[0], ["Smart punches Bassey", "Curry out", "Kuminga wants out"])
+
+    def test_a_video_page_is_never_read_as_an_article(self):
+        import script
+        with patch.object(script.trafilatura, "fetch_url", return_value="<html>Subscribe! Gil's Arena</html>") as fetch:
+            for url in ("https://www.youtube.com/watch?v=abc", "https://youtu.be/abc"):
+                it = {"link": url, "text": ""}
+                self.assertFalse(script.read_article(it, {}))
+                self.assertEqual(it["text"], "")
+            fetch.assert_not_called()
+
+    def test_rising_failing_keeps_hot(self):
+        import signals
+
+        def fake(url=signals.REDDIT_RSS):
+            if url == signals.REDDIT_RISING:
+                raise OSError("HTTP Error 429")
+            return ["Smart punches Bassey"]
+        with patch.object(signals, "reddit_hot", side_effect=fake), patch.object(signals.time, "sleep"):
+            titles, errors = signals.reddit_titles()
+        self.assertEqual(titles, ["Smart punches Bassey"])
+        self.assertTrue(any("rising" in e for e in errors))
 
 
 if __name__ == "__main__":

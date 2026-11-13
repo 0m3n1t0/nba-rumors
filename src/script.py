@@ -28,6 +28,7 @@ import trafilatura
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 OUT = DATA / "scripts"
+SOURCES_OUT = DATA / "sources"   # the exact texts each Short was checked against (replay.py)
 VENDOR = ROOT / "vendor" / "youtube-agent-skill" / "skills"
 sys.path.insert(0, str(VENDOR / "yt-script"))
 sys.path.insert(0, str(VENDOR / "yt-package"))
@@ -2042,7 +2043,21 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     short["compliance"] = {"verdict": result["verdict"], "checks": result["checks"]}
     if result["verdict"] != compliance.PASS:
         short["ready"] = False
+    keep_sources(n, sources)
     return short
+
+
+def keep_sources(n: int, sources: list[dict]) -> None:
+    """The texts this Short was written and checked against, kept with the run (state.py bundles
+    data/sources/ privately): every later change to a check is replayed on real runs (replay.py)
+    instead of re-downloading articles that may be gone or behind a paywall by then."""
+    try:
+        SOURCES_OUT.mkdir(parents=True, exist_ok=True)
+        keep = [{k: s.get(k) for k in ("publisher", "title", "summary", "text", "link", "url", "tier", "main")}
+                for s in sources]
+        (SOURCES_OUT / f"short_{n}.json").write_text(json.dumps(keep, ensure_ascii=False), encoding="utf-8")
+    except OSError as exc:
+        print(f"[!] source texts not kept: {exc}")
 
 
 SKIPPED: list[str] = []

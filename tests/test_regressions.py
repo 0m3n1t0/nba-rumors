@@ -76,6 +76,8 @@ the "Safety tests" step before anything is installed or made.
  49. final laws on the finished Short, whatever made the mistake: a quote must be inside quote
      marks in a source; no glued "Doncic:Not" text; no photo in the jersey of a team its man
      never played for (media leaves it out, the gate holds it if it is still there)
+ 50. each Short's source texts are kept with the run, and replay.py runs today's checks on every
+     kept run (a change is tried on real Shorts before it reaches main)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2773,6 +2775,52 @@ class FinalLaws(unittest.TestCase):
         self.assertIn("never played for", " ".join(notes))
         shown[0]["jersey"] = "detroit pistons"
         self.assertEqual(gate.check_visuals(shown, {"careers": {"Isiah Thomas": ["detroit pistons"]}})[0], "PASS")
+
+
+
+class ReplayOnRealRuns(unittest.TestCase):
+    """50 (owner, 2026-11-13). Checking a change on real runs needed the articles again; some were
+    gone or behind a paywall (The Athletic). The texts each Short was checked against are kept
+    with the run, and replay.py tries today's checks on every kept run."""
+
+    def test_sources_are_kept_with_the_run(self):
+        import script, state, tempfile
+        self.assertIn("sources/short_*.json", state.RUN_FILES)
+        old = script.SOURCES_OUT
+        with tempfile.TemporaryDirectory() as d:
+            try:
+                script.SOURCES_OUT = Path(d)
+                script.keep_sources(2, [{"publisher": "Yahoo", "title": "t", "text": "body", "link": "u", "extra": 1}])
+                kept = json.loads((Path(d) / "short_2.json").read_text(encoding="utf-8"))
+            finally:
+                script.SOURCES_OUT = old
+        self.assertEqual(kept[0]["text"], "body")
+        self.assertNotIn("extra", kept[0])
+        import inspect
+        self.assertIn("keep_sources(n, sources)", inspect.getsource(script.build_short))
+
+    def test_replay_finds_what_the_run_missed(self):
+        import replay, tarfile, tempfile, io
+        from unittest.mock import patch
+        short = {"gate": "PASS", "hook": {"text": "Barkley called out Kuzma."},
+                 "beats": [{"say": 'Barkley said, "the play that hurt Luka Doncic was bad."'},
+                           {"say": "Then hurt Luka Doncic:Not a good play."}],
+                 "unsupported_numbers": [], "unsupported_quotes": []}
+        sources = [{"title": "Barkley calls out Kuzma", "summary": "", "text": "Barkley called out Kuzma for the "
+                    "play that hurt Luka Doncic was bad. \"Not letting guys land,\" he said."}]
+        with tempfile.TemporaryDirectory() as d:
+            with tarfile.open(Path(d) / "2026-11-13_1.tar.gz", "w:gz") as tar:
+                for name, obj in (("scripts/short_1.json", short), ("sources/short_1.json", sources)):
+                    raw = json.dumps(obj).encode()
+                    info = tarfile.TarInfo(name)
+                    info.size = len(raw)
+                    tar.addfile(info, io.BytesIO(raw))
+            out = io.StringIO()
+            with patch("sys.stdout", out):
+                n = replay.replay(Path(d))
+        self.assertEqual(n, 1)
+        self.assertIn("broken text", out.getvalue())
+        self.assertIn("not inside quote marks", out.getvalue())
 
 
 if __name__ == "__main__":

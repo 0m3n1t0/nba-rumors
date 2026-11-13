@@ -64,6 +64,7 @@ the "Safety tests" step before anything is installed or made.
  40. a broken tag answer keeps its good entries; an untagged photo never fills when the person has tags
  41. a beat that replays the hook in other order, and "that stretch" never said -> repair
  42. a fresh, spreading fight just under the line (55+) is made before an old feud fills the run
+ 43. bold but true: the chosen hook is read against the sources; an overstated one gets its boldest true line
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2358,6 +2359,74 @@ class FreshFightBeatsOldFeud(unittest.TestCase):
         src = inspect.getsource(script.main)
         self.assertLess(src.index("queue += near"), src.index("for topic_id in queue:"))
         self.assertLess(src.index("for topic_id in queue:"), src.index("fill_with_evergreen(shorts"))
+
+
+class BoldButTrue(unittest.TestCase):
+    """43 (D17). Owner, 2026-11-13: every hook hyped and scandalous, at the edge of the truth, never
+    past it. Run 43317261723: "Draymond Green says nobody owes Luka Doncic respect until they've
+    played him." when he said "You earn respect"."""
+
+    SRC = [{"title": "Draymond Green uses Kevin Durant lesson to defend Warriors rookie vs Luka Doncic",
+            "summary": "", "tier": 1, "publisher": "BasketNews",
+            "text": "Green said Lendeborg should keep talking to Doncic. 'You earn respect,' Green said. "
+                    "Doncic finished with 28 points in the 127 to 105 Lakers win."}]
+    HOOK = "Draymond Green says nobody owes Luka Doncic respect until they've played him."
+
+    def run_check(self, answer):
+        import script
+        hook = {"text": self.HOOK, "score": 45, "question": True}
+        saved = script.ask_claude
+        seen = {}
+
+        def ask(prompt, model=""):
+            seen["prompt"], seen["model"] = prompt, model
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        script.ask_claude = ask
+        try:
+            return script.check_hook_truth(hook, self.SRC), hook, seen
+        finally:
+            script.ask_claude = saved
+
+    def test_ok_keeps_the_bold_line(self):
+        res, hook, seen = self.run_check({"verdict": "ok"})
+        self.assertEqual((res, hook["text"]), ("ok", self.HOOK))
+        self.assertIn("NOT overstated: keep them", seen["prompt"])
+        self.assertEqual(seen["model"], "")                         # the main model judges
+
+    def test_overstated_gets_the_bold_true_line(self):
+        res, hook, _ = self.run_check({"verdict": "overstated", "why": "stronger than he said",
+                                       "text": "Draymond Green just told a rookie to make Luka Doncic earn his respect."})
+        self.assertEqual(res, "fixed")
+        self.assertEqual(hook["text"], "Draymond Green just told a rookie to make Luka Doncic earn his respect.")
+        self.assertEqual(hook["truth_fixed"], "stronger than he said")
+        self.assertFalse(hook.get("overstated"))
+
+    def test_a_bad_rewrite_steps_behind(self):
+        for text in ("Draymond Green just told a rookie to make Luka Doncic earn it after 41 points.",  # 41 invented
+                     "Draymond. Luka. Respect.", ""):
+            res, hook, _ = self.run_check({"verdict": "overstated", "why": "x", "text": text})
+            self.assertEqual(res, "overstated")
+            self.assertEqual(hook["text"], self.HOOK)
+            self.assertTrue(hook["overstated"])
+        hooks = [{"text": "a", "unsupported_details": [], "overstated": "x"}, {"text": "b", "unsupported_details": []}]
+        hooks.sort(key=lambda h: (bool(h["unsupported_details"]), bool(h.get("recycled")), bool(h.get("overstated"))))
+        self.assertEqual(hooks[0]["text"], "b")
+
+    def test_a_failed_check_changes_nothing(self):
+        res, hook, _ = self.run_check(ValueError("broken JSON"))
+        self.assertEqual((res, hook["text"]), ("skipped", self.HOOK))
+        self.assertFalse(hook.get("overstated"))
+
+    def test_rule_in_the_prompt_and_wired(self):
+        import inspect
+        import script
+        self.assertIn("BOLD BUT TRUE", script.PROMPT)
+        self.assertIn("never past it", script.PROMPT)
+        src = inspect.getsource(script.build_short)
+        self.assertLess(src.index("check_hook_truth(hooks[0], sources)"),
+                        src.index('bool(h.get("overstated"))'))
 
 
 if __name__ == "__main__":

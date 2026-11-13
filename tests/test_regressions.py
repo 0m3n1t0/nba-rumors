@@ -121,6 +121,9 @@ the "Safety tests" step before anything is installed or made.
      Fedor of Cleveland.com") is a reliable source: no "provenance unclear" hold, no RUMOR downgrade
  69. D28: unjudged top-up photos keep the team order (today's team / no team first, a former
      team after, never dropped): Mitchell's Jazz photos had filled Cavs lines
+ 70. D30 (owner): top-ups by relevance - the photos Claude scored 6+ for the beat first, best
+     first; an unscored one only after them and only with his face clearly seen AND the right
+     jersey for a line that names a team or a time
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -801,8 +804,9 @@ class OnePhotoOnce(unittest.TestCase):
         saved = {k: getattr(media, k) for k in ("person_photos", "download", "picture_hash", "image_ok")}
         folder = media.ROOT / "data" / "_test_crop"
         try:
-            offered = [{**_commons("Jaylen Brown 2022.jpg"), "url": "u1"},
-                       {**_commons("Jaylen Brown 2024.jpg"), "url": "u2"}]
+            clear = {"v": "C", "s": "game", "t": "drives"}    # D30: a top-up must show him clearly
+            offered = [{**_commons("Jaylen Brown 2022.jpg"), "url": "u1", "tag": clear},
+                       {**_commons("Jaylen Brown 2024.jpg"), "url": "u2", "tag": clear}]
             media.person_photos = lambda person, shown: [dict(c) for c in offered]
             media.download = lambda url, path, timeout=60: (Path(path).write_text("x"), True)[1]
             media.image_ok = lambda path: True
@@ -1079,8 +1083,9 @@ class SceneSpread(unittest.TestCase):
         saved = {k: getattr(m, k) for k in ("person_photos", "download", "picture_hash", "image_ok")}
         folder = m.ROOT / "data" / "_test_scene"
         try:
-            wiz = [{**self.ph(f"Celtics at Wizards 2024-12-0{n}.jpg"), "url": f"w{n}"} for n in (11, 12, 13)]
-            new = {**self.ph("Jaylen Brown 2022.jpg", "All-Pro Reels", "2022-01-23"), "url": "a"}
+            clear = {"v": "C", "s": "game", "t": "drives"}    # D30: a top-up must show him clearly
+            wiz = [{**self.ph(f"Celtics at Wizards 2024-12-0{n}.jpg"), "url": f"w{n}", "tag": clear} for n in (11, 12, 13)]
+            new = {**self.ph("Jaylen Brown 2022.jpg", "All-Pro Reels", "2022-01-23"), "url": "a", "tag": clear}
             m.person_photos = lambda person, shown: [dict(c) for c in wiz + [new]]
             m.download = lambda url, path, timeout=60: (Path(path).write_text("x"), True)[1]
             m.image_ok = lambda path: True
@@ -3655,6 +3660,70 @@ class TopUpsKeepTheTeamOrder(unittest.TestCase):
             self.assertEqual([c["page"] for c in media.person_photos("Donovan Mitchell", set())], ["c", "u"])
         finally:
             media.photos, media.solo_title = saved
+
+
+class TopUpsByRelevanceTeamAndFace(unittest.TestCase):
+    """70. D30 (owner, 2026-11-14: "team and face are both important and both must be right; which
+    photo is chosen is left to the relevance score"). The extra shots of a long beat now come first
+    from the photos Claude scored 6+ for that very beat (best score first); an unscored photo only
+    after them, and only if he is clearly seen AND, on a line naming a team or a time, not in a
+    former team's photo or another team's jersey (run 43485568700: Mitchell in a Jazz jersey on
+    "Are the Cavs the same failing team?")."""
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = {k: getattr(media, k) for k in ("person_photos", "download", "picture_hash", "image_ok",
+                                                      "teams_of", "beat_seconds", "spoken")}
+        media.download = lambda url, path, timeout=60: (Path(path).write_text("x"), True)[1]
+        media.image_ok = lambda path: True
+        media.picture_hash = lambda path: None
+        media.teams_of = lambda person: ("cleveland cavaliers", {"utah jazz"})
+        self.folder = media.ROOT / "data" / "_test_topup"
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(self.m, k, v)
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+    @staticmethod
+    def ph(title, team="", t="drives", v="C", s="game"):
+        return {"kind": "photo", "title": title, "page": "https://commons.wikimedia.org/wiki/File:" + title,
+                "url": "u-" + title, "author": "a-" + title, "team": team, "tag": {"v": v, "s": s, "t": t}}
+
+    def test_both_rules(self):
+        ok = self.m.topup_ok
+        line = "Are the Cavs the same failing team, or should Mitchell tune Chuck out?"
+        self.assertFalse(ok(self.ph("Mitchell Utah", "former", "free throw, Jazz jersey"), line, "Donovan Mitchell"))
+        self.assertFalse(ok(self.ph("Mitchell 2019", "", "shoots, Jazz jersey"), line, "Donovan Mitchell"))
+        self.assertFalse(ok(self.ph("Mitchell back", "current", v="B"), line, "Donovan Mitchell"))   # face not seen
+        self.assertFalse(ok(self.ph("Mitchell 2018", "former", "lines up a free throw"), line, "Donovan Mitchell"))  # no jersey word
+        self.assertTrue(ok(self.ph("Mitchell Cavs", "current", "dribbles, Cavaliers white"), line, "Donovan Mitchell"))
+        # a line with no team and no time: a former team stays allowed (agreed picture rules)
+        self.assertTrue(ok(self.ph("Mitchell Utah", "former", "free throw, Jazz jersey"),
+                           "Mitchell fired straight back at Barkley.", "Donovan Mitchell"))
+        self.assertFalse(ok({**self.ph("untagged"), "tag": None}, "Mitchell fired back.", "Donovan Mitchell"))
+
+    def test_scored_spares_first_then_safe_unscored(self):
+        m = self.m
+        line = "Are the Cavs the same failing team, or should Mitchell tune Chuck out?"
+        m.spoken = lambda short: [{"say": line}]
+        m.beat_seconds = lambda short, i: 12.0          # 4 shots: the first + 3 top-ups
+        m.person_photos = lambda person, shown: [self.ph("Mitchell Utah", "former", "free throw, Jazz jersey"),
+                                                 self.ph("Mitchell Cavs 2023", "current", "dribbles, Cavaliers white")]
+        first = {**self.ph("Mitchell podium", "current"), "file": "data/x.jpg", "match": 8, "alts": [],
+                 "_spare": [{**self.ph("Mitchell Cavs 2024", "current"), "match": 7},
+                            {**self.ph("Mitchell Cavs 2022", "current"), "match": 6}]}
+        got = m.fill_empty([first], 1, self.folder, set(), ["Donovan Mitchell"], {"beats": [{"say": line}]})
+        titles = [a["title"] for a in got[0]["alts"]]
+        self.assertEqual(titles, ["Mitchell Cavs 2024", "Mitchell Cavs 2022", "Mitchell Cavs 2023"])
+        self.assertEqual([a.get("match") for a in got[0]["alts"]], [7, 6, None])
+        self.assertNotIn("_spare", got[0])
+
+    def test_spares_are_kept_in_the_pick(self):
+        src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
+        self.assertIn('chosen["_spare"] = [', src)
+        self.assertIn("next_spare(it, i, f\"more{k}\") or next_face(i, f\"more{k}\")", src)
 
 
 if __name__ == "__main__":

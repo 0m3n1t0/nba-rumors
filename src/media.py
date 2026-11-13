@@ -1823,6 +1823,14 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                         used.add(c["id"])
                     if len(chosen["alts"]) >= need:
                         break
+            # D30 (owner, 2026-11-14: "which photo is chosen is left to the relevance score"): the
+            # photos Claude scored 6+ for THIS beat that did not fit in its first shots are kept, by
+            # score, for the top-ups of a long beat; only after them an unscored photo (fill_empty)
+            if chosen and choice:
+                fits = [j for j in ranked if scores.get(j, 0) >= ALT_MIN and cands[j]["kind"] == "photo"]
+                chosen["_spare"] = [{**{k2: v for k2, v in cands[j].items() if k2 not in ("score", "thumb", "frames", "preview")},
+                                     "match": int(scores[j])}
+                                    for j in fits if not already_shown(cands[j], shown, cands[j].get("id") or cands[j]["page"])]
             BEAT_DIAG.append(f"{short.get('_name', '')} beat {i}: {n_ph} photos (best {bp if n_ph else '-'}), "
                              f"{len(cands) - n_ph} clips (best {bc if len(cands) > n_ph else '-'}) -> "
                              f"{chosen['kind'] + ' (' + chosen.get('who', '') + ') ' + str(chosen.get('match')) if chosen else 'empty'}")
@@ -2055,6 +2063,30 @@ def person_photos(person: str, shown: set) -> list[dict]:
         sorted(ok, key=lambda c: (c.get("team") == "former", not c.get("hoops")))   # D28: a former team after
 
 
+# a line that names a team or a time ("the Cavs", "in 2018", "this season", "last year", "now")
+LINE_TEAM_OR_TIME = re.compile(r"\b(" + "|".join(sorted({re.escape(w) for t, ws in NBA_TEAMS.items() for w in [t] + ws},
+                                                         key=len, reverse=True))
+                               + r")\b|\b(?:19|20)\d\d\b|\b(?:this|last|next) (?:season|year)\b|\bnow\b|\btonight\b|\btoday\b", re.I)
+
+
+def topup_ok(c: dict, line: str, person: str) -> bool:
+    """D30 (owner, 2026-11-14: "team and face are both important and both must be right"). An
+    unscored top-up must pass BOTH: he is clearly seen (tag "C"), and his jersey fits the line -
+    when the line names a team or a time, never a former team's photo or another team's jersey
+    (run 43485568700: Mitchell in a Jazz jersey on "Are the Cavs the same failing team?"); when it
+    names neither, a former team stays allowed (the agreed picture rules)."""
+    t = c.get("tag") or {}
+    if t.get("v") != "C":
+        return False
+    if LINE_TEAM_OR_TIME.search(fold(line or "")):
+        if c.get("team") in ("former", "pre-nba"):
+            return False
+        jersey, current = jersey_team(t), teams_of(person)[0] if person else ""
+        if jersey and current and jersey != current:
+            return False
+    return True
+
+
 def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str] | None = None,
                short: dict | None = None) -> list:
     """Never a blank beat, and never the same picture twice in a Short:
@@ -2076,6 +2108,29 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
     lines = [b.get("say", "") for b in spoken(short)] if short else [""] * n_beats
     scenes = count_scenes(x for it in items if it for x in [it] + list(it.get("alts") or []))
 
+    def next_spare(it: dict, i: int, tag: str) -> dict | None:
+        """D30: the next photo Claude scored 6+ for this beat (best first), never shown before."""
+        for full_ok in (False, True):
+            for c in list(it.get("_spare") or []):
+                if already_shown(c, shown, c["page"]) or (scene_full(c, scenes) and not full_ok):
+                    continue
+                it["_spare"].remove(c)
+                path = folder / f"beat{i}_{tag}.jpg"
+                try:
+                    if download(c["url"], path, 60) and image_ok(path):
+                        h = picture_hash(path)
+                        if seen_before(h, looks):
+                            path.unlink(missing_ok=True)
+                            continue
+                        if h is not None:
+                            looks.append(h)
+                        mark_shown(c, shown, c["page"])
+                        count_scene(c, scenes)
+                        return {**c, "file": str(path.relative_to(ROOT)), "beat": i}
+                except Exception:
+                    pass
+        return None
+
     def next_face(i: int, tag: str) -> dict | None:
         """A new, never shown photo: first one whose scene has fewer than SCENE_MAX shots (the
         person the line is about, then anyone in the story); only when no such photo is left, a
@@ -2090,6 +2145,8 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                 c = faces[person].pop(0)
                 if already_shown(c, shown, c["page"]):
                     continue
+                if not topup_ok(c, lines[i] if i < len(lines) else "", person):
+                    continue                   # D30: his face clearly seen AND the right jersey, both
                 if scene_full(c, scenes) and not full_ok:
                     waiting.append(c)          # kept for the last-resort pass
                     continue
@@ -2123,12 +2180,15 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
         need = math.ceil(beat_seconds(short, i) / every) - 1 - len(it.get("alts") or [])
         it.setdefault("alts", [])
         for k in range(max(0, need)):
-            extra = next_face(i, f"more{k}")
+            extra = next_spare(it, i, f"more{k}") or next_face(i, f"more{k}")   # scored first (D30)
             if not extra:
                 break
             it["alts"].append(extra)
         if it["alts"]:
             it["alt"] = it["alts"][0]
+    for it in items:
+        if it:
+            it.pop("_spare", None)
     # Stock footage nobody looked at is the very last resort: only when the Short has NO
     # picture at all (never a blank video). Pixabay has no NBA footage: every unjudged stock
     # clip ever used was an amateur, a rusty hoop or a 3D ball. Otherwise an empty beat simply

@@ -73,20 +73,46 @@ def original_reporters(sources: list[dict]) -> dict:
             "official": official}
 
 
+# D29 (owner, 2026-11-13: "კი" - an on-record quote that a team's beat journalist published is a
+# reliable source). Run 43485568700 held Mitchell vs Barkley as "only secondary outlets": the quotes
+# were on record, "Mitchell told Chris Fedor of Cleveland.com", but Fedor is a beat writer, not
+# one of the national INSIDERS. A NAMED reporter of a NAMED outlet credited for a direct quote
+# (quote marks just before) makes the provenance clear; an outlet alone ("per Cleveland.com") or
+# a reporter with no quote does not.
+_NAME = r"[A-Z][a-z]+(?: [A-Z][\w'’-]+){1,2}"
+_OUTLET = r"[A-Z][\w&'’-]*(?:\.[a-z]{2,4})?(?: [A-Z][\w&'’-]*(?:\.[a-z]{2,4})?){0,3}"   # "Cleveland.com", "The Athletic"
+ON_RECORD = re.compile(
+    rf"[”\"]\s*,?\s*(?:[^.”\"]{{0,60}}?)\b(?:told|said to|to|via|per|according to)\s+"
+    rf"(?:(?P<who>{_NAME})\s+of\s+(?P<outlet>{_OUTLET})|(?P<outlet2>{_OUTLET})['’]s\s+(?P<who2>{_NAME}))")
+
+
+def on_record_reporters(sources: list[dict]) -> list[str]:
+    """Named beat reporters credited for an on-record quote in the articles read (D29)."""
+    found = set()
+    for s in sources:
+        for m in ON_RECORD.finditer(s.get("text") or ""):
+            who, outlet = m.group("who") or m.group("who2"), m.group("outlet") or m.group("outlet2")
+            if who and outlet:
+                found.add(f"{fold(who)} ({fold(outlet)})")
+    return sorted(found)
+
+
 def independent_reports(sources: list[dict]) -> int:
     r = original_reporters(sources)
     return len(r["insiders"]) + len(r["outlets"]) + (1 if r["official"] else 0)
 
 
 def check_sources(sources: list[dict]) -> tuple[str, list[str], dict]:
-    """A story needs at least one trusted (tier 1) outlet or a named insider, read in full."""
+    """A story needs at least one trusted (tier 1) outlet, a named insider, or (D29) a named beat
+    reporter credited for an on-record quote, read in full."""
     read = [s for s in sources if s.get("text")]
     origin = original_reporters(sources)
     notes = []
     if not read:
         return REJECT, ["no article could be read: the story cannot be verified"], origin
     trusted = any(s.get("tier") == 1 for s in read)
-    if not trusted and not origin["insiders"]:
+    origin["on_record"] = on_record_reporters(read)      # D29: a beat reporter's on-record quote
+    if not trusted and not origin["insiders"] and not origin["on_record"]:
         notes.append("only secondary outlets and no named insider: provenance unclear")
         return REVIEW, notes, origin
     return PASS, notes, origin
@@ -215,6 +241,7 @@ def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[
         return REVIEW, ["no claims listed: the facts cannot be classified"], []
     origin = original_reporters(sources)
     independent = independent_reports(sources)
+    on_record = on_record_reporters([s for s in sources if s.get("text")])   # D29: a named beat reporter
     verdict = PASS
     for c in claims:
         status = str(c.get("status", "")).upper()
@@ -233,7 +260,8 @@ def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[
         if status == "CONFIRMED" and not (origin["official"] or independent >= 2):
             status = "REPORTED"
             notes.append(f"downgraded to REPORTED (no official word, one original report): {c.get('text', '')[:60]}")
-        if status == "REPORTED" and src is not None and src.get("tier") != 1 and not origin["insiders"]:
+        if status == "REPORTED" and src is not None and src.get("tier") != 1 and not origin["insiders"] \
+                and not on_record:
             status = "RUMOR"
             notes.append(f"downgraded to RUMOR (no trusted outlet or named reporter): {c.get('text', '')[:60]}")
         out.append({**c, "status": status})

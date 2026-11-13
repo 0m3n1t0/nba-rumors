@@ -117,6 +117,8 @@ the "Safety tests" step before anything is installed or made.
      reports on; an ended fact (a streak) is never said as still running (writer, critic, final read)
  67. D27: a rewritten hook (truth or detail fix) keeps every hook rule: no profanity, the story's
      lead person in the first 8 words; a profane hook never leads (run 43485568700)
+ 68. D29 (owner): a named beat reporter credited for an on-record quote ("Mitchell told Chris
+     Fedor of Cleveland.com") is a reliable source: no "provenance unclear" hold, no RUMOR downgrade
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3590,6 +3592,38 @@ class RewriteKeepsTheHookRules(unittest.TestCase):
             script.check_hook_truth = saved
         self.assertTrue(hooks[0]["text"].startswith("Charles Barkley said"))
         self.assertEqual(read, [hooks[0]["text"]])      # the hook that leads is the one that was read
+
+
+class OnRecordBeatReporter(unittest.TestCase):
+    """68. D29 (owner, 2026-11-13: an on-record quote a team's beat journalist published is a
+    reliable source). Run 43485568700 held Mitchell vs Barkley ("only secondary outlets and no
+    named insider") though Hoops Wire wrote: "Chuck ain't here," Mitchell told Chris Fedor of
+    Cleveland.com. A named reporter of a named outlet credited for a direct quote counts; an
+    outlet alone, a reporter with no quote, or "a source told" does not."""
+
+    def test_who_counts(self):
+        import compliance as C
+        cases = {'“Chuck ain’t here,” Mitchell told Chris Fedor of Cleveland.com. Barkley said': ["chris fedor (cleveland.com)"],
+                 '“We are fine,” he said, according to The Athletic’s Joe Vardon.': ["joe vardon (the athletic)"],
+                 '“Who gives a f—k?” Mitchell said, per Cleveland.com. “Chuck': [],
+                 'Chris Fedor of Cleveland.com reported the Cavs are shopping Allen.': [],
+                 '“I hate him,” a source told Bleacher Report.': [],
+                 'Mitchell told Chris Fedor of Cleveland.com he is not worried.': []}   # no quote: not on record
+        for text, want in cases.items():
+            self.assertEqual(C.on_record_reporters([{"text": text}]), want, text)
+
+    def test_the_mitchell_story_passes(self):
+        import compliance as C
+        secondary = {"publisher": "Hoops Wire", "tier": 2, "title": "Mitchell dismisses Barkley",
+                     "text": 'Donovan Mitchell answered. “Chuck ain’t here,” Mitchell told Chris Fedor of Cleveland.com.'}
+        self.assertEqual(C.check_sources([secondary])[0], C.PASS)
+        plain = dict(secondary, text='Donovan Mitchell answered Barkley, a blog says.')
+        self.assertEqual(C.check_sources([plain])[0], C.REVIEW)
+        claim = [{"text": "Mitchell told Fedor Chuck ain't here", "status": "REPORTED", "source": 1}]
+        _, _, out = C.check_claims(claim, [secondary], "Mitchell told Cleveland.com that Chuck ain't here.")
+        self.assertEqual(out[0]["status"], "REPORTED")
+        _, _, out = C.check_claims(claim, [plain], "Mitchell reportedly said Chuck ain't here.")
+        self.assertEqual(out[0]["status"], "RUMOR")
 
 
 if __name__ == "__main__":

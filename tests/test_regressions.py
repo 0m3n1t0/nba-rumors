@@ -68,6 +68,7 @@ the "Safety tests" step before anything is installed or made.
  44. one event (All-Star 2022...) counts like one scene; college photos marked PRE-NBA; small figures
      and other eras/teams kept for when the line asks for them
  45. the full reports never reach the public logs or run summaries (audit, 2026-11-13)
+ 46. captions and voice split sentences like the script checks (initials); Pillow 14 ready
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2506,6 +2507,41 @@ class PrivateReportsStayPrivate(unittest.TestCase):
                 before = text[:text.index(step)]
                 self.assertIn('export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/private_summary.md"',
                               before[before.rfind("run: |"):], f"{wf}: {step}")
+
+
+class OneSentenceSplitEverywhere(unittest.TestCase):
+    """46 (audit, 2026-11-13). The script checks stopped splitting sentences after initials
+    ("Stephen A. Smith", "Gary Trent Jr."), but the captions and the voice still did; and
+    Pillow 14 drops Image.getdata (D12)."""
+
+    def test_captions_keep_the_name_after_an_initial(self):
+        import render
+        self.assertIn("smith", render.key_words([{"say": "Stephen A. Smith ripped him. Smith said no."}]))
+
+    def test_voice_parts_never_end_after_an_initial(self):
+        import tts
+        cls = next(v for v in vars(tts).values() if isinstance(v, type) and hasattr(v, "chunks"))
+        words = ("He said it again and again on the air. " * 9 + "Then Stephen A. Smith ripped him on live TV "
+                 "for the whole country to hear. " + "Nobody in the building said a single word about it. " * 6)
+        for part in cls.chunks(None, words):
+            self.assertFalse(part.rstrip().endswith(" A."), part[-30:])
+
+    def test_picture_hash_is_the_same_with_the_new_pillow_call(self):
+        import tempfile
+        from PIL import Image
+        import media
+        import render
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "x.jpg"
+            Image.radial_gradient("L").convert("RGB").save(p)
+            with Image.open(p) as im:
+                g = im.convert("L").resize((9, 8), Image.LANCZOS)
+            px = list(getattr(g, "get_flattened_data", g.getdata)())
+            old = sum(1 << i for i in range(64) if px[(i // 8) * 9 + i % 8] > px[(i // 8) * 9 + i % 8 + 1])
+            self.assertEqual(media.picture_hash(p), old)
+            self.assertEqual(render.picture_hash(p), old)
+        for name in ("media", "render"):
+            self.assertNotIn("list(g.getdata())", (ROOT / "src" / f"{name}.py").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

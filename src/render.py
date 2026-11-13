@@ -31,6 +31,7 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from picture_ids import already_shown, mark_shown  # noqa: E402  (one photo in two crops = one picture)
+import compliance  # noqa: E402  (one sentence split for the whole pipeline)
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -101,7 +102,8 @@ def picture_hash(path: Path) -> int | None:
     try:
         with Image.open(path) as im:
             g = im.convert("L").resize((9, 8), Image.LANCZOS)
-        px = list(g.getdata())
+        # Pillow 14 drops getdata (2027-10-15, D12): get_flattened_data where it exists
+        px = list(getattr(g, "get_flattened_data", g.getdata)())
         return sum(1 << i for i in range(64) if px[(i // 8) * 9 + i % 8] > px[(i // 8) * 9 + i % 8 + 1])
     except Exception:
         return None
@@ -511,7 +513,9 @@ def key_words(beats: list[dict], headline: str = "") -> set[str]:
     keys: set[str] = set()
     starts: set[str] = set()
     for text in [headline] + [b.get("say", "") for b in beats]:
-        for sent in re.split(r"(?<=[.!?])\s+", text):
+        # the same sentence split as the script checks: no new sentence after "Stephen A." or
+        # "Jr." (audit, 2026-11-13: "Smith" after "A." was taken for a sentence start)
+        for sent in compliance.split_sentences(text):
             for k, tok in enumerate(sent.split()):
                 bare = re.sub(r"[^\w'’-]", "", tok)
                 if any(ch.isdigit() for ch in bare) or bare.lower() in TEAMS:

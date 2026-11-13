@@ -1821,7 +1821,8 @@ def picture_hash(path: Path) -> int | None:
     try:
         with Image.open(path) as im:
             g = im.convert("L").resize((9, 8), Image.LANCZOS)
-        px = list(g.getdata())
+        # Pillow 14 drops getdata (2027-10-15, D12): get_flattened_data where it exists
+        px = list(getattr(g, "get_flattened_data", g.getdata)())
         return sum(1 << i for i in range(64) if px[(i // 8) * 9 + i % 8] > px[(i // 8) * 9 + i % 8 + 1])
     except Exception:
         return None

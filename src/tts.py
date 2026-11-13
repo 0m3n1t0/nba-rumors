@@ -141,7 +141,9 @@ class Performer:
         words = text.split()
         if len(words) <= CHUNK_WORDS:
             return [text]
-        sentences = re.split(r"(?<=[.!?])\s+", text)
+        # the same sentence split as the script checks: a part never ends after "Stephen A."
+        import compliance
+        sentences = compliance.split_sentences(text)
         n = -(-len(words) // CHUNK_WORDS)
         target = len(words) / n
         out, cur = [], []

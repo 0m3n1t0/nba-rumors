@@ -73,6 +73,9 @@ the "Safety tests" step before anything is installed or made.
      his photo (run 43353547001)
  48. a corrected quote is only the quote: never the words glued before it ("hurt Luka Doncic:"),
      never "said Barkley", never a cut-off source (run 43395656602)
+ 49. final laws on the finished Short, whatever made the mistake: a quote must be inside quote
+     marks in a source; no glued "Doncic:Not" text; no photo in the jersey of a team its man
+     never played for (media leaves it out, the gate holds it if it is still there)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2691,6 +2694,85 @@ class OnlyTheQuote(unittest.TestCase):
     def test_the_record_survives_the_repair(self):
         import inspect, script
         self.assertIn("softened + cand_soft", inspect.getsource(script))
+
+
+
+class FinalLaws(unittest.TestCase):
+    """49 (owner, 2026-11-13: fix the kind of mistake, not the one case). The checks asked "are
+    these words in the source?" and "does this look like him?"; both said yes to Barkley's
+    broken quote and to Isaiah Thomas in a Wizards jersey. These laws read the finished result."""
+
+    SRC = [{"title": "Barkley calls out Kuzma", "summary": "",
+            "text": "While showing highlights Charles Barkley called out Kuzma for the play that hurt Luka "
+                    "Doncic. \"That's not a good play right there,\" said Barkley. \"Not letting guys land. "
+                    "That's not cool at all.\" Kuzma starts for the 1-11 Bucks."}]
+
+    def test_a_quote_must_be_someones_own_words(self):
+        import script
+        ok = 'Barkley said, "That\'s not a good play right there. Not letting guys land."'
+        self.assertEqual(script.quotes_outside_marks(ok, self.SRC), [])        # broken by "said Barkley": still his
+        narration = 'Barkley said, "the play that hurt Luka Doncic was not a good play."'
+        self.assertTrue(script.quotes_outside_marks(narration, self.SRC))      # the article's words, not his
+        self.assertEqual(script.quotes_outside_marks("Kuzma's closeout hurt Luka.", self.SRC), [])
+        head = [{"title": "\u2018I Love Random NBA Beefs,\u2019 Fans Divided", "summary": "", "text": ""}]
+        self.assertEqual(script.quotes_outside_marks('Fans said "I love random NBA beefs."', head), [])
+
+    def test_broken_text_is_caught(self):
+        import script
+        self.assertTrue(script.BROKEN_TEXT.search("Barkley said, hurt Luka Doncic:Not a good play"))
+        self.assertTrue(script.BROKEN_TEXT.search('not letting guys land"When will'))
+        for fine in ("At 3:30 on Friday.", 'He said "no." Then left.', "Luka's ankle, the Lakers' bench."):
+            self.assertIsNone(script.BROKEN_TEXT.search(fine), fine)
+
+    def test_the_laws_hold_the_short(self):
+        import inspect, script
+        src = inspect.getsource(script)
+        self.assertIn("quotes_outside_marks(spoken, sources)", src)
+        self.assertIn("broken = BROKEN_TEXT.search(spoken)", src)
+        self.assertIn('retention["hard"].append(f\'broken text', src)
+
+    def test_his_jersey_his_teams(self):
+        import media, compliance as C
+        j = media.jersey_team
+        self.assertEqual(j({"s": "game", "t": "dribbles in Wizards jersey"}), "washington wizards")
+        self.assertEqual(j({"s": "game", "t": "shoots a three, Suns"}), "phoenix suns")
+        self.assertEqual(j({"s": "game", "t": "dribbles past Cavaliers defender"}), "")      # the opponent
+        self.assertEqual(j({"s": "game", "t": "goes up to score against Thunder, Wizards"}), "washington wizards")
+        self.assertEqual(j({"s": "bench", "t": "stands on sideline, Warriors"}), "")          # a coach
+        self.assertFalse(C.jersey_ok("washington wizards", ["detroit pistons"]))
+        self.assertTrue(C.jersey_ok("washington wizards", []))                               # career unknown
+        self.assertTrue(C.jersey_ok("charlotte hornets", ["new orleans pelicans"]))         # the old Hornets
+        self.assertTrue(C.jersey_ok("", ["detroit pistons"]))
+
+    def test_media_leaves_him_out_and_the_gate_holds(self):
+        import media, gate
+        m = media
+        saved = (m.commons_photos, m.flickr_photos, m.openverse_photos, dict(m._all_photos),
+                 m.photo_tags.tag_person, m.photo_tags.shortlists, m.career_teams)
+        m._all_photos.clear()
+        pool = [{"page": "a", "score": 30, "title": "Isiah Thomas 1989.jpg", "tag": {"v": "C", "s": "game", "t": "drives, Pistons"}},
+                {"page": "b", "score": 20, "title": "IT 2021.jpg", "tag": {"v": "C", "s": "game", "t": "dribbles in Wizards jersey"}}]
+        try:
+            m.commons_photos = lambda person: [dict(p) for p in pool]
+            m.flickr_photos = m.openverse_photos = lambda person: []
+            m.photo_tags.tag_person = lambda *a, **k: 0
+            m.photo_tags.shortlists = lambda *a, **k: None
+            m.career_teams = lambda person: {"detroit pistons"}
+            m.shortlist_photos({"headline": "Isiah Thomas on Jordan", "_name": "t"}, [{"say": "x"}],
+                               [{"person": "Isiah Thomas"}])
+            self.assertEqual([p["page"] for p in m.photos("Isiah Thomas")], ["a"])
+        finally:
+            (m.commons_photos, m.flickr_photos, m.openverse_photos) = saved[:3]
+            m._all_photos.clear()
+            m._all_photos.update(saved[3])
+            m.photo_tags.tag_person, m.photo_tags.shortlists, m.career_teams = saved[4:]
+        shown = [{"kind": "photo", "person": "Isiah Thomas", "jersey": "washington wizards", "title": "IT.jpg",
+                  "license": "CC BY 2.0", "page": "p", "author": "x", "match": 8}]
+        v, notes = gate.check_visuals(shown, {"careers": {"Isiah Thomas": ["detroit pistons"]}})
+        self.assertEqual(v, "REVIEW")
+        self.assertIn("never played for", " ".join(notes))
+        shown[0]["jersey"] = "detroit pistons"
+        self.assertEqual(gate.check_visuals(shown, {"careers": {"Isiah Thomas": ["detroit pistons"]}})[0], "PASS")
 
 
 if __name__ == "__main__":

@@ -78,6 +78,14 @@ def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:
         if x.get("match") is None and x.get("kind") == "video":
             verdict = C.worst(verdict, C.REVIEW)
             notes.append(f"clip not judged (stock footage): {(x.get('title') or '')[:50]}")
+    # final law (run 43353547001): a photo in the jersey of a team its man never played for shows
+    # another man with his name (Isaiah Thomas, Wizards, shown as Isiah Thomas)
+    careers = flags.get("careers") or {}
+    for x in shown:
+        if not C.jersey_ok(x.get("jersey", ""), careers.get(x.get("person", ""), [])):
+            verdict = C.worst(verdict, C.REVIEW)
+            notes.append(f"{x.get('person')} in a {x.get('jersey')} jersey, a team he never played for: "
+                         f"{(x.get('title') or '')[:50]}")
     for x in shown:
         label = x.get("title") or x.get("page") or x.get("file", "")
         if not licence_accepted(x.get("license", "")):

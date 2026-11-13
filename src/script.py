@@ -788,18 +788,21 @@ def quote_match(quote: str, material_tokens: list[str]) -> float:
     return best
 
 
+def unglue(text: str) -> str:
+    """A quote glued to the words around it (an embedded tweet in run 43395656602: 'hurt Luka
+    Doncic:"Not a good play right there. That's not cool man, not letting guys land"When
+    will...') is split off, so a quote never starts with "hurt Luka Doncic:" or runs on into the
+    next sentence."""
+    text = re.sub(r'([:;,])(["\u201c])(?=\w)', r"\1 \2", text or "")
+    return re.sub(r'([\w.!?,])(["\u201d])(?=\w)', r"\1\2 ", text)
+
+
 def _source_words(sources: list[dict]) -> tuple[list[str], list[str], list[int]]:
     """The sources as original words, plus their tokens and which word each token came from
     (so a matched passage can be given back in the source's own words)."""
     words, toks, owner = [], [], []
     for src in sources:
-        text = f"{src.get('title', '')} {src.get('summary', '')} {src.get('text', '')}"
-        # a quote glued to the words around it (an embedded tweet in run 43395656602: 'hurt Luka
-        # Doncic:"Not a good play right there. That's not cool man, not letting guys land"When
-        # will...') is split off, so a quote never starts with "hurt Luka Doncic:" or runs on
-        # into the next sentence
-        text = re.sub(r'([:;,])(["\u201c])(?=\w)', r"\1 \2", text)
-        text = re.sub(r'([\w.!?,])(["\u201d])(?=\w)', r"\1\2 ", text)
+        text = unglue(f"{src.get('title', '')} {src.get('summary', '')} {src.get('text', '')}")
         for w in text.split():
             words.append(w)
             for t in _toks(w):
@@ -901,6 +904,38 @@ def soften_quotes(beats: list[dict], sources: list[dict]) -> list[str]:
         for rx in QUOTE_PATTERNS:
             b["say"] = rx.sub(fix, b.get("say", ""))
     return fixed
+
+
+# What the sources themselves put in quote marks: "..." and “...”, ‘...’, and '...' where
+# the marks stand outside words (so "Luka's" is never a quote mark)
+SOURCE_QUOTES = re.compile(r'["\u201c]([^"\u201c\u201d]+)["\u201d]|\u2018([^\u2018\u2019]+)\u2019(?!\w)'
+                           r"|(?<![\w'])'((?:[^'\n\"]|'(?=\w))+)'(?!\w)")
+
+
+def quoted_in_sources(sources: list[dict]) -> list[str]:
+    """Every tokenised word the sources put inside quote marks, in order (one long list per
+    source, so a quote broken by "said Barkley" still reads as one)."""
+    out = []
+    for src in sources:
+        text = f"{src.get('title', '')} . {src.get('summary', '')} . {src.get('text', '')}"
+        for m in SOURCE_QUOTES.finditer(text):
+            out += _toks(next(g for g in m.groups() if g is not None))
+    return out
+
+
+def quotes_outside_marks(text: str, sources: list[dict]) -> list[str]:
+    """Final law for every quote, whatever made it (the writer, the repair, the correction):
+    a quote is someone's OWN words, so its words must be inside quote marks in a source, not in
+    the article's narration. Run 43395656602 said as Barkley's: "hurt Luka Doncic:Not a good play
+    right there. That's not" - every word was in the article, so the old check passed it."""
+    said = quoted_in_sources(sources)
+    return [q.strip() for q in quotes_in(text)
+            if len(_toks(q)) >= 4 and quote_match(q, said) < QUOTE_EXACT]
+
+
+# a word glued to the next by a colon, semicolon or quote mark ("Doncic:Not", 'land"When'):
+# broken text that the voice reads as one strange word
+BROKEN_TEXT = re.compile(r"[A-Za-z][:;][A-Za-z]|[A-Za-z][\"\u201c\u201d][A-Za-z]")
 
 
 def quote_check(text: str, sources: list[dict]) -> list[str]:
@@ -1927,6 +1962,12 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     on_screen = " ".join(b.get("on_screen", "") for b in beats)
     unsupported = fact_check(f"{spoken} {on_screen}", sources)
     bad_quotes = quote_check(spoken, sources)
+    # final laws on the finished text, whatever step made it (see quotes_outside_marks)
+    for q in ([] if bad_quotes else quotes_outside_marks(spoken, sources)):
+        retention["hard"].append(f'a quote that no source puts in quote marks: "{q[:70]}"')
+    broken = BROKEN_TEXT.search(spoken)
+    if broken:
+        retention["hard"].append(f'broken text in the spoken words: "...{spoken[max(0, broken.start() - 20):broken.end() + 20]}..."')
     banned = banned_check(f"{spoken} {on_screen} {' '.join(draft.get('titles', []))} {thumb}")
     words = len(spoken.split())
     same, same_as = closest(" ".join(b.get("say", "") for b in beats), "spoken")

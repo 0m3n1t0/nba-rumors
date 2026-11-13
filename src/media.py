@@ -49,6 +49,7 @@ from collect import names  # same name finder as the collector
 from picture_ids import already_shown, base_name, mark_shown  # one photo in two crops = one picture
 import wiki_http  # noqa: E402  Wikimedia: token when set, waits politely on 429
 import photo_tags  # noqa: E402  every photo looked at once, tagged, then shortlisted per beat
+import compliance as C  # noqa: E402  shared final laws (the jersey law, also read by the gate)
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -397,6 +398,7 @@ NBA_TEAMS = {
 _teams: dict[str, tuple[str, set[str]]] = {}     # Wikidata item -> (current team, former teams)
 _team_since: dict[str, int] = {}                  # Wikidata item -> year his current spell began
 _nba_debut: dict[str, int] = {}                   # Wikidata item -> year his first NBA spell began
+_career: dict[str, set[str]] = {}                 # Wikidata item -> every NBA team he played for
 
 
 def teams_of(person: str) -> tuple[str, set[str]]:
@@ -428,6 +430,7 @@ def teams_of(person: str) -> tuple[str, set[str]]:
                  "languages": "en"}), 30)).get("entities", {})
             labels = {i: fold(((e.get("labels") or {}).get("en") or {}).get("value", "")) for i, e in ents.items()}
         nba = [(labels.get(t, ""), start, ended) for t, start, ended in spells if labels.get(t, "") in NBA_TEAMS]
+        _career[q] = {name for name, _, _ in nba}     # every NBA team he ever played for, retired too
         # an open spell WITHOUT a start date is not trusted (run 43080115985: Wikidata still had
         # Jordan Poole "now" at Golden State, undated, while he plays for New Orleans). Then the
         # teams stay unknown and nothing about the photos or the story line changes.
@@ -443,6 +446,33 @@ def teams_of(person: str) -> tuple[str, set[str]]:
     except Exception as exc:
         print(f"[!] Wikidata teams failed for {person}: {exc}")
     return _teams[q]
+
+
+def career_teams(person: str) -> set[str]:
+    """Every NBA team he ever played for (Wikidata), also for a retired player; empty = unknown."""
+    teams_of(person)
+    return set(_career.get(_wikidata.get(person, ""), set()))
+
+
+# The team ON HIS JERSEY in a photo tag ("dribbles in Wizards jersey", "shoots a three, Suns"):
+# only "<team> jersey/uniform" or a team closing the tag after a comma. A team named any other way
+# is usually the opponent ("dribbles past Cavaliers defender", "against Thunder, Wizards"): every
+# such tag in the 1179 tagged photos named the other side, so it is never read as his jersey.
+_JERSEY_WORDS = "|".join(sorted((re.escape(w) for ws in NBA_TEAMS.values() for w in ws), key=len, reverse=True))
+JERSEY = re.compile(rf"\b({_JERSEY_WORDS})\s+(?:jersey|uniform|colou?rs)\b"
+                    rf"|,\s*({_JERSEY_WORDS})(?:\s+(?:jersey|uniform|black|white|red|blue|green|gold|purple"
+                    rf"|yellow|road|home|throwback|city))*\s*$")
+PLAYING = {"game", "warmup"}      # a coach on the bench wears no jersey of his own
+
+
+def jersey_team(tag: dict | None) -> str:
+    """The full NBA team name on his jersey in a game or warm-up photo, or "" (one clear team only)."""
+    tag = tag or {}
+    if tag.get("s") not in PLAYING:
+        return ""
+    found = {w for m in JERSEY.finditer(fold(tag.get("t") or "").strip()) for w in m.groups() if w}
+    teams = {t for t, ws in NBA_TEAMS.items() if found & set(ws)}
+    return teams.pop() if len(teams) == 1 else ""
 
 
 def team_words(team: str) -> list[str]:
@@ -1526,6 +1556,15 @@ def shortlist_photos(short: dict, beats: list[dict], plans: list[dict]) -> dict[
     try:
         for person in who:
             new = photo_tags.tag_person(person, photos(person), ask_claude, UA, photo_era, scene_of)
+            # final law (run 43353547001): a game photo in the jersey of a team he never played for
+            # is another man (Isaiah Thomas, Wizards #4, shown as Isiah Thomas): out of his pool,
+            # for every later step (shortlist, fill, the VS frame)
+            career = career_teams(person)
+            wrong = [c for c in photos(person) if not C.jersey_ok(jersey_team(c.get("tag")), career)]
+            if wrong:
+                _all_photos[person] = [c for c in photos(person) if c not in wrong]
+                TAG_DIAG.append(f"{short.get('_name', '')}: {person}: {len(wrong)} photo(s) in a jersey of a "
+                                f"team he never played for, left out ({jersey_team(wrong[0].get('tag'))})")
             pool = photos(person)[:photo_tags.MAX_PER_PERSON]
             seen = sum(1 for c in pool if c.get("tag"))
             fit = sum(1 for c in pool if photo_tags.usable(c))
@@ -2273,12 +2312,15 @@ def main() -> None:
         except (OSError, ValueError):
             flags = {}
         flags["people"] = people(short)[:4]
+        flags["careers"] = {p: sorted(career_teams(p)) for p in flags["people"]}   # the gate's jersey law
         flags_path.write_text(json.dumps(flags), encoding="utf-8")
         items = fill_empty(items, len(spoken(short)), MEDIA / name, used, who, short)
         items = verify_openverse(items)
         vs = verify_openverse(vs_pair(short, items, MEDIA / name, people(short)[:4]))
         vs = vs if len(vs) == 2 and all(vs) else []
         tag_people(items, people(short)[:4])
+        for x in [y for it in vs + items if it for y in [it] + (it.get("alts") or []) if y]:
+            x["jersey"] = jersey_team(x.get("tag"))
         (MEDIA / f"{name}_vs.json").write_text(json.dumps(vs, indent=2, ensure_ascii=False), encoding="utf-8")
         errors_by_short[name] = list(MEDIA_ERRORS)
         (MEDIA / f"{name}.json").write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")

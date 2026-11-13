@@ -413,6 +413,15 @@ TEAMS = {"lakers", "celtics", "warriors", "knicks", "bucks", "heat", "nuggets", 
          "jazz", "blazers", "grizzlies", "pelicans", "timberwolves", "wolves"}
 
 
+def jersey_ok(jersey: str, career: set[str] | list[str]) -> bool:
+    """A photo's jersey fits the man named: no jersey read, no known career, or a team he played
+    for. The Hornets name moved: a "Hornets" jersey from 1988-2013 New Orleans counts for the
+    Pelicans franchise too (Chris Paul)."""
+    if not jersey or not career:
+        return True
+    return jersey in career or (jersey == "charlotte hornets" and "new orleans pelicans" in career)
+
+
 def names_in(text: str, known: set[str] | None = None) -> set[str]:
     """The names (people, teams) in a title or first-frame text, folded. A Capitalized word
     counts as a name. An ALL-CAPS word is usually emphasis ("a SHOT", "INSANE"), so it counts

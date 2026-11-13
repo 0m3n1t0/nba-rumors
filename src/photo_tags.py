@@ -70,8 +70,9 @@ file name, never a guess. For EVERY number return:
   "e": the emotion HIS face or body shows: "angry", "intense" (focused, shouting, competing),
        "celebrating", "hurt" (in pain, injured, limping, being helped), "sad" (dejected, head
        down), "smiling", "calm", or "unclear" when his face cannot be read. Never guess.
-  "t": what he is doing, at most 8 plain words, no quotation marks ("walks off head down,
-       Warriors jersey", "shoots a three", "laughs on a stage").
+  "t": what he is doing and, when you can see it, the team on his jersey, at most 8 plain words,
+       no quotation marks ("walks off head down, Warriors jersey", "shoots a three, Suns",
+       "laughs on a stage").
 Also list the photos that are THE SAME MOMENT (burst shots seconds apart: same place, same people,
 same pose; or a crop of another tile) as groups of numbers: "same": [[3, 4], [10, 11, 12]].
 Return ONLY JSON: {"photos":[{"n":1,"v":"C","s":"game","e":"sad","t":"walks off head down"}, ...],
@@ -91,8 +92,12 @@ THE RULES
    off, a game; a clash, a fight, an ejection -> "angry" or "intense", a game; what someone said
    (a quote, a podcast, a press conference, a post) -> "interview" or that person's face, calm or
    serious; a win, a record -> "celebrating"; a trade or a contract -> a clear portrait or a game.
-3. Clear faces (v C) and NBA game photos first. A photo of the person in his CURRENT team's uniform
-   fits better than a former team's, unless the line is about that time ("OLD TEAM" in the era).
+3. Clear faces (v C) and NBA game photos first; a small figure (v S) only when no clear photo of
+   the right person fits. A photo of the person in his CURRENT team's uniform fits better than a
+   former team's, unless the line is about that time ("OLD TEAM" in the era).
+   THE LINE'S TIME AND TEAM: when the line names a team or a year ("traded to Miami in 2004", "as
+   a Laker"), choose photos of that team or time (by the jersey in what he is doing, or the year),
+   or of the team he left in that line; never a third team or a later era.
 4. A "political", "stage", "community", "red_carpet" or "pre_nba" photo ONLY when the line is
    about that very event or time (the White House visit, the talk, the camp, his college days);
    otherwise never.
@@ -336,6 +341,11 @@ def _apply(c: dict, tag: dict) -> None:
     c["tag"] = {k: tag[k] for k in ("v", "s", "e", "t") if k in tag}
     if tag.get("m"):
         c["moment"] = tag["m"]
+    # D15 (run 43317261723: Lendeborg in Michigan colours as "Warriors rookie", with no PRE-NBA
+    # mark - Wikidata had no NBA debut for a rookie): a photo the tagger saw as school or college
+    # is marked PRE-NBA for the editor too, unless the team data already says more
+    if c["tag"].get("s") == "pre_nba" and not c.get("team"):
+        c["team"] = "pre-nba"
 
 
 def usable(c: dict) -> bool:
@@ -388,8 +398,9 @@ def fill_rank(c: dict) -> tuple:
 
 def fill_ok(c: dict) -> bool:
     """An unjudged top-up: never a school photo (preview 43222583073: Poole at Michigan twice),
-    never one he is not in, never an event no line asked for. Untagged ones come last (fill_rank)."""
+    never one he is not in or only a small figure in (run 43317261723: a crowd where Green is tiny),
+    never an event no line asked for. Untagged ones come last (fill_rank)."""
     if c.get("team") == "pre-nba":
         return False
     t = c.get("tag")
-    return not t or (t.get("v") in VISIBLE and t.get("s") not in NOT_BY_DEFAULT)
+    return not t or (t.get("v") in VISIBLE - {"S"} and t.get("s") not in NOT_BY_DEFAULT)

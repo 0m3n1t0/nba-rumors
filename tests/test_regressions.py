@@ -65,6 +65,8 @@ the "Safety tests" step before anything is installed or made.
  41. a beat that replays the hook in other order, and "that stretch" never said -> repair
  42. a fresh, spreading fight just under the line (55+) is made before an old feud fills the run
  43. bold but true: the chosen hook is read against the sources; an overstated one gets its boldest true line
+ 44. one event (All-Star 2022...) counts like one scene; college photos marked PRE-NBA; small figures
+     and other eras/teams kept for when the line asks for them
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -2160,7 +2162,8 @@ class EveryPhotoLookedAt(unittest.TestCase):
         saved = m.photos
         try:
             m.photos = lambda who: pool
-            self.assertEqual([c["page"] for c in m.person_photos("Steph Curry", set())], ["p5", "p4"])
+            # p4 is only a small figure (v S): not used unjudged since run 43317261723 (D15)
+            self.assertEqual([c["page"] for c in m.person_photos("Steph Curry", set())], ["p5"])
         finally:
             m.photos = saved
 
@@ -2427,6 +2430,51 @@ class BoldButTrue(unittest.TestCase):
         src = inspect.getsource(script.build_short)
         self.assertLess(src.index("check_hook_truth(hooks[0], sources)"),
                         src.index('bool(h.get("overstated"))'))
+
+
+class OneEventTheRightEra(unittest.TestCase):
+    """44 (D10, D15). The Curry preview: 7 of 13 photos from the 2022 All-Star weekend (two days,
+    several photographers). Run 43317261723: Shaq in Suns colours for "traded to Miami in 2004",
+    Lendeborg in Michigan colours as "Warriors rookie", a crowd where Green is tiny."""
+
+    def test_one_event_counts_across_photographers_and_days(self):
+        from collections import Counter
+        import media as m
+        allstar = [{"kind": "photo", "page": f"p{k}", "author": a, "date": d, "title": f"Curry {k}.jpg",
+                    "tag": {"v": "C", "s": "allstar"}}
+                   for k, (a, d) in enumerate([("Erik Drost", "2022-02-19"), ("Erik Drost", "2022-02-20"),
+                                               ("All-Pro Reels", "2022-02-20"), ("Keith Allison", "2022-02-18")])]
+        self.assertEqual(m.event_of(allstar[0]), ("event", "allstar", "2022"))
+        self.assertEqual(len({m.scene_of(c) for c in allstar}), 4)            # four scenes, one event
+        scenes = Counter()
+        for c in allstar[:3]:
+            self.assertFalse(m.scene_full(c, scenes))
+            m.count_scene(c, scenes)
+        self.assertTrue(m.scene_full(allstar[3], scenes))                     # the 4th waits (last resort)
+        self.assertEqual(m.spread_scenes([0, 1], [allstar[3], {"kind": "photo", "page": "x", "title": "y"}],
+                                         lambda j: 3, {0: 9, 1: 5}, scenes), [1, 0])
+        game = {**allstar[0], "tag": {"v": "C", "s": "game"}}
+        self.assertIsNone(m.event_of(game))                                   # games stay per scene
+        self.assertIsNone(m.event_of({**allstar[0], "date": "", "title": "Curry.jpg"}))   # no year: no event
+
+    def test_a_college_photo_is_marked_pre_nba(self):
+        import photo_tags
+        c = {"page": "p1"}
+        photo_tags._apply(c, {"v": "C", "s": "pre_nba", "e": "calm", "t": "defends, Michigan"})
+        self.assertEqual(c["team"], "pre-nba")
+        d = {"page": "p2", "team": "former"}
+        photo_tags._apply(d, {"v": "C", "s": "pre_nba"})
+        self.assertEqual(d["team"], "former")                                 # team data wins
+
+    def test_rules_in_the_prompts(self):
+        import media
+        import photo_tags
+        for need in ("A SMALL FIGURE", "THE LINE'S TIME AND TEAM", "Suns jersey"):
+            self.assertIn(need, media.PICK_PROMPT)
+        self.assertIn("THE LINE'S TIME AND TEAM", photo_tags.PICK_PROMPT)
+        self.assertIn("a small figure (v S) only when no clear photo", photo_tags.PICK_PROMPT)
+        self.assertIn("the team on his jersey", photo_tags.TAG_PROMPT)
+        self.assertFalse(photo_tags.fill_ok({"tag": {"v": "S", "s": "game"}}))
 
 
 if __name__ == "__main__":

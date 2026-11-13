@@ -216,6 +216,11 @@ a school jersey is not the man in this NBA story.
 OFF COURT: a clinic, camp, school visit, charity or promo event (kids or students around him, a
 gym with no game, a stage) is not a game or a feud photo. When the line is about a game, a
 clash or a trade, score it 4 at most; it fits only a line about that event.
+A SMALL FIGURE: in a crowd, a team photo or a wide shot where the person is a small figure (you
+cannot read his face), score it 4 at most: the viewer must see who the line is about.
+THE LINE'S TIME AND TEAM: when the line names a team or a year ("traded to Miami in 2004", "as a
+Laker", "his rookie year"), the photo shows that team or time, or the team he left in that line;
+never a third team or a later era (Shaq in a Suns jersey for "traded to Miami in 2004": 2 at most).
 A POLITICAL event (the White House, a president or a politician, a government ceremony) is OFF
 COURT too (owner, 2026-11-12: Biden in 5 shots of an injury Short): score it 3 at most, unless
 the line is about that very event or that politician; then it fits like any other photo.
@@ -1375,10 +1380,32 @@ def scene_of(c: dict) -> tuple | None:
 SCENE_MAX = 3   # photos from one scene (photographer + day = one game) per Short, unless nothing else is left
 
 
+EVENT_SCENES = {"allstar", "national", "political", "stage", "community", "red_carpet"}
+
+
+def event_of(c: dict) -> tuple | None:
+    """D10 (Curry preview: 7 of 13 photos from the 2022 All-Star weekend, two days, several
+    photographers, so the per-scene limit never fired): an event that is not a game - All-Star,
+    a national team, a political, stage, charity or red-carpet event - by its tag and year."""
+    kind = (c.get("tag") or {}).get("s")
+    if kind not in EVENT_SCENES:
+        return None
+    day = c.get("date") or ""
+    m = TITLE_DAY.search(c.get("title", ""))
+    year = day[:4] if re.match(r"\d{4}", day) else (m.group(1) if m else "")
+    return ("event", kind, year) if year else None
+
+
+def count_scene(c: dict, scenes) -> None:
+    for key in (scene_of(c), event_of(c)):
+        if key:
+            scenes.update([key])
+
+
 def scene_full(c: dict, scenes) -> bool:
-    """This photo's scene already has SCENE_MAX photos in the Short (scenes: a Counter)."""
-    sc = scene_of(c)
-    return sc is not None and scenes[sc] >= SCENE_MAX
+    """This photo's scene, or its event (event_of), already has SCENE_MAX photos in the Short
+    (scenes: a Counter)."""
+    return any(key is not None and scenes[key] >= SCENE_MAX for key in (scene_of(c), event_of(c)))
 
 
 def count_scenes(shots) -> "Counter":
@@ -1609,7 +1636,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 if c["kind"] == "video":
                     used.add(c["id"])
                 mark_shown(c, shown, key)
-                scene_of(c) and scenes.update([scene_of(c)])
+                count_scene(c, scenes)
                 chosen["match"] = (int(scores[idx]) if idx in scores
                                    else choice.get("score") if idx == (k or 0) - 1 else None)
                 break
@@ -1638,7 +1665,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                     chosen["alts"].append(alt)
                     chosen["alt"] = chosen["alts"][0]
                     mark_shown(c, shown, key)
-                    scene_of(c) and scenes.update([scene_of(c)])
+                    count_scene(c, scenes)
                     if c["kind"] == "video":
                         used.add(c["id"])
                     if len(chosen["alts"]) >= need:
@@ -1921,7 +1948,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                             continue
                         if h is not None:
                             looks.append(h)
-                        scene_of(c) and scenes.update([scene_of(c)])
+                        count_scene(c, scenes)
                         faces[person] = waiting + faces.get(person, [])   # the held ones stay for later
                         return {**{k: v for k, v in c.items() if k not in ("score", "hoops")},
                                 "file": str(path.relative_to(ROOT)), "beat": i, "match": None}

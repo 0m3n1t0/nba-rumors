@@ -1383,6 +1383,32 @@ def fix_hook_detail(hook: dict, sources: list[dict]) -> bool:
     return True
 
 
+# The day's NEWS in a headline (what just happened to someone) and the words that say it in a hook.
+# Run 43353547001: "Smart suspended three games" was told with the opening line "Marcus Smart
+# punched Charles Bassey, and the Rockets' next opponents are all below .500": yesterday's punch
+# (we had made that Short) and a schedule detail; two other lines said "the NBA suspended Smart".
+# The act itself (a punch, an ejection the same night) is not listed: the act IS the news then.
+NEWS_EVENTS = [
+    (r"suspend|suspension|\bbanned\b", r"suspend|suspension|\bbanned\b|\bgames\b"),
+    (r"\bfined\b|\bfines\b|\bfine (?:for|of)\b", r"\bfined?\b|\$\d"),     # never "he's fine"
+    (r"\btraded\b|\btrades\b|\bacquires?\b", r"\btrad(?:e|ed|ing)\b|\bdeal\b|\bacquir"),
+    (r"injur|(?<!on a )\btear\b|\btorn\b|surgery|sprain|fractur|broken (?:hand|foot|wrist|ankle|leg)",
+     r"injur|\btear\b|\btorn\b|surgery|sprain|fractur|broken|\bout\b|\bmiss|sidelined"),
+    (r"\bfired\b(?! (?:up|back|off|shots?|at))|\bdismiss",     # never "fired back"
+     r"\bfire|\bdismiss|\blet go\b"),
+    (r"\bsign(?:s|ed)?\b(?! of)|\bextension\b",     # never "signs of life"
+     r"\bsign|extension|\bdeal\b|contract"),
+    (r"\bwaive", r"\bwaive|\breleas|\bcut\b"),     # never "released a statement"
+]
+
+
+def says_the_news(hook: str, headline: str) -> bool:
+    """The opening line carries the headline's news (a suspension, a trade, an injury...), or the
+    headline has none of these (then there is nothing to check)."""
+    head, text = compliance.fold(headline), compliance.fold(hook)
+    return all(re.search(said, text) for event, said in NEWS_EVENTS if re.search(event, head))
+
+
 def intrigue_pick(hooks: list[dict], headline: str, story: str = "", stars: list | None = None) -> list[dict]:
     """hookscore checks the craft; a fan's eye picks the most intriguing of the good ones.
     Run 43027675858: the pick asked "why did Brown...?" (the Short never said why) and led
@@ -1391,6 +1417,14 @@ def intrigue_pick(hooks: list[dict], headline: str, story: str = "", stars: list
     # hookscore filters out broken hooks (under 40); among the rest a fan's eye decides, because
     # hookscore rewards "you" openers ("If you're a fan...") that bury the clash
     good = [h for h in hooks if h["question"] and h["score"] >= 40]
+    # a MUST before intrigue: a line that says the day's news beats one that leaves it out; only
+    # when no good line says it does the old choice stand
+    news = [h for h in good if says_the_news(h["text"], headline)]
+    if news and len(news) < len(good):
+        good = news
+        if len(good) == 1:
+            good[0]["intrigue_pick"] = True
+            return good + [h for h in hooks if h is not good[0]]
     if len(good) < 2:
         return hooks
     try:

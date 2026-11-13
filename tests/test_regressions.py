@@ -78,6 +78,8 @@ the "Safety tests" step before anything is installed or made.
      never played for (media leaves it out, the gate holds it if it is still there)
  50. each Short's source texts are kept with the run, and replay.py runs today's checks on every
      kept run (a change is tried on real Shorts before it reaches main)
+ 51. the opening line says the day's news (a suspension, a trade, an injury...): a line that
+     leaves it out loses to one that says it (run 43353547001)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -98,6 +100,7 @@ import types
 import unittest
 import urllib.parse
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -2821,6 +2824,54 @@ class ReplayOnRealRuns(unittest.TestCase):
         self.assertEqual(n, 1)
         self.assertIn("broken text", out.getvalue())
         self.assertIn("not inside quote marks", out.getvalue())
+
+
+
+class TheNewsInTheHook(unittest.TestCase):
+    """51 (run 43353547001). "Smart suspended three games" opened with "Marcus Smart punched
+    Charles Bassey, and the Rockets' next opponents are all below .500": yesterday's punch (we had
+    made that Short) and a schedule detail, while two lines said "the NBA suspended Smart"."""
+
+    HEAD = "Rockets' Marcus Smart suspended three games for punching Warriors' Charles Bassey"
+
+    def hooks(self):
+        return [{"text": "Marcus Smart punched Charles Bassey, and the Rockets' next opponents are all below .500.",
+                 "question": True, "score": 52},
+                {"text": "Charles Bassey just called Marcus Smart's punch fake toughness, and the NBA suspended Smart.",
+                 "question": True, "score": 43},
+                {"text": "The NBA just suspended Marcus Smart for punching Charles Bassey in the face.",
+                 "question": True, "score": 43}]
+
+    def test_the_news_is_said(self):
+        import script
+        f = script.says_the_news
+        self.assertFalse(f(self.hooks()[0]["text"], self.HEAD))
+        self.assertTrue(f(self.hooks()[2]["text"], self.HEAD))
+        self.assertTrue(f("Curry now has a torn oblique.", "Stephen Curry injury: out two weeks with oblique tear"))
+        for head in ("Lakers show signs of life", "Rudy Gobert fired back at Kuminga", "Luka is fine, per Shams",
+                     "Warriors on a tear", "Kuminga rips Gobert after loss"):
+            self.assertTrue(f("Anything at all.", head), head)                  # no news event: nothing to check
+
+    def test_the_pick_prefers_the_news(self):
+        import script
+        with patch.object(script, "ask_claude", return_value={"best": 1}) as ask:
+            got = script.intrigue_pick(self.hooks(), self.HEAD, "story")
+        self.assertIn("suspended", got[0]["text"])
+        self.assertTrue(got[0]["intrigue_pick"])
+        self.assertNotIn("below .500", ask.call_args[0][0].split("WHAT THE SHORT SAYS")[1])
+        one = self.hooks()[:2]
+        with patch.object(script, "ask_claude") as ask:
+            got = script.intrigue_pick(one, self.HEAD, "story")
+        ask.assert_not_called()                                                     # one news line: it leads
+        self.assertIn("suspended Smart", got[0]["text"])
+        self.assertEqual(len(got), 2)
+
+    def test_no_news_line_changes_nothing(self):
+        import script
+        hooks = [h for h in self.hooks()[:1]] + [{"text": "Smart and Bassey went at it again.", "question": True, "score": 45}]
+        with patch.object(script, "ask_claude", return_value={"best": 1}):
+            got = script.intrigue_pick(hooks, self.HEAD, "story")
+        self.assertEqual(got[0]["text"], hooks[0]["text"])
 
 
 if __name__ == "__main__":

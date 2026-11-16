@@ -143,6 +143,7 @@ the "Safety tests" step before anything is installed or made.
      Cavs on "the 2016 title"), so it is no time named
  79. D43 (his answer): the photo's own person's name words are no team either ("Tragic Magic" on a
      Magic Johnson photo); the tagger's "who" now reaches the photo, so photo_owner can read it
+ 80. D40 (his answer): a tie in people() goes to the one named first in the headline
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4079,7 +4080,7 @@ class WiderNamesForPictures(unittest.TestCase):
         with patch.object(media, "real_people", real):
             got = media.people({"headline": "JJ Redick Calls Out Lakers' Struggles Despite Luka Doncic, LA's 12-2 "
                                             "Record After Win vs. Suns", "beats": [{"say": "Redick called it a trend."}]})
-        self.assertCountEqual(got, ["JJ Redick", "Luka Doncic"])   # a tie: the order is not fixed (D40)
+        self.assertEqual(got, ["JJ Redick", "Luka Doncic"])   # a tie: first in the headline leads (D40)
 
     def test_the_collector_is_unchanged(self):
         import collect
@@ -4215,3 +4216,17 @@ class PhotoOwnNameIsNoTeam(unittest.TestCase):
         with patch.object(media, "teams_of", lambda p: ("", set())):
             self.assertTrue(media.team_fits(photo, line, owner, ["Larry Bird"]))
             self.assertFalse(media.team_fits(photo, "The Celtics beat them.", owner, ["Larry Bird"]))   # another team still counts
+
+
+class TieGoesToTheHeadline(unittest.TestCase):
+    """80. D40 (his answer 2026-11-16): the story's people are ranked by how often they are named; a
+    tie had no fixed order (set order), so the main person could change between runs."""
+
+    def test_first_in_the_headline_leads(self):
+        import media
+        real = lambda names: [n for n in names if n in {"JJ Redick", "Luka Doncic"}]
+        for head, first in (("JJ Redick Calls Out Lakers Despite Luka Doncic", "JJ Redick"),
+                            ("Luka Doncic Shrugs Off JJ Redick", "Luka Doncic")):
+            for _ in range(5):
+                with patch.object(media, "real_people", real):
+                    self.assertEqual(media.people({"headline": head, "beats": []})[0], first)

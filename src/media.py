@@ -319,7 +319,10 @@ def people(short: dict) -> list[str]:
     text = short.get("headline", "") + ". " + ". ".join(b.get("say", "") for b in short.get("beats", []))
     counts = {n: text.count(n) + (5 if n in short.get("headline", "") else 0) for n in people_names(text)
               if not not_a_person(n)}
-    ranked = sorted(counts, key=lambda n: -counts[n])
+    # D40 (his answer 2026-11-16): a tie goes to the one named first in the headline (the text
+    # starts with it), so the story's main person no longer changes from run to run (run 43934705382:
+    # JJ Redick and Luka Doncic, 6 each)
+    ranked = sorted(counts, key=lambda n: (-counts[n], text.find(n)))
     # Only REAL sports people: a Title Case headline makes fake "names" ("Only Has", "World
     # Reacts", "York Times"), and a fake name finds random photos (a doll, a beach, an arch).
     # Wikipedia decides; if Wikipedia cannot be reached, the old list is used as before.

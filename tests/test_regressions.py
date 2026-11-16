@@ -141,6 +141,8 @@ the "Safety tests" step before anything is installed or made.
      Rockets jersey on a Suns line); a team word counts only with a capital and never as a word of
      a story person's name ("Tragic Magic"); a year before his current spell is his past (Kyrie's
      Cavs on "the 2016 title"), so it is no time named
+ 79. D43 (his answer): the photo's own person's name words are no team either ("Tragic Magic" on a
+     Magic Johnson photo); the tagger's "who" now reaches the photo, so photo_owner can read it
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4187,3 +4189,29 @@ class ScoredPhotosFitTheLine(unittest.TestCase):
         self.assertEqual(o({"tag": {"who": "Jalen Green"}, "title": "x"}, []), "Jalen Green")
         self.assertEqual(o({"title": "Jalen Green 2022.jpg"}, ["Dejounte Murray", "Jalen Green"]), "Jalen Green")
         self.assertEqual(o({"title": "Murray and Green.jpg"}, ["Dejounte Murray", "Jalen Green"]), "")
+
+
+class PhotoOwnNameIsNoTeam(unittest.TestCase):
+    """79. D43 (his answer 2026-11-16). Run 43262308476: "But it got worse: the headlines called him
+    Tragic Magic." The script never says "Magic Johnson" in full, so he was no story person and
+    D41 could not see the nickname; his Lakers photo would go as "not the Orlando Magic". Now the
+    photo's own person (the tagger's "who", which until now never reached the photo) counts too."""
+
+    def test_the_tag_owner_reaches_the_photo(self):
+        import photo_tags
+        c = {}
+        photo_tags._apply(c, {"v": "S", "s": "game", "e": "intense", "t": "jumps for rebound in Lakers jersey",
+                              "who": "Magic Johnson", "at": "2026-11-12"})
+        self.assertEqual(c["tag"]["who"], "Magic Johnson")
+        self.assertNotIn("at", c["tag"])
+
+    def test_tragic_magic(self):
+        import media
+        photo = {"kind": "photo", "title": "Magic Johnson and Sam Bowie, 1985.jpg", "team": "",
+                 "tag": {"v": "S", "s": "game", "t": "jumps for rebound in Lakers jersey", "who": "Magic Johnson"}}
+        line = "But it got worse: the headlines called him Tragic Magic."
+        owner = media.photo_owner(photo, ["Larry Bird"])
+        self.assertEqual(owner, "Magic Johnson")
+        with patch.object(media, "teams_of", lambda p: ("", set())):
+            self.assertTrue(media.team_fits(photo, line, owner, ["Larry Bird"]))
+            self.assertFalse(media.team_fits(photo, "The Celtics beat them.", owner, ["Larry Bird"]))   # another team still counts

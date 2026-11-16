@@ -2237,7 +2237,9 @@ def team_fits(c: dict, line: str, person: str, names: list[str] | tuple = ()) ->
     t = c.get("tag") or {}
     if person:
         teams_of(person)                     # his current spell's start year (names_a_time)
-    named = teams_in(line, names)
+    # D43 (his answer 2026-11-16): the photo's own person's name words are no team either ("Tragic
+    # Magic" on a Magic Johnson photo, when the script never says his full name)
+    named = teams_in(line, list(names) + ([person] if person else []))
     if not named and not names_a_time(line, person):
         return True
     if c.get("team") == "pre-nba":

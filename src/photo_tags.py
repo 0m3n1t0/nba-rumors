@@ -340,7 +340,8 @@ def tag_person(person: str, pool: list[dict], ask, ua: str, era, scene_of) -> in
 
 
 def _apply(c: dict, tag: dict) -> None:
-    c["tag"] = {k: tag[k] for k in ("v", "s", "e", "t") if k in tag}
+    # "who": whose photo the tagger was told it is (D38/D43: photo_owner reads it)
+    c["tag"] = {k: tag[k] for k in ("v", "s", "e", "t", "who") if k in tag}
     if tag.get("m"):
         c["moment"] = tag["m"]
     # D15 (run 43317261723: Lendeborg in Michigan colours as "Warriors rookie", with no PRE-NBA

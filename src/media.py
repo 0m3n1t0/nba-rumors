@@ -2145,6 +2145,17 @@ def solo_title(c: dict, person: str) -> bool:
         and not GROUP_TITLE.search(title)
 
 
+def his_by_title(c: dict, person: str) -> bool:
+    """D39 (run 43934705382; his answer 2026-11-16): for a top-up, a photo in his OWN Commons
+    category is his however its title spells his first name (rule 56: "Dejonte Murray", 9 of
+    Murray's photos with his face or back seen were never used); a group title stays out, and the
+    face and jersey checks (topup_ok) still apply."""
+    if solo_title(c, person):
+        return True
+    title = fold(re.sub(r"\.[a-z0-9]{3,4}$", "", c.get("title", ""), flags=re.I))
+    return bool(c.get("own_category")) and not GROUP_TITLE.search(title)
+
+
 def person_photos(person: str, shown: set) -> list[dict]:
     """The person's photos that are safe to use unjudged: basketball photos first. With tags
     (photo_tags.py) also: never one he is not in, never a political, stage, charity, red-carpet or
@@ -2156,7 +2167,7 @@ def person_photos(person: str, shown: set) -> list[dict]:
     # untagged one is never used unjudged: nobody has looked at it.
     ok = [c for c in pool[:photo_tags.MAX_PER_PERSON if tagged else 20]
           if not already_shown(c, shown, c["page"]) and c["page"] not in REJECTED
-          and solo_title(c, person) and photo_tags.fill_ok(c) and (c.get("tag") or not tagged)]
+          and his_by_title(c, person) and photo_tags.fill_ok(c) and (c.get("tag") or not tagged)]
     return sorted(ok, key=photo_tags.fill_rank) if tagged else \
         sorted(ok, key=lambda c: (c.get("team") == "former", not c.get("hoops")))   # D28: a former team after
 

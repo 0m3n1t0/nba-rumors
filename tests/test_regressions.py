@@ -135,6 +135,8 @@ the "Safety tests" step before anything is installed or made.
  76. D37 (his answers): the pictures' people list also finds names with an inner capital (LeBron),
      two initials (JJ, J.J.) and O'/D' (O'Neal): JJ Redick's own lines had Luka's photos; the
      collector's name finder is unchanged
+ 77. D39 (his answer): a top-up may be a photo in his own Commons category whatever the title's
+     spelling ("Dejonte Murray"); a group title stays out; face and jersey checks still apply
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4077,3 +4079,28 @@ class WiderNamesForPictures(unittest.TestCase):
         import collect
         self.assertNotIn("JJ Redick", collect.names("JJ Redick Calls Out Lakers"))
         self.assertNotIn("LeBron James", collect.names("LeBron James scores 40"))
+
+
+class OwnCategoryTopUps(unittest.TestCase):
+    """77. D39 (run 43934705382; his answer 2026-11-16). Murray's beats 2, 4 and 5 ran out of top-up
+    photos (D32 log) while 9 of his own-category photos ("Dejonte Murray (...)", face or back seen)
+    were never used: a top-up needed his exact first name in the title. Rule 56 now counts here too."""
+
+    def test_rule_56_for_top_ups(self):
+        import media
+        own = {"title": "Dejonte Murray (51914823201).jpg", "own_category": True}
+        self.assertTrue(media.his_by_title(own, "Dejounte Murray"))
+        self.assertFalse(media.his_by_title({**own, "own_category": False}, "Dejounte Murray"))
+        self.assertFalse(media.his_by_title({"title": "LaMelo Ball and Dejonte Murray (51915389270).jpg",
+                                             "own_category": True}, "Dejounte Murray"))      # a group: no
+        self.assertTrue(media.his_by_title({"title": "Dejounte Murray 2022.jpg"}, "Dejounte Murray"))
+        self.assertFalse(media.unjudged_ok({**own, "kind": "photo"}, ["Dejounte Murray"]))   # that path unchanged
+
+    def test_the_pool_uses_it(self):
+        import media
+        ph = lambda t, own: {"kind": "photo", "title": t, "page": "p-" + t, "url": "u", "own_category": own,
+                             "tag": {"v": "C", "s": "game", "t": "dribbles"}, "hoops": True}
+        pool = [ph("Dejonte Murray (1).jpg", True), ph("Dejonte Murray (2).jpg", False)]
+        with patch.object(media, "photos", lambda person: pool):
+            got = media.person_photos("Dejounte Murray", set())
+        self.assertEqual([c["title"] for c in got], ["Dejonte Murray (1).jpg"])

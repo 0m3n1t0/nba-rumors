@@ -340,6 +340,16 @@ def people(short: dict) -> list[str]:
 PEOPLE_CHECK = os.environ.get("MEDIA_PEOPLE_CHECK", "1") != "0"
 PERSON_DESC = re.compile(r"basketball|\bnba\b|coach|executive|sports|athlete|broadcaster|analyst|"
                          r"journalist|reporter", re.I)
+# D36 (his answer 2026-11-16): "Sports Illustrated" ("American sports magazine") matched "sports"
+# and a run searched photos of a magazine; a description naming a publication or an organisation
+# is never a person
+NOT_PERSON_DESC = re.compile(r"\b(?:magazine|newspaper|website|network|company|team|league)s?\b", re.I)
+
+
+def is_person_desc(desc: str) -> bool:
+    return bool(PERSON_DESC.search(desc or "")) and not NOT_PERSON_DESC.search(desc or "")
+
+
 _person_cache: dict[str, bool] = {}
 
 
@@ -365,7 +375,7 @@ def real_people(names_list: list[str]) -> list[str] | None:
                 alias[m["from"]] = m["to"]
         good = {pg["title"] for pg in (data.get("pages") or {}).values()
                 if "missing" not in pg and "disambiguation" not in (pg.get("pageprops") or {})
-                and PERSON_DESC.search((pg.get("pageprops") or {}).get("wikibase-shortdesc", ""))}
+                and is_person_desc((pg.get("pageprops") or {}).get("wikibase-shortdesc", ""))}
         # the short description usually holds the birth year ("American basketball player
         # (born 1996)"): it tells our Devin Booker from a namesake "born 1991"
         item = {pg["title"]: (pg.get("pageprops") or {}).get("wikibase_item", "")

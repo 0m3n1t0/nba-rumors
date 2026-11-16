@@ -144,6 +144,8 @@ the "Safety tests" step before anything is installed or made.
  79. D43 (his answer): the photo's own person's name words are no team either ("Tragic Magic" on a
      Magic Johnson photo); the tagger's "who" now reaches the photo, so photo_owner can read it
  80. D40 (his answer): a tie in people() goes to the one named first in the headline
+ 81. D36 (his answer): a Wikipedia description naming a magazine, newspaper, website, network,
+     company, team or league is never a person ("Sports Illustrated")
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4230,3 +4232,32 @@ class TieGoesToTheHeadline(unittest.TestCase):
             for _ in range(5):
                 with patch.object(media, "real_people", real):
                     self.assertEqual(media.people({"headline": head, "beats": []})[0], first)
+
+
+class AMagazineIsNoPerson(unittest.TestCase):
+    """81. D36 (his answer 2026-11-16). Run 43080115985 searched photos of "Sports Illustrated": its
+    Wikipedia description "American sports magazine" matched "sports". Checked on the live
+    descriptions of every name in the kept runs: only Sports Illustrated goes."""
+
+    def test_descriptions(self):
+        import media
+        for d in ("American sports magazine", "American sports website", "Professional basketball league",
+                  "American sports television network", "American basketball team", "American media company"):
+            self.assertFalse(media.is_person_desc(d), d)
+        for d in ("American basketball player (born 1996)", "American sportswriter for ESPN.com (born 1978)",
+                  "American basketball coach (born 1984)", "Nigerian-Canadian sports executive (born 1970)",
+                  "American former basketball player and sports analyst (born 1972)"):
+            self.assertTrue(media.is_person_desc(d), d)
+
+    def test_the_wikipedia_check_uses_it(self):
+        import media
+        pages = {"1": {"title": "Sports Illustrated", "pageprops": {"wikibase-shortdesc": "American sports magazine"}},
+                 "2": {"title": "Jordan Poole", "pageprops": {"wikibase-shortdesc": "American basketball player (born 1999)"}}}
+        answer = json.dumps({"query": {"pages": pages}}).encode()
+        names = ["Sports Illustrated", "Jordan Poole"]
+        for n in names:
+            media._person_cache.pop(n, None)
+        with patch.object(media, "get", lambda url, timeout=30: answer):
+            self.assertEqual(media.real_people(names), ["Jordan Poole"])
+        for n in names:
+            media._person_cache.pop(n, None)

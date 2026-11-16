@@ -296,9 +296,28 @@ def clean(s: str) -> str:
 
 # ---------- what to show (Claude, with a rule-based fallback) ----------
 
+# D37 (run 43934705382; his answers 2026-11-16: all three forms, the pictures' people list only):
+# the collector's name finder needs "Abc Def", so "JJ Redick", "LeBron James" and "Shaquille
+# O'Neal" were never a person and Redick's own lines got Luka's photos. Here a name word may also
+# have an inner capital (LeBron, DeMar, LaMelo, DeAaron), be two initials (JJ, CJ, OG, J.J.) or
+# start with O'/D' (O'Neal, D'Angelo). Fakes are dropped by the Wikipedia check, as for every name.
+_WORD = r"(?:[A-Z][a-z]*[A-Z][a-z]+|[A-Z]{2}|[A-Z]\.[A-Z]\.|[OD]'[A-Z][a-z]+|[A-Z][a-z]+(?:[-'][A-Za-z]+)?)"
+WIDE_NAME = re.compile(rf"(?=(?<![\w.'])({_WORD}) ({_WORD})(?![\w']))")
+
+
+def name_words_ok(name: str) -> bool:
+    from collect import GENERIC, NOT_NAMES, STOPWORDS
+    return name not in NOT_NAMES and not any(w.lower() in GENERIC or w.lower() in STOPWORDS for w in name.split())
+
+
+def people_names(text: str) -> set[str]:
+    """The collector's names plus the D37 forms (pictures only; the collector is unchanged)."""
+    return names(text) | {n for a, b in WIDE_NAME.findall(text or "") if name_words_ok(n := f"{a} {b}")}
+
+
 def people(short: dict) -> list[str]:
     text = short.get("headline", "") + ". " + ". ".join(b.get("say", "") for b in short.get("beats", []))
-    counts = {n: text.count(n) + (5 if n in short.get("headline", "") else 0) for n in names(text)
+    counts = {n: text.count(n) + (5 if n in short.get("headline", "") else 0) for n in people_names(text)
               if not not_a_person(n)}
     ranked = sorted(counts, key=lambda n: -counts[n])
     # Only REAL sports people: a Title Case headline makes fake "names" ("Only Has", "World

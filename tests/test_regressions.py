@@ -132,6 +132,9 @@ the "Safety tests" step before anything is installed or made.
      with his surname" (run 43513168042: "Dejonte Murray" in Dejounte Murray's own category)
  74. D35 (his answer): only a Wikipedia-confirmed name makes another a fragment: the fake "Question
      Joel" no longer drops the real Joel Embiid (run 43513168042: the Short had nobody; 11 of 35)
+ 76. D37 (his answers): the pictures' people list also finds names with an inner capital (LeBron),
+     two initials (JJ, J.J.) and O'/D' (O'Neal): JJ Redick's own lines had Luka's photos; the
+     collector's name finder is unchanged
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4045,3 +4048,32 @@ class WikipediaCareerJoinsWikidata(unittest.TestCase):
         self.assertEqual(self.m.nbay_year("{{nbay|2022|end}}–present"), 2023)
         self.assertEqual(self.m.nbay_year("{{nbay|2024|start}}–present"), 2024)
         self.assertEqual(self.m.nbay_year("2019–2023"), 2019)
+
+
+class WiderNamesForPictures(unittest.TestCase):
+    """76. D37 (run 43934705382; his answers 2026-11-16: all three forms, pictures only). "JJ
+    Redick Calls Out Lakers' Struggles Despite Luka Doncic": the name finder needed "Abc Def", so
+    JJ Redick was nobody and his own lines got Luka's photos (final read: WRONG PICTURE). Kept
+    Shorts also lost LeBron James (3) and Shaquille O'Neal (1). Fakes still go at the Wikipedia check."""
+
+    def test_the_three_forms(self):
+        import media
+        got = media.people_names("JJ Redick, J.J. Redick, LeBron James, DeMar DeRozan, LaMelo Ball, "
+                                 "OG Anunoby, Shaquille O'Neal and D'Angelo Russell")
+        for n in ("JJ Redick", "J.J. Redick", "LeBron James", "DeMar DeRozan", "LaMelo Ball", "OG Anunoby",
+                  "Shaquille O'Neal", "D'Angelo Russell"):
+            self.assertIn(n, got)
+        self.assertEqual(media.people_names("The LeBron era, Lakers LeBron"), set())   # a stopword or a team: never a name
+
+    def test_redick_is_in_his_short(self):
+        import media
+        real = lambda names: [n for n in names if n in {"JJ Redick", "Luka Doncic"}]
+        with patch.object(media, "real_people", real):
+            got = media.people({"headline": "JJ Redick Calls Out Lakers' Struggles Despite Luka Doncic, LA's 12-2 "
+                                            "Record After Win vs. Suns", "beats": [{"say": "Redick called it a trend."}]})
+        self.assertCountEqual(got, ["JJ Redick", "Luka Doncic"])   # a tie: the order is not fixed (D40)
+
+    def test_the_collector_is_unchanged(self):
+        import collect
+        self.assertNotIn("JJ Redick", collect.names("JJ Redick Calls Out Lakers"))
+        self.assertNotIn("LeBron James", collect.names("LeBron James scores 40"))

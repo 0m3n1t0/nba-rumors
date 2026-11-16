@@ -463,7 +463,80 @@ def teams_of(person: str) -> tuple[str, set[str]]:
                                         for d in first)
     except Exception as exc:
         print(f"[!] Wikidata teams failed for {person}: {exc}")
+    add_wiki_career(person, q)
     return _teams[q]
+
+
+def add_wiki_career(person: str, q: str) -> None:
+    """D34 (run 43513168042; his answers 2026-11-16). Wikidata can miss NBA spells (Dejounte Murray
+    and Jeremiah Fears: only a college team, so no jersey law at all; Kyrie Irving: no Nets), so
+    his English Wikipedia infobox is ALWAYS read too, and merged:
+    - every NBA team of his playing career (team1, team2, ...; college, G League and abroad are not
+      NBA teams) joins his career;
+    - his current team is the playing spell that ends with "present" (a coach's "team =" is his
+      coaching job, not a jersey); where it differs from Wikidata's, Wikipedia wins, and the year
+      that spell began counts ("2024 start" = 2024, "2022 end" = the 2022-23 season's second half
+      = 2023: Kyrie moved in February);
+    - his NBA debut year is "career_start", only when Wikidata has none (a year, never a day)."""
+    title = _wiki_title.get(person, "")
+    if not title or not q:
+        return
+    try:
+        data = json.loads(get("https://en.wikipedia.org/w/api.php?" + urllib.parse.urlencode(
+            {"action": "query", "format": "json", "prop": "revisions", "rvprop": "content", "rvslots": "main",
+             "rvsection": 0, "redirects": 1, "titles": title}), 30)).get("query", {})
+        page = next(iter((data.get("pages") or {}).values()), {})
+        text = (((page.get("revisions") or [{}])[0].get("slots") or {}).get("main") or {}).get("*", "")
+    except Exception as exc:
+        print(f"[!] Wikipedia career failed for {person}: {exc}")
+        return
+    teams, current, since, start = wiki_career(text)
+    if not teams:
+        return                         # no NBA spell on the page: nothing to add
+    career = _career.setdefault(q, set())
+    career |= teams
+    if start and q not in _nba_debut:
+        _nba_debut[q] = start
+    old = _teams.get(q, ("", set()))[0]
+    if current and current != old:
+        _team_since.pop(q, None)
+        if since:
+            _team_since[q] = since
+    now = current or old
+    _teams[q] = (now, career - {now}) if now else ("", set())
+
+
+def nbay_year(years: str) -> int:
+    """The first year of an infobox "years" value: "{{nbay|2024|start}}" -> 2024, "{{nbay|2022|end}}"
+    -> 2023 (the second half of the 2022-23 season), a plain "2016" -> 2016; 0 when none."""
+    m = re.search(r"\{\{\s*nbay\s*\|\s*(\d{4})\s*\|\s*(start|end)", years or "", re.I)
+    if m:
+        return int(m.group(1)) + (1 if m.group(2).lower() == "end" else 0)
+    m = re.search(r"\b(\d{4})\b", years or "")
+    return int(m.group(1)) if m else 0
+
+
+def wiki_career(text: str) -> tuple[set[str], str, int, int]:
+    """(his NBA teams, the NBA team of the spell ending "present", the year it began, career_start)
+    from an infobox's wikitext (playing career fields only: teamN / yearsN)."""
+    fields = {m.group(1).lower(): m.group(2).strip()
+              for m in re.finditer(r"^\s*\|\s*([a-z_]+\d*)\s*=\s*(.*?)\s*$", text or "", re.M | re.I)}
+
+    def team_name(v: str) -> str:
+        link = re.search(r"\[\[([^\]|]+)", v)
+        return fold((link.group(1) if link else re.sub(r"<[^>]*>|\{\{[^}]*\}\}", "", v)).strip())
+    teams, current, since = set(), "", 0
+    for key, value in fields.items():
+        m = re.fullmatch(r"team(\d+)", key)
+        name = team_name(value) if m else ""
+        if name not in NBA_TEAMS:
+            continue
+        teams.add(name)
+        years = fields.get(f"years{m.group(1)}", "")
+        if re.search(r"present", years, re.I):
+            current, since = name, nbay_year(years)
+    start = re.search(r"\b(\d{4})\b", fields.get("career_start", ""))
+    return teams, current, since, int(start.group(1)) if start else 0
 
 
 def career_teams(person: str) -> set[str]:

@@ -132,6 +132,10 @@ the "Safety tests" step before anything is installed or made.
      with his surname" (run 43513168042: "Dejonte Murray" in Dejounte Murray's own category)
  74. D35 (his answer): only a Wikipedia-confirmed name makes another a fragment: the fake "Question
      Joel" no longer drops the real Joel Embiid (run 43513168042: the Short had nobody; 11 of 35)
+ 75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
+     career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
+     team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
+     career_start is the debut year only when Wikidata has none; a coach's "team =" is ignored
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3914,3 +3918,130 @@ class OnlyRealNamesMakeFragments(unittest.TestCase):
         got = self.people(self.HEAD, ["Jayson Tatum walked past."], lambda names: None)
         self.assertIn("Jayson Tatum", got)
         self.assertNotIn("Tatum Handshake", got)
+
+
+class WikipediaCareerJoinsWikidata(unittest.TestCase):
+    """75. D34 (run 43513168042; his answers 2026-11-16). Wikidata had only a college team for
+    Dejounte Murray and Jeremiah Fears (careers came back empty, so the gate's jersey law checked
+    nothing) and no Nets spell for Kyrie Irving. The English Wikipedia infobox (real lines below)
+    is now always read too and merged."""
+
+    MURRAY = """{{Infobox basketball biography
+| team = New Orleans Pelicans
+| draft_team = [[San Antonio Spurs]]
+| career_start = 2016
+| years1 = {{nbay|2016|start}}–{{nbay|2021|end}}
+| team1 = [[San Antonio Spurs]]
+| years2 =
+| team2 =
+| years3 = {{nbay|2022|start}}–{{nbay|2023|end}}
+| team3 = [[Atlanta Hawks]]
+| years4 = {{nbay|2024|start}}–present
+| team4 = [[New Orleans Pelicans]]
+}}"""
+    KYRIE = """| career_start   = 2011
+| years1         = {{nbay|2011|start}}–{{nbay|2016|end}}
+| team1          = [[Cleveland Cavaliers]]
+| years3         = {{nbay|2019|start}}–{{nbay|2022|end}}
+| team3          = [[Brooklyn Nets]]
+| years4         = {{nbay|2022|end}}–present
+| team4          = [[Dallas Mavericks]]"""
+    COACH = """| team = Milwaukee Bucks
+| career_start = 1983
+| years1 = {{nbay|1983|start}}–{{nbay|1990|end}}
+| team1 = [[Atlanta Hawks]]
+| coach_years1 = 2024–present
+| coach_team1 = [[Milwaukee Bucks]]"""
+
+    def setUp(self):
+        import media
+        self.m = media
+        keep = ("_wikidata", "_teams", "_career", "_team_since", "_nba_debut", "_nba_debut_day", "_wiki_title")
+        self.saved = {k: dict(getattr(media, k)) for k in keep}
+        self.saved_get = media.get
+        for k in keep:
+            getattr(media, k).clear()
+        P54 = {"Q1": [("Q90", "+2015-01-01T00:00:00Z", True)],                   # Murray: a college only
+               "Q2": [("Q91", "+2011-06-23T00:00:00Z", True), ("Q92", "+2017-08-22T00:00:00Z", True),
+                      ("Q93", "+2023-02-06T00:00:00Z", False)],                   # Kyrie: no Nets
+               "Q3": [("Q94", "+2019-07-01T00:00:00Z", False)],                   # stale: still a Warrior
+               "Q4": [],
+               "Q5": [("Q94", "+2012-07-01T00:00:00Z", False)], "Q4b": []}                   # a Warrior since 2012
+        labels = {"Q90": "Catholic University Cardinals men's basketball", "Q91": "Cleveland Cavaliers",
+                  "Q92": "Boston Celtics", "Q93": "Dallas Mavericks", "Q94": "Golden State Warriors"}
+        pages = {"Dejounte Murray": self.MURRAY, "Kyrie Irving": self.KYRIE, "Doc Rivers": self.COACH,
+                 "Jordan Poole": "| team1 = [[Golden State Warriors]]\n| years1 = 2019–2023\n"
+                                 "| team2 = [[Washington Wizards]]\n| years2 = {{nbay|2023|start}}–{{nbay|2024|end}}\n"
+                                 "| team3 = [[New Orleans Pelicans]]\n| years3 = {{nbay|2025|start}}–present\n"
+                                 "| career_start = 2018",                         # Wikidata says 2019: it stays
+                 "Steady Player": "| career_start = 2011\n| team1 = [[Santa Cruz Warriors]]\n| years1 = 2011–2012\n"
+                                  "| team2 = [[Golden State Warriors]]\n| years2 = {{nbay|2013|start}}–present",
+                 "Euro Star": "| career_start = 2009\n| team1 = [[Real Madrid Baloncesto]]\n| years1 = 2009–present"}
+
+        def get(url, timeout=30):
+            q = dict(urllib.parse.parse_qsl(url.split("?", 1)[1]))
+            if q.get("action") == "wbgetclaims":
+                return json.dumps({"claims": {"P54": [
+                    {"mainsnak": {"datavalue": {"value": {"id": t}}}, "rank": "normal",
+                     "qualifiers": {"P580": [{"datavalue": {"value": {"time": st}}}],
+                                    **({"P582": [{}]} if ended else {})}} for t, st, ended in P54[q["entity"]]]}}).encode()
+            if q.get("action") == "wbgetentities":
+                return json.dumps({"entities": {i: {"labels": {"en": {"value": labels[i]}}}
+                                                for i in q["ids"].split("|") if i in labels}}).encode()
+            if q.get("prop") == "revisions":
+                return json.dumps({"query": {"pages": {"1": {"revisions": [{"slots": {"main": {"*": pages[q["titles"]]}}}]}}}}).encode()
+            raise OSError("unexpected")
+        media.get = get
+        for person, item in (("Dejounte Murray", "Q1"), ("Kyrie Irving", "Q2"), ("Jordan Poole", "Q3"), ("Doc Rivers", "Q4"),
+                             ("Steady Player", "Q5"), ("Euro Star", "Q4b")):
+            media._wikidata[person] = item
+            media._wiki_title[person] = person
+
+    def tearDown(self):
+        self.m.get = self.saved_get
+        for k, v in self.saved.items():
+            getattr(self.m, k).clear()
+            getattr(self.m, k).update(v)
+
+    def test_murray_gets_his_nba_teams(self):
+        m = self.m
+        self.assertEqual(m.teams_of("Dejounte Murray"), ("new orleans pelicans", {"san antonio spurs", "atlanta hawks"}))
+        self.assertEqual(m.career_teams("Dejounte Murray"), {"new orleans pelicans", "san antonio spurs", "atlanta hawks"})
+        self.assertEqual(m._team_since["Q1"], 2024)
+        self.assertEqual(m._nba_debut["Q1"], 2016)                 # Wikidata had no NBA start
+        import compliance as C
+        self.assertFalse(C.jersey_ok("utah jazz", m.career_teams("Dejounte Murray")))   # the law works again
+
+    def test_kyrie_gets_the_nets_and_keeps_wikidata_dates(self):
+        m = self.m
+        self.assertEqual(m.teams_of("Kyrie Irving"), ("dallas mavericks", {"cleveland cavaliers", "boston celtics", "brooklyn nets"}))
+        self.assertEqual(m._team_since["Q2"], 2023)                # same team: Wikidata's dated start stays
+        self.assertEqual(m._nba_debut["Q2"], 2011)
+
+    def test_wikipedia_wins_on_the_current_team(self):
+        m = self.m
+        self.assertEqual(m.teams_of("Jordan Poole")[0], "new orleans pelicans")
+        self.assertEqual(m._team_since["Q3"], 2025)
+        self.assertIn("golden state warriors", m.teams_of("Jordan Poole")[1])
+
+    def test_a_coach_team_is_not_his_jersey(self):
+        m = self.m
+        self.assertEqual(m.teams_of("Doc Rivers"), ("", set()))   # played long ago: no current team
+        self.assertEqual(m.career_teams("Doc Rivers"), {"atlanta hawks"})
+
+    def test_same_team_keeps_wikidata_and_only_nba_teams_count(self):
+        m = self.m
+        self.assertEqual(m.teams_of("Steady Player"), ("golden state warriors", set()))   # G League team left out
+        self.assertEqual(m._team_since["Q5"], 2012)                # same team: Wikidata's start, not 2013
+        m.teams_of("Jordan Poole")
+        self.assertEqual(m._nba_debut["Q3"], 2019)                 # Wikidata's debut stays (the page says 2018)
+
+    def test_no_nba_spell_adds_nothing(self):
+        m = self.m
+        self.assertEqual(m.teams_of("Euro Star"), ("", set()))
+        self.assertNotIn("Q4b", m._nba_debut)                      # a career abroad is no NBA debut
+
+    def test_season_years(self):
+        self.assertEqual(self.m.nbay_year("{{nbay|2022|end}}–present"), 2023)
+        self.assertEqual(self.m.nbay_year("{{nbay|2024|start}}–present"), 2024)
+        self.assertEqual(self.m.nbay_year("2019–2023"), 2019)

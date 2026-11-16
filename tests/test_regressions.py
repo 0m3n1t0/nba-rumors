@@ -130,6 +130,8 @@ the "Safety tests" step before anything is installed or made.
      Short with no recognised person says so (run 43513168042: Embiid's last two beats, silent)
  73. D33: replay.py applies rule 56 like the pipeline: an own-category photo is never "another man
      with his surname" (run 43513168042: "Dejonte Murray" in Dejounte Murray's own category)
+ 74. D35 (his answer): only a Wikipedia-confirmed name makes another a fragment: the fake "Question
+     Joel" no longer drops the real Joel Embiid (run 43513168042: the Short had nobody; 11 of 35)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3874,3 +3876,41 @@ class ReplayKnowsOwnCategory(unittest.TestCase):
         self.assertEqual(replay.picture_findings([other], {}),
                          {"another man with his surname: Isaiah Thomas (50639077836).jpg (as Isiah Thomas)"})
         self.assertTrue(replay.picture_findings([{**own, "own_category": False}], {}))
+
+
+class OnlyRealNamesMakeFragments(unittest.TestCase):
+    """74. D35 (his answer 2026-11-16: "only among the confirmed ones"). Run 43513168042: the Title
+    Case headline "Hoops Fans Question Joel Embiid's Knee Scare" made the fake name "Question Joel";
+    the fragment rule ran BEFORE the Wikipedia check and dropped the real "Joel Embiid" (his first
+    name is the fake's last word), then Wikipedia dropped the fakes: nobody, so no top-up photos and
+    no jersey law. 11 of 35 kept Shorts lost a real person so (Curry, Luka, Tatum, Embiid...). Now
+    Wikipedia first, and the fragment rule only among the names it confirmed."""
+
+    REAL = {"Joel Embiid", "Rudy Gobert", "Ja'Kobe Walter"}
+
+    def people(self, headline, beats, real):
+        import media
+        with patch.object(media, "real_people", real):
+            return media.people({"headline": headline, "beats": [{"say": b} for b in beats]})
+
+    def confirmed(self, names):
+        return [n for n in names if n in self.REAL]
+
+    def test_a_fake_name_never_drops_a_real_one(self):
+        got = self.people("\u2018Most Egregious Flopper in NBA History,\u2019 \u2018Best LeBron (James) Imitation\u2019 "
+                          "\u2014 Hoops Fans Question Joel Embiid\u2019s Knee Scare After Dunk vs. Raptors",   # the run's headline
+                          ["Walter's right knee hit his, and Embiid pointed to it."], self.confirmed)
+        self.assertEqual(got, ["Joel Embiid"])
+
+    HEAD = "Jayson Tatum Handshake Snub Goes Viral"     # run 43395656602: "Tatum Handshake"
+
+    def test_a_real_name_still_makes_a_fragment(self):
+        # were "Tatum Handshake" ever confirmed too, it is still dropped as a fragment of Jayson Tatum
+        real = lambda names: [n for n in names if n in {"Jayson Tatum", "Tatum Handshake"}]
+        got = self.people(self.HEAD, ["Jayson Tatum walked past."], real)
+        self.assertEqual(got, ["Jayson Tatum"])
+
+    def test_wikipedia_down_works_as_before(self):
+        got = self.people(self.HEAD, ["Jayson Tatum walked past."], lambda names: None)
+        self.assertIn("Jayson Tatum", got)
+        self.assertNotIn("Tatum Handshake", got)

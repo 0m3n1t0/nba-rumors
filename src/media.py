@@ -300,16 +300,19 @@ def people(short: dict) -> list[str]:
     text = short.get("headline", "") + ". " + ". ".join(b.get("say", "") for b in short.get("beats", []))
     counts = {n: text.count(n) + (5 if n in short.get("headline", "") else 0) for n in names(text)
               if not not_a_person(n)}
-    # "Rudy Gobert" and "Gobert Again": a "name" that starts with another name's surname is a
-    # fragment of the headline, not a second person
-    surnames = {fold(n).split()[-1] for n in counts}
-    counts = {n: c for n, c in counts.items() if fold(n).split()[0] not in surnames}
     ranked = sorted(counts, key=lambda n: -counts[n])
     # Only REAL sports people: a Title Case headline makes fake "names" ("Only Has", "World
     # Reacts", "York Times"), and a fake name finds random photos (a doll, a beach, an arch).
     # Wikipedia decides; if Wikipedia cannot be reached, the old list is used as before.
     real = real_people(ranked)
-    return (ranked if real is None else real)[:4]
+    pool = ranked if real is None else real
+    # "Rudy Gobert" and "Gobert Again": a "name" that starts with another name's surname is a
+    # fragment of the headline, not a second person. D35 (his answer 2026-11-16): only a CONFIRMED
+    # name can make another a fragment, so the rule runs after Wikipedia, among the real names.
+    # Run 43513168042: the fake "Question Joel" ("Fans Question Joel Embiid") had dropped the real
+    # Joel Embiid, and the Short had nobody (11 of 35 kept Shorts lost a real person this way).
+    surnames = {fold(n).split()[-1] for n in pool}
+    return [n for n in pool if fold(n).split()[0] not in surnames][:4]
 
 
 PEOPLE_CHECK = os.environ.get("MEDIA_PEOPLE_CHECK", "1") != "0"

@@ -137,6 +137,10 @@ the "Safety tests" step before anything is installed or made.
      collector's name finder is unchanged
  77. D39 (his answer): a top-up may be a photo in his own Commons category whatever the title's
      spelling ("Dejonte Murray"); a group title stays out; face and jersey checks still apply
+ 78. D38 + D41 + D42 (his answers): Claude-scored photos follow the top-ups' team rule (Green in a
+     Rockets jersey on a Suns line); a team word counts only with a capital and never as a word of
+     a story person's name ("Tragic Magic"); a year before his current spell is his past (Kyrie's
+     Cavs on "the 2016 title"), so it is no time named
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4104,3 +4108,82 @@ class OwnCategoryTopUps(unittest.TestCase):
         with patch.object(media, "photos", lambda person: pool):
             got = media.person_photos("Dejounte Murray", set())
         self.assertEqual([c["title"] for c in got], ["Dejonte Murray (1).jpg"])
+
+
+class ScoredPhotosFitTheLine(unittest.TestCase):
+    """78. D38 (run 43934705382; his answers 2026-11-16): a photo Claude scored must also fit the
+    team or time its line names (the top-ups' rule): Jalen Green in a Rockets jersey on "Phoenix
+    reportedly has interest", JJ Redick in Magic and 76ers jerseys on "his own Lakers". Replayed on
+    309 scored photos: two gaps of the rule hit good photos and are closed: D41 a team word counts
+    only with a capital and not as a word of a story person's name; D42 a year before his current
+    spell began is his past ("They won the 2016 title" may show Kyrie as a Cavalier)."""
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = (media.teams_of, dict(media._wikidata), dict(media._team_since))
+        cur = {"Jalen Green": ("phoenix suns", 2025), "Kyrie Irving": ("dallas mavericks", 2023), "JJ Redick": ("", 0)}
+        media.teams_of = lambda p: (cur.get(p, ("", 0))[0], set())
+        for p, (_, y) in cur.items():
+            media._wikidata[p] = "Q-" + p
+            if y:
+                media._team_since["Q-" + p] = y
+
+    def tearDown(self):
+        m, s = self.m, self.saved
+        m.teams_of = s[0]
+        m._wikidata.clear(); m._wikidata.update(s[1])
+        m._team_since.clear(); m._team_since.update(s[2])
+
+    @staticmethod
+    def ph(title, t, team=""):
+        return {"kind": "photo", "title": title, "team": team, "tag": {"v": "C", "s": "game", "t": t}}
+
+    def test_the_run_cases(self):
+        fits = self.m.team_fits
+        suns = "Phoenix reportedly has interest... but a Suns source told The Athletic there's no talk of a Jalen Green swap."
+        self.assertFalse(fits(self.ph("Jalen Green with the Houston Rockets", "shoots, Rockets jersey", "former"), suns, "Jalen Green"))
+        self.assertTrue(fits(self.ph("Jalen Green 2026", "drives, Suns jersey", "current"), suns, "Jalen Green"))
+        lakers = "JJ Redick just called out his own Lakers after eight straight wins."
+        self.assertFalse(fits(self.ph("J. J. Redick.jpg", "shoots, Magic jersey"), lakers, "JJ Redick", ["JJ Redick"]))
+        self.assertTrue(fits({"kind": "video", "title": "clip"}, lakers, "JJ Redick"))          # a clip: no jersey read
+
+    def test_d41_a_team_word_needs_a_capital_and_is_no_name(self):
+        t = self.m.teams_in
+        self.assertEqual(t("But it got worse: the headlines called him Tragic Magic.", ["Magic Johnson"]), set())
+        self.assertEqual(t("in the heat of it, for 5 bucks"), set())
+        self.assertEqual(t("The Heat beat the Bucks"), {"miami heat", "milwaukee bucks"})
+        self.assertEqual(t("Are the Cavs the same?"), {"cleveland cavaliers"})
+        self.assertEqual(t("the 76ers lost"), {"philadelphia 76ers"})
+
+    def test_d42_a_past_year_is_his_past(self):
+        m = self.m
+        line = "They won the 2016 title, but Kyrie requested a 2017 trade."
+        cavs = self.ph("Kyrie Irving 2015", "dribbles, Cavaliers jersey")
+        self.assertFalse(m.names_a_time(line, "Kyrie Irving"))
+        self.assertTrue(m.team_fits(cavs, line, "Kyrie Irving"))
+        self.assertTrue(m.names_a_time("In 2024 he carried Dallas.", "Kyrie Irving"))      # from 2023 on: today's team
+        self.assertFalse(m.team_fits(cavs, "In 2024 he carried them.", "Kyrie Irving"))
+        self.assertTrue(m.names_a_time("Back in 2016.", "Nobody Known"))                   # start unknown: as before
+        self.assertTrue(m.names_a_time("He is great now.", "Kyrie Irving"))
+
+    def test_his_spell_start_is_looked_up(self):
+        m = self.m
+        m._team_since.clear()
+        m.teams_of = lambda p: (m._team_since.__setitem__("Q-" + p, 2023), ("dallas mavericks", set()))[1]
+        cavs = self.ph("Kyrie Irving 2015", "dribbles, Cavaliers jersey")
+        self.assertTrue(m.team_fits(cavs, "They won the 2016 title.", "Kyrie Irving"))
+
+    def test_every_scored_path_uses_it(self):
+        src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
+        self.assertIn("order = [j for j in order if team_ok(j)]", src)
+        self.assertIn("scores.get(j, 0) >= ALT_MIN and team_ok(j)]", src)
+        self.assertIn("scores.get(j, 0) >= SPARE_MIN and team_ok(j)]", src)
+        self.assertIn("team_fits(cands[j], line, photo_owner(cands[j], who4), who4)", src)
+        self.assertIn('topup_ok(c, lines[i] if i < len(lines) else "", person, who or [])', src)
+
+    def test_photo_owner(self):
+        o = self.m.photo_owner
+        self.assertEqual(o({"tag": {"who": "Jalen Green"}, "title": "x"}, []), "Jalen Green")
+        self.assertEqual(o({"title": "Jalen Green 2022.jpg"}, ["Dejounte Murray", "Jalen Green"]), "Jalen Green")
+        self.assertEqual(o({"title": "Murray and Green.jpg"}, ["Dejounte Murray", "Jalen Green"]), "")

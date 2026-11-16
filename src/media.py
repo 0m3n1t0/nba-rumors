@@ -1841,6 +1841,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
         shown: set = set()  # nothing repeats inside one Short
         from collections import Counter
         scenes: Counter = Counter()  # photos shown per scene (photographer + day, see scene_of)
+        who4 = people(short)[:4]
         for i, cands in enumerate(per_beat):
             choice = picks.get(i, {})
             order = list(range(len(cands)))
@@ -1861,6 +1862,12 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 order = [j for j in order if unjudged_ok(cands[j], people(short)[:4])]
             else:
                 order = ranked
+            # D38 (his answer 2026-11-16): a scored photo must fit the team or time the line names,
+            # by the same rule as the top-ups (team_fits): the first shot, the second shots, the spares
+            line = beats[i].get("say", "") if i < len(beats) else ""
+            team_ok = (lambda j: team_fits(cands[j], line, photo_owner(cands[j], who4), who4)) if choice \
+                else (lambda j: True)
+            order = [j for j in order if team_ok(j)]
             k = ranked[0] + 1 if ranked else None
             chosen = None
             for idx in order:
@@ -1896,7 +1903,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             chosen and chosen.setdefault("alts", [])
             if need > 0:
                 # the second shot: the next most relevant (6+), a clip when equally relevant
-                fits = [j for j in ranked if scores.get(j, 0) >= ALT_MIN]   # already in who-first order
+                fits = [j for j in ranked if scores.get(j, 0) >= ALT_MIN and team_ok(j)]   # already in who-first order
                 fits = spread_scenes(fresh_first(fits, cands, tier, scores, scenes),   # ties: a new scene first
                                      cands, tier, scores, scenes)                       # a full scene waits
                 for j in fits:
@@ -1925,7 +1932,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             # score, for the top-ups of a long beat; only after them an unscored photo (fill_empty)
             if chosen and choice:
                 # his answers (2026-11-14): 8+ only (the person the line is about), clips too, by score
-                fits = [j for j in ranked if scores.get(j, 0) >= SPARE_MIN]
+                fits = [j for j in ranked if scores.get(j, 0) >= SPARE_MIN and team_ok(j)]
                 chosen["_spare"] = [{**{k2: v for k2, v in cands[j].items() if k2 not in ("score", "thumb", "frames", "preview")},
                                      "match": int(scores[j])}
                                     for j in fits if not already_shown(cands[j], shown, cands[j].get("id") or cands[j]["page"])]
@@ -2173,18 +2180,43 @@ def person_photos(person: str, shown: set) -> list[dict]:
 
 
 # a line that names a team or a time ("the Cavs", "in 2018", "this season", "last year", "now")
-LINE_TEAM_OR_TIME = re.compile(r"\b(" + "|".join(sorted({re.escape(w) for t, ws in NBA_TEAMS.items() for w in [t] + ws},
-                                                         key=len, reverse=True))
-                               + r")\b|\b(?:19|20)\d\d\b|\b(?:this|last|next) (?:season|year)\b|\bnow\b|\btonight\b|\btoday\b", re.I)
+TEAM_WORD = re.compile(r"\b(" + "|".join(sorted({re.escape(w) for t, ws in NBA_TEAMS.items() for w in [t] + ws},
+                                                key=len, reverse=True)) + r")\b", re.I)
+LINE_YEAR = re.compile(r"\b((?:19|20)\d\d)\b")
+LINE_NOW = re.compile(r"\b(?:this|last|next) (?:season|year)\b|\bnow\b|\btonight\b|\btoday\b", re.I)
 
 
-def teams_in(line: str) -> set[str]:
-    """The NBA teams a line names (full names): "the Cavs" -> {"cleveland cavaliers"}."""
-    f = fold(line or "")
-    return {t for t, ws in NBA_TEAMS.items() if any(re.search(rf"\b{re.escape(w)}\b", f) for w in [t] + ws)}
+def keep_case(s: str) -> str:
+    """Accents off, capitals kept ("Dončić" -> "Doncic")."""
+    import unicodedata
+    return "".join(ch for ch in unicodedata.normalize("NFKD", s or "") if not unicodedata.combining(ch))
 
 
-def topup_ok(c: dict, line: str, person: str) -> bool:
+def teams_in(line: str, names: list[str] | tuple = ()) -> set[str]:
+    """The NBA teams a line names (full names): "the Cavs" -> {"cleveland cavaliers"}.
+    D41 (his answer 2026-11-16): a team word counts only when written with a capital ("the Heat",
+    not "in the heat"; "bucks" may be dollars) and never as a word of a story person's name or
+    nickname ("Tragic Magic" for Magic Johnson is not the Orlando Magic)."""
+    text = keep_case(line)
+    for n in names or ():
+        for w in keep_case(n).split():
+            text = re.sub(rf"\b{re.escape(w)}\b", " ", text, flags=re.I)
+    words = {m.group(1).lower() for m in TEAM_WORD.finditer(text) if m.group(1)[0].isupper() or m.group(1)[0].isdigit()}
+    return {t for t, ws in NBA_TEAMS.items() if words & {t, *ws}}
+
+
+def names_a_time(line: str, person: str) -> bool:
+    """D42 (his answer 2026-11-16): "now", "tonight", "today", "this/last/next season/year", or a
+    year from the one he joined today's team on. A year BEFORE that ("They won the 2016 title" for
+    Kyrie, a Maverick since 2023) is his past, so it counts as no time named. When that start year
+    is unknown, a year still counts as a time (as before)."""
+    if LINE_NOW.search(line or ""):
+        return True
+    since = _team_since.get(_wikidata.get(person, ""), 0) if person else 0
+    return any(not since or int(y) >= since for y in LINE_YEAR.findall(line or ""))
+
+
+def topup_ok(c: dict, line: str, person: str, names: list[str] | tuple = ()) -> bool:
     """D30 (owner, 2026-11-14: "team and face are both important and both must be right"; his
     answers the same day). An unscored top-up must pass BOTH:
     - he is in it, face seen or from behind (tag "C" or "B");
@@ -2193,14 +2225,23 @@ def topup_ok(c: dict, line: str, person: str) -> bool:
       year", a year) allows today's team or no team; a line naming neither allows a former team
       too (the agreed picture rules). Run 43485568700: Mitchell in a Jazz jersey on "Are the Cavs
       the same failing team?"."""
-    t = c.get("tag") or {}
-    if t.get("v") not in ("C", "B"):
+    if (c.get("tag") or {}).get("v") not in ("C", "B"):
         return False
-    if not LINE_TEAM_OR_TIME.search(fold(line or "")):
+    return team_fits(c, line, person, names)
+
+
+def team_fits(c: dict, line: str, person: str, names: list[str] | tuple = ()) -> bool:
+    """The team part of D30, for every photo (D38, his answer 2026-11-16: Claude-scored picks too;
+    run 43934705382 showed Jalen Green in a Rockets jersey on a Suns line). A clip has no tag and no
+    team mark, so it always fits."""
+    t = c.get("tag") or {}
+    if person:
+        teams_of(person)                     # his current spell's start year (names_a_time)
+    named = teams_in(line, names)
+    if not named and not names_a_time(line, person):
         return True
     if c.get("team") == "pre-nba":
         return False
-    named = teams_in(line)
     jersey, current = jersey_team(t), (teams_of(person)[0] if person else "")
     if named:
         if jersey:
@@ -2215,6 +2256,16 @@ def report_why(name: str, i: int, what: str, why: dict) -> None:
     """D32: one log line per beat left without a new picture, with every reason counted."""
     reasons = ", ".join(f"{r} x{n}" for r, n in (why.get(i) or Counter()).most_common()) or "no candidate at all"
     print(f"[i] {name} beat {i}: {what} ({reasons})")
+
+
+def photo_owner(c: dict, who: list[str]) -> str:
+    """Whose photo this is: its tag's person, else the one story person whose surname its title names."""
+    tagged = (c.get("tag") or {}).get("who") or ""
+    if tagged:
+        return tagged
+    title = fold(c.get("title", ""))
+    hit = [p for p in who if re.search(rf"\b{re.escape(fold(p).split()[-1])}\b", title)]
+    return hit[0] if len(hit) == 1 else ""
 
 
 def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str] | None = None,
@@ -2304,7 +2355,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                 if already_shown(c, shown, c["page"]):
                     skip(i, "already shown")
                     continue
-                if not topup_ok(c, lines[i] if i < len(lines) else "", person):
+                if not topup_ok(c, lines[i] if i < len(lines) else "", person, who or []):
                     skip(i, "face or jersey does not fit")
                     continue                   # D30: his face clearly seen AND the right jersey, both
                 if scene_full(c, scenes) and not full_ok:

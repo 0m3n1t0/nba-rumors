@@ -126,6 +126,10 @@ the "Safety tests" step before anything is installed or made.
  70. D30 (owner): top-ups by relevance - photos and clips Claude scored 8+ for the beat first,
      best first; an unscored one only after them, only if he is seen (face or from behind) AND
      the jersey fits the line (a named team allows that team; a time only: today's team)
+ 72. D32: a beat left without a new picture says why in the log (each reason counted), and a
+     Short with no recognised person says so (run 43513168042: Embiid's last two beats, silent)
+ 73. D33: replay.py applies rule 56 like the pipeline: an own-category photo is never "another man
+     with his surname" (run 43513168042: "Dejonte Murray" in Dejounte Murray's own category)
  24. Openverse: a 504 (a search new to it) is retried 6 times over ~2 minutes (runs 43027675858,
      43066151290: three quick tries, every search lost)
  22. five articles, read with no time limit (only a site silent for 5 min is left, after a second
@@ -3787,3 +3791,86 @@ class HisAnswersOnTheOlderRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FillSaysWhy(unittest.TestCase):
+    """72. D32 (run 43513168042): Embiid's last two beats kept one picture for about 12 s and the log
+    said nothing. Now every beat left without a new picture prints its reasons, counted; and a
+    Short with no recognised person says so at once. Logging only: the pictures do not change."""
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = {k: getattr(media, k) for k in ("person_photos", "download", "picture_hash", "image_ok",
+                                                      "teams_of", "beat_seconds", "spoken")}
+        media.download = lambda url, path, timeout=60: (Path(path).write_text("x"), True)[1]
+        media.image_ok = lambda path: True
+        media.picture_hash = lambda path: None
+        media.teams_of = lambda person: ("philadelphia 76ers", set())
+        self.folder = media.ROOT / "data" / "_test_fillwhy"
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(self.m, k, v)
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+    def run_fill(self, items, who, photos):
+        import io
+        from contextlib import redirect_stdout
+        m = self.m
+        line = "Was Embiid's knee scare real, or did he flop?"
+        m.spoken = lambda short: [{"say": line}] * len(items)
+        m.beat_seconds = lambda short, i: 6.0
+        m.person_photos = lambda person, shown: list(photos)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            got = m.fill_empty(items, len(items), self.folder, set(), who,
+                               {"_name": "short_2", "beats": [{"say": line}] * len(items)})
+        return got, out.getvalue()
+
+    @staticmethod
+    def ph(title, v="C"):
+        return {"kind": "photo", "title": title, "page": "https://commons.wikimedia.org/wiki/File:" + title,
+                "url": "u-" + title, "author": "a-" + title, "team": "", "tag": {"v": v, "s": "game", "t": "shoots"}}
+
+    def test_no_person_is_said(self):
+        got, log = self.run_fill([None, None], [], [])
+        self.assertEqual(got, [None, None])
+        self.assertIn("[!] short_2: no person recognised in the story", log)
+        self.assertIn("[i] short_2 beat 0: no picture (no person recognised x1)", log)
+        self.assertIn("[i] short_2 beat 1: no picture (no person recognised x1)", log)
+
+    def test_each_reason_counted(self):
+        got, log = self.run_fill([None], ["Joel Embiid"], [self.ph("Joel Embiid far", "S"), self.ph("Joel Embiid crowd", "S")])
+        self.assertIsNone(got[0])
+        self.assertIn("[i] short_2 beat 0: no picture (face or jersey does not fit x2, no photo of Joel Embiid left x1)", log)
+        self.assertNotIn("[!]", log)
+
+    def test_top_ups_missing_say_why(self):
+        first = {**self.ph("Joel Embiid dunk"), "file": "data/x.jpg", "match": 8, "alts": []}
+        got, log = self.run_fill([first], ["Joel Embiid"], [self.ph("Joel Embiid bench", "S")])
+        self.assertEqual(got[0]["alts"], [])
+        self.assertIn("[i] short_2 beat 0: 1 of 1 top-ups missing (face or jersey does not fit x1, "
+                      "no photo of Joel Embiid left x1)", log)
+
+    def test_a_filled_beat_says_nothing(self):
+        got, log = self.run_fill([None], ["Joel Embiid"], [self.ph("Joel Embiid dunk"), self.ph("Joel Embiid free throw")])
+        self.assertEqual(got[0]["title"], "Joel Embiid dunk")              # 6 s: the photo and one top-up
+        self.assertEqual([a["title"] for a in got[0]["alts"]], ["Joel Embiid free throw"])
+        self.assertEqual(log, "")
+
+
+class ReplayKnowsOwnCategory(unittest.TestCase):
+    """73. D33 (run 43513168042): replay.py flagged five photos in Dejounte Murray's OWN Commons
+    category ("Dejonte Murray ...") as another man; the pipeline keeps them by rule 56. replay.py
+    now applies rule 56 the same way, and still flags a real namesake (Isaiah for Isiah Thomas)."""
+
+    def test_rule_56_in_replay(self):
+        import replay
+        own = {"kind": "photo", "title": "Dejonte Murray (51913858967).jpg", "person": "Dejounte Murray",
+               "own_category": True, "page": "p1"}
+        other = {"kind": "photo", "title": "Isaiah Thomas (50639077836).jpg", "person": "Isiah Thomas", "page": "p2"}
+        self.assertEqual(replay.picture_findings([own], {}), set())
+        self.assertEqual(replay.picture_findings([other], {}),
+                         {"another man with his surname: Isaiah Thomas (50639077836).jpg (as Isiah Thomas)"})
+        self.assertTrue(replay.picture_findings([{**own, "own_category": False}], {}))

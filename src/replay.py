@@ -59,7 +59,9 @@ def picture_findings(items: list, flags: dict) -> set[str]:
     for it in items:
         for x in ([it] + (it.get("alts") or []) if it else []):
             person = x.get("person") or ""
-            if person and media.look_alike_name(person, x.get("title", "")):
+            # rule 56, as media.photos() applies it: a photo in his OWN Commons category is his,
+            # however the title spells his first name (run 43513168042: "Dejonte Murray")
+            if person and not x.get("own_category") and media.look_alike_name(person, x.get("title", "")):
                 found.add(f"another man with his surname: {x.get('title', '')[:50]} (as {person})")
             jersey = x.get("jersey") or media.jersey_team(x.get("tag"))
             if not C.jersey_ok(jersey, careers.get(person, []), bool(x.get("his_own")) or media.his_own(person, x)):

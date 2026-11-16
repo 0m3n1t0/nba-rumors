@@ -40,6 +40,7 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import Counter
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -2104,6 +2105,12 @@ def topup_ok(c: dict, line: str, person: str) -> bool:
     return not (jersey and current and jersey != current)
 
 
+def report_why(name: str, i: int, what: str, why: dict) -> None:
+    """D32: one log line per beat left without a new picture, with every reason counted."""
+    reasons = ", ".join(f"{r} x{n}" for r, n in (why.get(i) or Counter()).most_common()) or "no candidate at all"
+    print(f"[i] {name} beat {i}: {what} ({reasons})")
+
+
 def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str] | None = None,
                short: dict | None = None) -> list:
     """Never a blank beat, and never the same picture twice in a Short:
@@ -2124,29 +2131,44 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
     faces = {person: person_photos(person, shown) for person in (who or [])}
     lines = [b.get("say", "") for b in spoken(short)] if short else [""] * n_beats
     scenes = count_scenes(x for it in items if it for x in [it] + list(it.get("alts") or []))
+    # D32 (run 43513168042: Embiid's last two beats kept one picture and the log said nothing):
+    # why each beat got no new picture, counted per reason and printed once per beat. Logging only.
+    why: dict[int, Counter] = {}
+    name = (short or {}).get("_name", "")
+    if not who:
+        print(f"[!] {name}: no person recognised in the story: no top-up photos can be searched")
+
+    def skip(i: int, reason: str) -> None:
+        why.setdefault(i, Counter())[reason] += 1
 
     def next_spare(it: dict, i: int, tag: str) -> dict | None:
         """D30: the next photo or clip Claude scored 8+ for this beat (best first), never shown before."""
         for full_ok in (False, True):
             for c in sorted(it.get("_spare") or [], key=lambda x: -(x.get("match") or 0)):   # best score first
                 key = c.get("id") or c["page"]
-                if already_shown(c, shown, key) or (c["kind"] == "video" and c.get("id") in used) \
-                        or (scene_full(c, scenes) and not full_ok):
+                if already_shown(c, shown, key) or (c["kind"] == "video" and c.get("id") in used):
+                    skip(i, "spare already shown")
+                    continue
+                if scene_full(c, scenes) and not full_ok:
+                    skip(i, "spare scene full")
                     continue
                 it["_spare"].remove(c)
                 try:
                     if c["kind"] == "video":
                         path = folder / f"beat{i}_{tag}.mp4"
                         if not download(c["url"], path, 180):
+                            skip(i, "spare download failed")
                             continue
                         used.add(c["id"])
                     else:
                         path = folder / f"beat{i}_{tag}.jpg"
                         if not (download(c["url"], path, 60) and image_ok(path)):
+                            skip(i, "spare download failed")
                             continue
                         h = picture_hash(path)
                         if seen_before(h, looks):
                             path.unlink(missing_ok=True)
+                            skip(i, "spare same picture")
                             continue
                         if h is not None:
                             looks.append(h)
@@ -2154,7 +2176,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                     count_scene(c, scenes)
                     return {**c, "file": str(path.relative_to(ROOT)), "beat": i}
                 except Exception:
-                    pass
+                    skip(i, "spare error")
         return None
 
     def next_face(i: int, tag: str) -> dict | None:
@@ -2165,15 +2187,22 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
 
     def pick_face(i: int, tag: str, full_ok: bool) -> dict | None:
         said = [p for p in (who or []) if fold(p.split()[-1]) in fold(lines[i] if i < len(lines) else "")]
+        if not who and full_ok:
+            skip(i, "no person recognised")
         for person in said + [p for p in (who or []) if p not in said]:
+            if not faces.get(person) and full_ok:
+                skip(i, f"no photo of {person} left")
             waiting = []
             while faces.get(person):
                 c = faces[person].pop(0)
                 if already_shown(c, shown, c["page"]):
+                    skip(i, "already shown")
                     continue
                 if not topup_ok(c, lines[i] if i < len(lines) else "", person):
+                    skip(i, "face or jersey does not fit")
                     continue                   # D30: his face clearly seen AND the right jersey, both
                 if scene_full(c, scenes) and not full_ok:
+                    skip(i, "scene full")
                     waiting.append(c)          # kept for the last-resort pass
                     continue
                 path = folder / f"beat{i}_{tag}.jpg"
@@ -2183,6 +2212,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                         h = picture_hash(path)
                         if seen_before(h, looks):      # the same photo under another address
                             path.unlink(missing_ok=True)
+                            skip(i, "same picture")
                             continue
                         if h is not None:
                             looks.append(h)
@@ -2190,14 +2220,17 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
                         faces[person] = waiting + faces.get(person, [])   # the held ones stay for later
                         return {**{k: v for k, v in c.items() if k not in ("score", "hoops")},
                                 "file": str(path.relative_to(ROOT)), "beat": i, "match": None}
+                    skip(i, "download failed")
                 except Exception:
-                    pass
+                    skip(i, "error")
             faces[person] = waiting + faces.get(person, [])
         return None
 
     for i in range(len(items)):
         if not items[i]:
             items[i] = next_face(i, "fill")
+            if not items[i]:
+                report_why(name, i, "no picture", why)
     # top up long beats with more DIFFERENT photos (a clip holds the eye longer: every ~4 s)
     for i, it in enumerate(items):
         if not it or not short:
@@ -2208,6 +2241,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
         for k in range(max(0, need)):
             extra = next_spare(it, i, f"more{k}") or next_face(i, f"more{k}")   # scored first (D30)
             if not extra:
+                report_why(name, i, f"{need - k} of {need} top-ups missing", why)
                 break
             it["alts"].append(extra)
         if it["alts"]:

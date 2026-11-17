@@ -188,6 +188,9 @@ the "Safety tests" step before anything is installed or made.
      gets one reason from the repair; "Doc was half right and fully clumsy." stays an answer
  102. D66 (his answers): a quote with a word left out INSIDE gets the source's exact words (from its
      first word to its last); quoting part of a sentence stays; never across "..., he said, ..."
+ 103. D67 (his answers: "D49's copy"): a man whose every usable photo is a national-team one may be
+     shown in one on his own line naming no team or time (Brooks); never on a team or time line;
+     an NBA photo comes first; the final read sees "NATIONAL, NO NBA PHOTO EXISTS"
  98. D2-a/c/d (his answers): the hook truth check and the final read catch facts joined or
      shortened into another meaning; the hook check catches a superlative or always/never/
      everyone word the source does not say; an opinion says an open future as likely, not settled
@@ -5155,3 +5158,50 @@ class WordLeftOutOfAQuote(unittest.TestCase):
         src = [{"title": "", "summary": "", "text": '"I was just trying," Brooks said. "To calm it down."'}]
         words, toks, owner = script._source_words(src)
         self.assertEqual(script.missing_inside("I was just trying to calm it down", words, toks, owner), "")
+
+
+class HisNationalTeamWhenNoNBAPhoto(TheLinesManOnly):
+    """103. D67 (run 44110628783; his answers 2026-11-17): Dillon Brooks was never on screen in his
+    own beef: his only usable photos on Commons are Canada national-team ones (D45 keeps them off
+    every non-national line). In the kept runs only Brooks has no NBA photo at all."""
+
+    def setUp(self):
+        super().setUp()
+        self.m.career_teams = lambda p: {"phoenix suns"} if p == "Dillon Brooks" else (
+            {"golden state warriors"} if p in ("Yaxel Lendeborg", "Draymond Green") else set())
+
+    @staticmethod
+    def canada(title, v="C"):
+        return {"kind": "photo", "title": title, "page": "p-" + title, "url": "u-" + title, "author": "a",
+                "team": "", "hoops": True, "own_category": True,
+                "tag": {"v": v, "s": "national", "t": "dribbles past defender, Canada 24"}}
+
+    def test_brooks_on_his_own_line(self):
+        pools = {"Dillon Brooks": [self.canada("Dillon Brooks Canada 2023.jpg")]}
+        got = self.fill("Brooks said he was trying to de-escalate it.", pools, ["Draymond Green", "Dillon Brooks"])
+        self.assertEqual(got["title"], "Dillon Brooks Canada 2023.jpg")
+        self.assertTrue(got["national_only"])
+        import final_read
+        self.assertIn("NATIONAL, NO NBA PHOTO EXISTS", final_read.picture_line(got))
+        self.assertIn("NATIONAL, NO NBA PHOTO EXISTS", final_read.PROMPT)
+
+    def test_never_on_a_team_or_time_line(self):
+        pools = {"Dillon Brooks": [self.canada("Dillon Brooks Canada 2023.jpg")]}
+        self.assertIsNone(self.fill("Brooks and the Suns lost tonight.", pools, ["Dillon Brooks"]))
+        self.assertIsNone(self.fill("Brooks said tonight he is the villain.", pools, ["Dillon Brooks"]))
+
+    def test_an_nba_photo_comes_first(self):
+        pools = {"Dillon Brooks": [self.ph("Dillon Brooks Suns 2025.jpg"), self.canada("Dillon Brooks Canada 2023.jpg")]}
+        got = self.fill("Brooks said he was trying to de-escalate it.", pools, ["Dillon Brooks"])
+        self.assertEqual(got["title"], "Dillon Brooks Suns 2025.jpg")
+        self.assertNotIn("national_only", got)
+
+    def test_national_only_when_no_nba_photo_at_all(self):
+        import media
+        nba = self.ph("Dillon Brooks Suns 2025.jpg")
+        media.photos = lambda person: [nba, self.canada("Dillon Brooks Canada 2023.jpg")]
+        self.assertEqual(media.national_faces("Dillon Brooks", set()), [])
+
+    def test_must_show_him(self):
+        pools = {"Dillon Brooks": [self.canada("Dillon Brooks Canada 2023.jpg", v="O")]}
+        self.assertIsNone(self.fill("Brooks said he was trying to de-escalate it.", pools, ["Dillon Brooks"]))

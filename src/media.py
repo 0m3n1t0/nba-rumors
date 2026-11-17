@@ -2358,6 +2358,19 @@ def college_faces(person: str, shown: set) -> list[dict]:
             and (c.get("tag") or {}).get("s") not in photo_tags.NOT_BY_DEFAULT]
 
 
+def national_faces(person: str, shown: set) -> list[dict]:
+    """D67 (run 44110628783; his answers 2026-11-17: "D49's copy"): Dillon Brooks was never on
+    screen in his own beef: his only usable photos were Canada national-team ones, which D45 keeps
+    off every non-national line. A man whose every usable photo is a national-team one (no NBA
+    photo at all) may be shown in one, face or back seen, on his own line when it names no team or
+    time (team_fits). Marked "national_only" so the final read knows no NBA photo exists."""
+    usable = person_photos(person, set())
+    if not usable or any(not national_photo(c) for c in usable):
+        return []
+    return [{**c, "national_only": True} for c in usable
+            if not already_shown(c, shown, c["page"]) and (c.get("tag") or {}).get("v") in ("C", "B")]
+
+
 # a line that names a team or a time ("the Cavs", "in 2018", "this season", "last year", "now")
 TEAM_WORD = re.compile(r"\b(" + "|".join(sorted({re.escape(w) for t, ws in NBA_TEAMS.items() for w in [t] + ws},
                                                 key=len, reverse=True)) + r")\b", re.I)
@@ -2439,7 +2452,11 @@ def team_fits(c: dict, line: str, person: str, names: list[str] | tuple = ()) ->
     if person and college_photo(c, person):
         c["team"] = "pre-nba"                # D62: his college in the title or the tag
     if national_photo(c) and not NATIONAL_LINE.search(fold(line or "")):
-        return False                         # D45: national colours only on a national-team line
+        # D45: national colours only on a national-team line; D67: when he has no NBA photo at all,
+        # also on a line naming no team or time (as D49 for his college photo)
+        if not (c.get("national_only") and not teams_in(line, list(names) + ([person] if person else []))
+                and not names_a_time(line, person)):
+            return False
     if person:
         teams_of(person)                     # his current spell's start year (names_a_time)
     # D43 (his answer 2026-11-16): the photo's own person's name words are no team either ("Tragic
@@ -2584,7 +2601,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
         for person in players:
             if not faces.get(person) and person not in college_tried:
                 college_tried.add(person)                 # D49: his college photos, once
-                faces[person] = college_faces(person, shown)
+                faces[person] = college_faces(person, shown) or national_faces(person, shown)   # D67
         for person in (said if players else said + [p for p in (who or []) if p not in said]):
             if not faces.get(person) and full_ok:
                 skip(i, f"no photo of {person} left")

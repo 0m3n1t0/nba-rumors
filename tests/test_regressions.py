@@ -585,7 +585,11 @@ class Script(unittest.TestCase):
             if "scrolling Shorts" in prompt:
                 return {"order": [1]}
             return copy.deepcopy(draft)
-        saved = (script.ask_claude, script.gather_sources, nbadata.annotate)
+        saved = (script.ask_claude, script.gather_sources, nbadata.annotate, script.SOURCES_OUT)
+        # run 44047143877: this test wrote data/sources/short_1.json, and the CI's safety tests run
+        # before the stages, so a run that wrote no Short bundled the test's fake source
+        import tempfile
+        script.SOURCES_OUT = Path(tempfile.mkdtemp()) / "sources"
         script.ask_claude = fake
         script.gather_sources = lambda topic, editor, tid: [
             {"publisher": "Yahoo Sports", "title": "Luka trolls Hawks fans", "link": "https://sports.yahoo.com/x",
@@ -599,7 +603,8 @@ class Script(unittest.TestCase):
                                                                "rules": ["r"]})
             return short, calls
         finally:
-            script.ask_claude, script.gather_sources, nbadata.annotate = saved
+            shutil.rmtree(script.SOURCES_OUT.parent, ignore_errors=True)
+            script.ask_claude, script.gather_sources, nbadata.annotate, script.SOURCES_OUT = saved
 
     def test_repair_pass(self):
         import script

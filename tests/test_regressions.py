@@ -174,6 +174,8 @@ the "Safety tests" step before anything is installed or made.
      naming any NBA team still refuses a PRE-NBA photo
  95. D62 (his answers): a photo whose title or tag names his college (infobox) is PRE-NBA; a college
      name that is also an NBA city counts only when the text does not name that NBA team
+ 96. D63 (his answer): a line naming nobody shows whom the writer put on screen (on_screen), not
+     anyone in the story; when on_screen names nobody either, as before
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4870,3 +4872,41 @@ class HisCollegeIsPreNBA(unittest.TestCase):
                  "tag": {"v": "C", "s": "game", "t": "reaches for rebound, San Diego State"}}]
         with patch.object(m, "teams_of", lambda p: ("", set())), patch.object(m, "photos", lambda p: pool):
             self.assertEqual(m.person_photos("Kawhi Leonard", set()), [])
+
+
+class WhoTheWriterPutOnScreen(TheLinesManOnly):
+    """96. D63 (run 44088855986; his answer 2026-11-17): "My read: he had seven of the 18 turnovers"
+    (on_screen "Jokic with the ball") got DeMar DeRozan in a Raptors jersey: the top-ups read only
+    the spoken line. In the kept runs 10 photos change, every one to the man the line is about;
+    none gets worse."""
+
+    def fill_screen(self, line, screen, pools, who):
+        m = self.m
+        m.spoken = lambda short: [{"say": line, "on_screen": screen}]
+        m.photos = lambda person: pools.get(person, [])
+        m.career_teams = lambda p: {"denver nuggets"}
+        import io
+        from contextlib import redirect_stdout
+        with redirect_stdout(io.StringIO()):
+            return m.fill_empty([None], 1, self.folder, set(), who, {"_name": "t", "beats": [{}]})[0]
+
+    def test_on_screen_decides(self):
+        pools = {"DeMar DeRozan": [self.ph("DeMar DeRozan (25715231917).jpg")],
+                 "Nikola Jokic": [self.ph("Nikola Jokic (51914984866).jpg")]}
+        got = self.fill_screen("My read: he had seven of the 18 turnovers, so it's a standard, not a shot.",
+                               "Jokic with the ball", pools, ["DeMar DeRozan", "Nikola Jokic"])
+        self.assertEqual(got["title"], "Nikola Jokic (51914984866).jpg")
+
+    def test_no_name_anywhere_as_before(self):
+        pools = {"DeMar DeRozan": [self.ph("DeMar DeRozan (25715231917).jpg")],
+                 "Nikola Jokic": [self.ph("Nikola Jokic (51914984866).jpg")]}
+        got = self.fill_screen("I think pressure isn't the real problem.", "Warriors offense struggling",
+                               pools, ["DeMar DeRozan", "Nikola Jokic"])
+        self.assertEqual(got["title"], "DeMar DeRozan (25715231917).jpg")     # the story's order, as before
+
+    def test_the_spoken_name_still_wins(self):
+        pools = {"DeMar DeRozan": [self.ph("DeMar DeRozan (25715231917).jpg")],
+                 "Nikola Jokic": [self.ph("Nikola Jokic (51914984866).jpg")]}
+        got = self.fill_screen("Yahoo says DeRozan doesn't look like the target.", "Jokic at the podium",
+                               pools, ["Nikola Jokic", "DeMar DeRozan"])
+        self.assertEqual(got["title"], "DeMar DeRozan (25715231917).jpg")

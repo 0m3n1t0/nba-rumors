@@ -2512,6 +2512,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
     faces = {person: person_photos(person, shown) for person in (who or [])}
     college_tried: set[str] = set()
     lines = [b.get("say", "") for b in spoken(short)] if short else [""] * n_beats
+    screens = [b.get("on_screen", "") for b in spoken(short)] if short else [""] * n_beats
     scenes = count_scenes(x for it in items if it for x in [it] + list(it.get("alts") or []))
     # D32 (run 43513168042: Embiid's last two beats kept one picture and the log said nothing):
     # why each beat got no new picture, counted per reason and printed once per beat. Logging only.
@@ -2569,6 +2570,11 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
 
     def pick_face(i: int, tag: str, full_ok: bool) -> dict | None:
         said = [p for p in (who or []) if names_him(lines[i] if i < len(lines) else "", p)]
+        if not said:
+            # D63 (run 44088855986; his answer 2026-11-17): a line naming nobody ("My read: he had
+            # seven of the 18 turnovers") shows whom the writer put on screen ("Jokic with the
+            # ball"), not anyone in the story (DeRozan stood there); no name there: as before
+            said = [p for p in (who or []) if names_him(screens[i] if i < len(screens) else "", p)]
         if not who and full_ok:
             skip(i, "no person recognised")
         # D50 (his answer 2026-11-17): a line naming a man with an NBA career shows only the men it

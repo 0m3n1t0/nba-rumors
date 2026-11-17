@@ -40,7 +40,13 @@ it, against the SOURCE TEXTS it was written from. Report only CLEAR errors of th
    ESPN that's just a checkpoint" when only the article's writer calls it a checkpoint).
 3. NOT IN THE SOURCES: a fact, number, name or claim the sources do not support, or a rumor
    said as a fact. Also a fact the sources show has ENDED or changed, said as still true now
-   ("eight straight wins now rest on him" when the sources say the streak ended).
+   ("eight straight wins now rest on him" when the sources say the streak ended). Also facts
+   joined or shortened so the line says something the sources do not: two moments made one, a
+   different time, or a result left out that changes the meaning ("back in three minutes, he
+   dunked" when he came back three minutes later but the dunk came in the second quarter;
+   "after leading New York by 22" when they led by 22 in Game 1 and never won another game).
+   Also her opinion stating a future the sources leave open as settled ("he's leaving" when
+   the sources only show a trade request); said as likely ("he's probably leaving") it is fine.
 4. WRONG PICTURE: the viewer would take the wrong man for the one the line is about: another
    man with the same name; someone else shown while the line says what HE said or did ("He
    wrote...", "Murray deleted it" over a teammate's photo); or, when the line names a team or a

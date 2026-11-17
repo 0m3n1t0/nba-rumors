@@ -176,6 +176,11 @@ the "Safety tests" step before anything is installed or made.
      name that is also an NBA city counts only when the text does not name that NBA team
  96. D63 (his answer): a line naming nobody shows whom the writer put on screen (on_screen), not
      anyone in the story; when on_screen names nobody either, as before
+ 97. D2-b (his answers): 12+ words in a row of a source quote, said without quote marks on a line
+     naming the man that quote's paragraph names, are put in quote marks (only the copied words)
+ 98. D2-a/c/d (his answers): the hook truth check and the final read catch facts joined or
+     shortened into another meaning; the hook check catches a superlative or always/never/
+     everyone word the source does not say; an opinion says an open future as likely, not settled
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4910,3 +4915,107 @@ class WhoTheWriterPutOnScreen(TheLinesManOnly):
         got = self.fill_screen("Yahoo says DeRozan doesn't look like the target.", "Jokic at the podium",
                                pools, ["Nikola Jokic", "DeMar DeRozan"])
         self.assertEqual(got["title"], "DeMar DeRozan (25715231917).jpg")
+
+
+REDICK_SOURCES = [
+    {"publisher": "Bleacher Report", "title": "Redick calls out Lakers", "summary": "",
+     "text": "Per The Athletic's Law Murray, Reddick called out the Lakers for their defensive lapses.\n"
+             "\"I told the team this after the game \u2014 we're working too hard, and we're playing too hard, "
+             "to build these leads \u2014 it's a disservice to each other to take your foot off the gas,\" "
+             "Redick said after the Lakers were outscored 43-27 in the fourth quarter."},
+    {"publisher": "Yahoo Sports", "title": "Lakers hold off Suns", "summary": "",
+     "text": "Mark Williams said the same thing on Friday.\n"
+             "\"Nobody here is going to take their foot off the gas against a team like this one tonight,\" "
+             "Williams said."},
+]
+
+
+class CopiedQuoteGetsMarks(unittest.TestCase):
+    """97. D2-b (run 43934705382; his answers 2026-11-17): "Redick said after the game he told the
+    team it's a disservice to each other to take your foot off the gas" - 13 words of Redick's own
+    quote without quote marks, so the gate read them as an article read out (REVIEW). Now exactly
+    the copied words get quote marks; in every kept run nothing else changes."""
+
+    def setUp(self):
+        import script
+        self.s = script
+
+    def beat(self, say):
+        return [{"say": say, "stage": "conflict"}]
+
+    def test_redick_words_marked(self):
+        import compliance
+        beats = self.beat("Per The Athletic, Redick said after the game he told the team it's a disservice "
+                          "to each other to take your foot off the gas.")
+        got = self.s.mark_copied_quotes(beats, REDICK_SOURCES)
+        self.assertEqual(got, ["it's a disservice to each other to take your foot off the gas"])
+        self.assertEqual(beats[0]["say"], "Per The Athletic, Redick said after the game he told the team "
+                                          "\"it's a disservice to each other to take your foot off the gas.\"")
+        self.assertLess(compliance.check_originality(beats, REDICK_SOURCES)[2]["longest_copy"], compliance.COPY_RUN)
+        self.assertEqual(self.s.quote_check(beats[0]["say"], REDICK_SOURCES), [])
+        self.assertEqual(self.s.quotes_outside_marks(beats[0]["say"], REDICK_SOURCES), [])
+
+    def test_another_man_named(self):
+        beats = self.beat("Doncic said after the game he told the team it's a disservice to each other to "
+                          "take your foot off the gas.")
+        self.assertEqual(self.s.mark_copied_quotes(beats, REDICK_SOURCES), [])
+
+    def test_a_team_is_not_the_man(self):
+        beats = self.beat("The Lakers heard it's a disservice to each other to take your foot off the gas.")
+        self.assertEqual(self.s.mark_copied_quotes(beats, REDICK_SOURCES), [])
+
+    def test_fewer_than_twelve_words(self):
+        beats = self.beat("Redick said it's a disservice to each other to take your foot off.")
+        self.assertEqual(self.s.mark_copied_quotes(beats, REDICK_SOURCES), [])
+
+    def test_article_narration_is_not_a_quote(self):
+        src = [{"title": "", "summary": "", "text": "Redick called out the Lakers for their defensive "
+                "lapses late in games after a long road trip this week."}]
+        beats = self.beat("Redick called out the Lakers for their defensive lapses late in games after a "
+                          "long road trip.")
+        self.assertEqual(self.s.mark_copied_quotes(beats, src), [])
+
+    def test_the_pipeline_marks_the_finished_beats(self):
+        long_quote = ("\"I told them all night that they should have kept me here in Atlanta forever,\" "
+                      "Doncic said after the game.")
+        harness = Script("test_repair_pass")
+        harness.TEXT = Script.TEXT + long_quote
+        beats = copy.deepcopy(Script.GOOD)
+        beats[1]["say"] = ("Doncic said after the game he told them all night that they should have kept me "
+                           "here in Atlanta forever.")
+        short, calls = harness._build(Script.GOOD, draft_beats=beats)
+        said = " ".join(b["say"] for b in short["beats"])
+        self.assertIn('"told them all night that they should have kept me here in Atlanta forever."', said)
+        self.assertTrue(any("now in quote marks" in x for x in short["softened_quotes"]))
+
+    def test_already_quoted_stays(self):
+        say = ("Redick said \"it's a disservice to each other to take your foot off the gas.\"")
+        beats = self.beat(say)
+        self.assertEqual(self.s.mark_copied_quotes(beats, REDICK_SOURCES), [])
+        self.assertEqual(beats[0]["say"], say)
+
+
+class CarefulTruthRules(unittest.TestCase):
+    """98. D2-a/c/d (runs 43934705382, 44078900140; his answers 2026-11-17): Embiid's "back in three
+    minutes, he dunked" (the dunk came in the second quarter), Barkley's "after leading New York by
+    22" (Game 1 only, then no other win), Wade "one of Wembanyama's harshest critics" (the source:
+    "one of the people who gave harsh criticism"), and "he's leaving" on a trade request."""
+
+    def test_hook_truth_catches_joined_facts_and_stronger_words(self):
+        import script
+        p = " ".join(script.HOOK_TRUTH.split())
+        self.assertIn("joins or shortens the sources' facts", p)
+        self.assertIn("superlative (harshest, worst, ever) or an always, never or everyone word", p)
+
+    def test_final_read_catches_joined_facts_and_settled_future(self):
+        import final_read
+        p = " ".join(final_read.PROMPT.split())
+        self.assertIn("facts joined or shortened so the line says something the sources do not", p)
+        self.assertIn("her opinion stating a future the sources leave open as settled", p)
+        self.assertNotIn("superlative", p)        # D2-c: the hook check only (his answer)
+
+    def test_writer_and_editor_keep_the_future_open(self):
+        import script
+        for prompt in (script.PROMPT, script.HUMANIZE):
+            self.assertIn("a future the sources leave open is said as likely, never as settled",
+                          " ".join(prompt.split()))

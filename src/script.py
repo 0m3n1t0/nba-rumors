@@ -325,7 +325,9 @@ WHO SAID IT, AND IS IT STILL TRUE (run 43446225184): give each claim to the one 
    payoff ("he dropped 32 in the win" is a fact, not an answer). Agreeing with an outlet or a
    pundit is never her answer either ("the Times says X, and I think that's right"): she gives
    her OWN reason or a point they did not make ("...and the proof is that he went quiet the
-   one night Boston was watching"), built on facts from the sources. THE CLOSING QUESTION asks the
+   one night Boston was watching"), built on facts from the sources. Her answer may predict, but
+   a future the sources leave open is said as likely, never as settled ("he's probably leaving",
+   not "he's leaving", when the sources only show a trade request). THE CLOSING QUESTION asks the
    strategy's "central_question" as a pick-a-side, in a few spoken words, naming the hook's
    people: it is what this Short is really about, never a generic "who's right, A or B?" when
    the story is about something more specific (an apology, a punishment, a trade). THE LOOP: the closing question comes
@@ -409,7 +411,9 @@ Rewrite anything that sounds like AI, a press release, a template or a stock phr
 Check the craft list in the voice profile line by line: the scoop line, BUT/SO between beats
 (no "and then"), one cutting detail with a physical verb instead of adjectives, the loop
 opened in the hook and closed in the last line, a re-hook in the middle.
-Add her real reaction to THIS story and one clear opinion. Vary sentence length.
+Add her real reaction to THIS story and one clear opinion. Her opinion may predict, but a future
+the sources leave open is said as likely, never as settled ("he's probably leaving", not "he's
+leaving", when the sources only show a trade request). Vary sentence length.
 WRITE FOR THE EAR, so the voice sounds alive and not monotone (the narrator reads exactly
 what you write, and punctuation drives her tone):
 - Tell it like a person talking: full sentences joined with "but", "so", "because", "and
@@ -942,6 +946,75 @@ def quoted_in_sources(sources: list[dict]) -> list[str]:
     return out
 
 
+def mark_copied_quotes(beats: list[dict], sources: list[dict]) -> list[str]:
+    """D2-b (the owner, 2026-11-17: "automatically in quote marks"). Run 43934705382: "Redick said
+    ... he told the team it's a disservice to each other to take your foot off the gas" - 13 words
+    of Redick's own quote said without quote marks, so the gate read them as an article read out
+    (REVIEW). When a beat repeats compliance.COPY_RUN+ words in a row of ONE quote in a source
+    and names the man that quote's source paragraph names outside its quote marks (his answer:
+    "the source's paragraph", e.g. "Redick said"), exactly the copied words are put in quote
+    marks (his answer: only the copied words). Returns what was marked."""
+    import difflib
+    import media
+    quotes = []          # (quote's words, the names in its paragraph outside the quote marks)
+    for src in sources:
+        text = f"{src.get('title', '')}\n{src.get('summary', '')}\n{src.get('text', '')}"
+        for para in text.split("\n"):
+            found = list(SOURCE_QUOTES.finditer(para))
+            if not found:
+                continue
+            outside = SOURCE_QUOTES.sub(" ", para)
+            named = {w.lower() for w in NAME_WORD.findall(outside)}
+            for m in found:
+                q = compliance.words(next(g for g in m.groups() if g is not None))
+                if len(q) >= compliance.COPY_RUN:
+                    quotes.append((q, named))
+    marked = []
+    if not quotes:
+        return marked
+    for b in beats:
+        say = b.get("say", "")
+        people = {w for w in names_of(say) if not media.not_a_person(w)}
+        if not people:
+            continue
+        inside = [m.span() for rx in QUOTE_PATTERNS for m in rx.finditer(say)]
+        # the beat's words with where each stands; words already inside quote marks break a run
+        toks, spans, seg = [], [], []
+        for m in re.finditer(r"\S+", say):
+            if any(a <= m.start() < z for a, z in inside):
+                seg.append(len(toks))
+                continue
+            for w in compliance.words(m.group(0)):
+                toks.append(w)
+                spans.append(m.span())
+        best = None
+        for q, named in quotes:
+            if not people & named:
+                continue
+            for blk in difflib.SequenceMatcher(None, toks, q, autojunk=False).get_matching_blocks():
+                lo, hi = blk.a, blk.a + blk.size
+                if blk.size >= compliance.COPY_RUN and not any(lo < s < hi for s in seg) \
+                        and (best is None or blk.size > best[1] - best[0]):
+                    best = (lo, hi)
+        if not best:
+            continue
+        lo, hi = best
+        start, end = spans[lo][0], spans[hi - 1][1]
+        piece = say[start:end]
+        lead = len(piece) - len(piece.lstrip("\"'“‘([")) if piece else 0
+        core = piece[lead:]
+        stripped = core.rstrip(",;:\"'”’)]")
+        if stripped.endswith("..."):
+            tail = ""
+        else:
+            tail = stripped[-1] if stripped[-1:] in ".!?" else ""
+        word_part = stripped[:-1] if tail else stripped
+        after = core[len(word_part) + len(tail):]
+        b["say"] = f'{say[:start]}{piece[:lead]}"{word_part}{tail}"{after}{say[end:]}'
+        marked.append(word_part)
+    return marked
+
+
 def quotes_outside_marks(text: str, sources: list[dict]) -> list[str]:
     """Final law for every quote, whatever made it (the writer, the repair, the correction):
     a quote is someone's OWN words, so its words must be inside quote marks in a source, not in
@@ -1316,7 +1389,15 @@ never be false. It is FALSE ("overstated") only when:
   - after "says", "said", "admits", "called", "told", or inside quotes, it gives someone words or
     a meaning he never said, or a stronger meaning than he said;
   - it states a fact, number, event or outcome the sources do not show;
-  - it states a rumor, a report or an opinion as a plain fact.
+  - it states a rumor, a report or an opinion as a plain fact;
+  - it joins or shortens the sources' facts so they say something the sources do not: two
+    moments made one, a different time, or a result left out that changes the meaning ("back
+    in three minutes, he dunked" when he came back three minutes later but the dunk came in
+    the second quarter; "after leading New York by 22" when they led by 22 in Game 1 and never
+    won another game);
+  - it makes the source stronger with a superlative (harshest, worst, ever) or an always,
+    never or everyone word the sources do not say ("one of his harshest critics" when the
+    source says "one of the people who gave harsh criticism").
 Hype, framing and a hot verb the sources support are NOT overstated: keep them.
 If it is overstated, write the boldest line that IS true: same names, same shock, one sentence,
 8-12 words, a statement, the name and the shock in the first 8 words.
@@ -2068,6 +2149,10 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
                     print(f"[+] repair pass fixed: {'; '.join(repaired)}")
                 else:
                     print("[!] repair pass not better or not safe: the original beats stay")
+    # D2-b: his own words said without quote marks get them (on the beats as they stand now)
+    for q in mark_copied_quotes(beats, sources):
+        softened.append(f'{q} -> "{q}" (his own words, now in quote marks)')
+        print(f'[+] his own words put in quote marks: "{q[:80]}"')
     softened += hook_softened
     # audit 2026-11-13: when every checked hook was overstated (no bold true rewrite passed), the
     # leading hook may still say more than the sources: the Short is held, never published as is

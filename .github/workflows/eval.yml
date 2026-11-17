@@ -1,0 +1,105 @@
+name: Quality eval (by hand)
+
+# D69 (his answers 2026-11-17): the 23 kept stories made again by today's code as full Shorts,
+# only when a writing or checking rule changes (before and after). It runs in parts: on the
+# Claude limit it stops and the next run with the same label goes on. Results go ONLY to the
+# private state repository (nba/eval/results/<label>/); this public run page shows nothing of them.
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: "Name of this eval (empty = the code's commit). Same name = go on where it stopped."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-pipeline        # never at the same time as a real run (one Claude limit)
+  cancel-in-progress: false
+
+env:
+  CHANNEL: nba
+  SHORTS_PER_RUN: "2"
+  CLAUDE_MODEL: sonnet
+  CLAUDE_MODEL_LIGHT: haiku
+  MUSIC_UNDER_DB: "14"
+  CLAUDE_CODE_VERSION: "2.1.322"
+  DISABLE_AUTOUPDATER: "1"
+
+jobs:
+  eval:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Private state repository (the eval set; results are saved here)
+        uses: actions/checkout@v5
+        with:
+          repository: 0m3n1t0/nba-rumors-state
+          token: ${{ secrets.STATE_REPO_TOKEN }}
+          path: state
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Safety tests
+        run: python -m unittest discover -s tests
+
+      - name: "The channel's history (read only, the eval never saves it back)"
+        run: python src/state.py restore
+
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/claude" --version
+
+      - name: Cache voice models
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/huggingface
+          key: voice-models-pipeline-v2
+          restore-keys: voice-models-chatterbox-v2   # the audition already downloaded Chatterbox
+
+      - name: Cache the voice engine's English model (so it is downloaded only once)
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/voice-wheels
+          key: voice-wheels-v1
+
+      - name: Install voice engine
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q espeak-ng ffmpeg
+          pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-voice.txt
+          # English model for the voice engine: from the cache, else Hugging Face, else GitHub
+          python src/install_voice_model.py
+
+      - name: Music library (private repo with YouTube Audio Library tracks; skipped if not set up)
+        continue-on-error: true
+        uses: actions/checkout@v5
+        with:
+          repository: 0m3n1t0/music-library
+          token: ${{ secrets.MUSIC_REPO_TOKEN }}
+          path: music_library
+
+      - name: "Eval: make the stories again (stops cleanly on the Claude limit)"
+        env:
+          EVAL_LABEL: ${{ github.event.inputs.label }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
+          OPENVERSE_CLIENT_SECRET: ${{ secrets.OPENVERSE_CLIENT_SECRET }}
+          WIKIMEDIA_TOKEN: ${{ secrets.WIKIMEDIA_TOKEN }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          BALLDONTLIE_API_KEY: ${{ secrets.BALLDONTLIE_API_KEY }}
+        run: |
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/eval_summary.md"; : > "$GITHUB_STEP_SUMMARY"   # stage reports: private only
+          python src/eval_run.py

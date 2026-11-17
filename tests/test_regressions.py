@@ -194,6 +194,8 @@ the "Safety tests" step before anything is installed or made.
  104. stage 4e (his answers): the final read's errors are fixed and the Short redone while each try
      leaves fewer errors; only the error lines change, by the repair pass's checks (a hook by the
      hook rules); a wrong picture never again in that Short; no new voice = the old words stay
+ 105. D69 (his answers): the quality eval: the kept stories made again as full Shorts, repetition
+     check off, no permanent record touched but the photo tags, in parts, one number
  98. D2-a/c/d (his answers): the hook truth check and the final read catch facts joined or
      shortened into another meaning; the hook check catches a superlative or always/never/
      everyone word the source does not say; an opinion says an open future as likely, not settled
@@ -5435,4 +5437,142 @@ class RedoOneShortsPictures(unittest.TestCase):
             self.assertIsNone(media.music_kept("short_2"))                 # its file is not there
         finally:
             media.SCRIPTS, media.MEDIA, media.ROOT = saved
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class QualityEval(unittest.TestCase):
+    """105. D69 (his answers 2026-11-17): the kept stories made again as full Shorts by today's code;
+    repetition check off; nothing of the channel's record touched but the photo tag cache; results
+    only (no MP4); in parts, going on where the Claude limit stopped it; one number = Shorts with no
+    problem (not held by the script stage, no final read error; not made = a problem)."""
+
+    def setUp(self):
+        import eval_run
+        self.e = eval_run
+        self.tmp = Path(tempfile.mkdtemp())
+        self.saved = (eval_run.DATA, eval_run.STATE, eval_run.EVAL, eval_run.make_script, eval_run.run_stages,
+                      eval_run.git)
+        eval_run.DATA, eval_run.STATE = self.tmp / "data", self.tmp / "state"
+        eval_run.EVAL = eval_run.STATE / "nba" / "eval"
+        eval_run.git = lambda *a: types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        for n in (1, 2, 3):
+            d = eval_run.EVAL / "set" / f"run_short_{n}"
+            d.mkdir(parents=True)
+            (d / "story.json").write_text(json.dumps({"id": f"run_short_{n}", "headline": f"Story {n}",
+                                                      "topic": {"headline": f"Story {n}"}, "judged": {}}))
+            (d / "sources.json").write_text("[]")
+
+    def tearDown(self):
+        e = self.e
+        e.DATA, e.STATE, e.EVAL, e.make_script, e.run_stages, e.git = self.saved
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def fake_stages(self, verdicts):
+        e = self.e
+
+        def make(story, sources):
+            if story["id"] == "run_short_2" and verdicts.get("limit"):
+                raise e.Limit("limit")
+            return {"headline": story["headline"], "hook": {"text": "h", "score": 40}, "beats": [{"say": "b"}],
+                    "ready": story["id"] != "run_short_3", "compliance": {"verdict": "PASS", "checks": {}}}
+
+        def stages():
+            (e.DATA / "review" / "short_1.json").write_text(json.dumps({"verdict": verdicts.get("read", "PASS"),
+                                                                        "errors": []}))
+            (e.DATA / "history").mkdir(parents=True, exist_ok=True)
+            for f in ("photo_tags.json", "made.json"):
+                (e.DATA / "history" / f).write_text(json.dumps({"file": f}))
+        e.make_script, e.run_stages = make, stages
+
+    def test_one_number_and_records(self):
+        self.fake_stages({})
+        with patch.dict("os.environ", {"EVAL_LABEL": "after"}):
+            self.e.main()
+        out = self.e.EVAL / "results" / "after"
+        got = {p.stem: json.loads(p.read_text())["problem"] for p in out.glob("run_*.json")}
+        self.assertEqual(got, {"run_short_1": False, "run_short_2": False, "run_short_3": True})   # 3: held
+        self.assertIn("Shorts with no problem: 2 of 3", (out / "summary.md").read_text())
+        hist = self.e.STATE / "nba" / "history"
+        self.assertEqual(sorted(p.name for p in hist.iterdir()), ["photo_tags.json"])   # nothing else saved
+        self.assertEqual(json.loads((hist / "photo_tags.json").read_text()), {"file": "photo_tags.json"})
+        self.assertFalse(list(out.glob("*.mp4")))
+
+    def test_stops_on_the_limit_and_goes_on(self):
+        self.fake_stages({"limit": True})
+        with patch.dict("os.environ", {"EVAL_LABEL": "x"}):
+            self.e.main()
+        out = self.e.EVAL / "results" / "x"
+        self.assertEqual(sorted(p.stem for p in out.glob("run_*.json")), ["run_short_1"])
+        self.assertIn("in progress: 1 of 3", (out / "summary.md").read_text())
+        self.fake_stages({})
+        made, make = [], self.e.make_script
+        self.e.make_script = lambda story, sources: (made.append(story["id"]), make(story, sources))[1]
+        with patch.dict("os.environ", {"EVAL_LABEL": "x"}):
+            self.e.main()
+        self.assertEqual(sorted(p.stem for p in out.glob("run_*.json")), ["run_short_1", "run_short_2", "run_short_3"])
+        self.assertEqual(made, ["run_short_2", "run_short_3"])            # the done one is not made again
+
+    def test_not_made_is_a_problem(self):
+        r = self.e.result_of({"id": "a", "headline": "h"}, None, "no article")
+        self.assertTrue(r["problem"])
+
+    def test_the_script_stage_as_a_run_calls_it(self):
+        import script
+        e = self.e
+        e.make_script = self.saved[3]
+        seen = {}
+        saved = (script.build_short, script.gather_sources, script.load_recent, script.SCRIPT_LEDGER)
+        ledger = self.tmp / "scripts.jsonl"
+        ledger.write_text(json.dumps({"headline": "old", "hook": "h", "spoken": "an old Short"}) + "\n")
+        script.SCRIPT_LEDGER = ledger                     # a real history the check would read
+        try:
+            def build(n, tid, editor, voice, formulas):
+                seen.update(topic=editor["topics"][tid], judged=editor["ranked"][0],
+                            sources=script.gather_sources(editor["topics"][tid], editor, tid))
+                script.load_recent()
+                seen["recent"] = list(script.RECENT)
+                return {}
+            script.build_short = build
+            script.RECENT.append({"headline": "old", "spoken": "x"})
+            e.make_script({"topic": {"headline": "Story"}, "judged": {"kind": "beef"},
+                           "known_headlines": ["A", "B"]}, [{"title": "t", "main": True}])
+            self.assertEqual(seen["topic"], {"headline": "Story"})
+            self.assertEqual(seen["judged"]["kind"], "beef")
+            self.assertEqual(seen["sources"], [{"title": "t", "main": True}])
+            self.assertEqual(seen["recent"], [])               # the repetition check is off
+        finally:
+            script.build_short, script.gather_sources, script.load_recent, script.SCRIPT_LEDGER = saved
+            script.RECENT.clear()
+
+
+class EvalSetKept(unittest.TestCase):
+    """105 (set). The set is copied out of the run bundles (cleaned after 14 days): every Short
+    with its source texts; a historic beef gets its topic made again as evergreen.py made it."""
+
+    def test_build(self):
+        import eval_set
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            run = tmp / "runs" / "2026-11-17_1"
+            for d in ("scripts", "sources", "gate", "review"):
+                (run / d).mkdir(parents=True)
+            (run / "editor.json").write_text(json.dumps({"topics": [{"headline": "Curry pay cut"}],
+                                                         "ranked": [{"id": 0, "kind": "contract"}]}))
+            (run / "scripts" / "short_1.json").write_text(json.dumps({"headline": "Curry pay cut", "topic_id": 0,
+                                                                      "hook": {"text": "h"}, "beats": []}))
+            (run / "scripts" / "short_2.json").write_text(json.dumps({
+                "headline": "Draymond Green Rips Dillon Brooks (back in the news: the Draymond Green and Dillon "
+                            "Brooks feud)", "topic_id": 1, "evergreen": "Dillon Brooks vs Draymond Green",
+                "hook": {"text": "h"}, "beats": []}))
+            (run / "scripts" / "short_3.json").write_text(json.dumps({"headline": "no sources", "topic_id": 0}))
+            for n in (1, 2):
+                (run / "sources" / f"short_{n}.json").write_text(json.dumps([{"title": "t", "text": "x", "main": True}]))
+            got = eval_set.build(tmp / "runs", tmp / "set")
+            self.assertEqual(got, ["2026-11-17_1_short_1", "2026-11-17_1_short_2"])
+            beef = json.loads((tmp / "set" / "2026-11-17_1_short_2" / "story.json").read_text())
+            self.assertEqual(beef["topic"]["evergreen"], "Dillon Brooks vs Draymond Green")
+            self.assertIn('the fresh reason is: "Draymond Green Rips Dillon Brooks"', beef["judged"]["why"])
+            plain = json.loads((tmp / "set" / "2026-11-17_1_short_1" / "story.json").read_text())
+            self.assertEqual(plain["judged"], {"kind": "contract"})
+        finally:
             shutil.rmtree(tmp, ignore_errors=True)

@@ -150,6 +150,8 @@ the "Safety tests" step before anything is installed or made.
      Olympic/FIBA) fits only a line about a national team, the Olympics, a World Cup or FIBA
  83. D44 (his answer): the gate counts an own-category photo as his, like D39's top-ups (a group
      title still needs his name)
+ 84. D46 + D47 (his answers): "Stephen A. Smith" (first + one initial + last) is found, and a
+     Wikipedia "personality", "commentator", "host" or "podcaster" is a person
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4306,3 +4308,25 @@ class GateKnowsOwnCategory(unittest.TestCase):
         self.assertEqual(gate.check_visuals([{**own, "own_category": False}], flags)[0], C.REVIEW)
         self.assertEqual(gate.check_visuals([{**own, "title": "LaMelo Ball and Dejonte Murray.jpg"}],
                                             {"people": ["Dejounte Murray"]})[0], C.REVIEW)
+
+
+class StephenASmithIsAPerson(unittest.TestCase):
+    """84. D46 + D47 (run 43945813466; his answers 2026-11-16/17): "Stephen A. Smith defends LeBron
+    James": the name finder had no "first + initial + last" form, and Wikipedia calls him "American TV
+    personality (born 1967)", which was no person; his own line got a LeBron photo."""
+
+    def test_found_and_real(self):
+        import media
+        self.assertIn("Stephen A. Smith", media.people_names("Stephen A. Smith defends LeBron James"))
+        self.assertNotIn("The A. Team", media.people_names("The A. Team"))
+        self.assertTrue(media.is_person_desc("American TV personality (born 1967)"))
+        for d in ("American sports commentator", "American podcast host (born 1980)", "American podcaster"):
+            self.assertTrue(media.is_person_desc(d), d)
+        for d in ("2014 studio album by Bulletrain", "African-American-owned multimedia company",
+                  "Residence and workplace of the US president"):
+            self.assertFalse(media.is_person_desc(d), d)
+        real = lambda names: [n for n in names if n in {"Stephen A. Smith", "LeBron James"}]
+        with patch.object(media, "real_people", real):
+            got = media.people({"headline": "Stephen A. Smith defends LeBron James after Trump calls him a disgrace",
+                                "beats": [{"say": "Stephen A. said no."}]})
+        self.assertEqual(got, ["Stephen A. Smith", "LeBron James"])

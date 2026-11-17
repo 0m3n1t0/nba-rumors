@@ -305,6 +305,11 @@ _WORD = r"(?:[A-Z][a-z]*[A-Z][a-z]+|[A-Z]{2}|[A-Z]\.[A-Z]\.|[OD]'[A-Z][a-z]+|[A-
 WIDE_NAME = re.compile(rf"(?=(?<![\w.'])({_WORD}) ({_WORD})(?![\w']))")
 
 
+# D46 (run 43945813466; his answer 2026-11-16): a first name, ONE initial with a dot and a last name
+# ("Stephen A. Smith": his own line got a LeBron photo)
+INITIAL_NAME = re.compile(rf"(?=(?<![\w.'])({_WORD}) ([A-Z]\.) ({_WORD})(?![\w']))")
+
+
 def name_words_ok(name: str) -> bool:
     from collect import GENERIC, NOT_NAMES, STOPWORDS
     return name not in NOT_NAMES and not any(w.lower() in GENERIC or w.lower() in STOPWORDS for w in name.split())
@@ -312,7 +317,8 @@ def name_words_ok(name: str) -> bool:
 
 def people_names(text: str) -> set[str]:
     """The collector's names plus the D37 forms (pictures only; the collector is unchanged)."""
-    return names(text) | {n for a, b in WIDE_NAME.findall(text or "") if name_words_ok(n := f"{a} {b}")}
+    return (names(text) | {n for a, b in WIDE_NAME.findall(text or "") if name_words_ok(n := f"{a} {b}")}
+            | {n for a, i, b in INITIAL_NAME.findall(text or "") if name_words_ok(n := f"{a} {i} {b}")})
 
 
 def people(short: dict) -> list[str]:
@@ -338,8 +344,10 @@ def people(short: dict) -> list[str]:
 
 
 PEOPLE_CHECK = os.environ.get("MEDIA_PEOPLE_CHECK", "1") != "0"
+# D47 (his answer 2026-11-17): "personality", "commentator", "host", "podcaster" too (Wikipedia calls
+# Stephen A. Smith "American TV personality"; checked on 63 described pages: only he is added)
 PERSON_DESC = re.compile(r"basketball|\bnba\b|coach|executive|sports|athlete|broadcaster|analyst|"
-                         r"journalist|reporter", re.I)
+                         r"journalist|reporter|personality|commentator|\bhost\b|podcaster", re.I)
 # D36 (his answer 2026-11-16): "Sports Illustrated" ("American sports magazine") matched "sports"
 # and a run searched photos of a magazine; a description naming a publication or an organisation
 # is never a person

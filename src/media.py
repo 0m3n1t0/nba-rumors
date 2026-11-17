@@ -2243,11 +2243,32 @@ def topup_ok(c: dict, line: str, person: str, names: list[str] | tuple = ()) -> 
     return team_fits(c, line, person, names)
 
 
+# D45 (run 43945813466; his answer 2026-11-16): a national-team photo (five of RJ Barrett in
+# Canada colours on the Knicks-Raptors lines) fits only a line about the national team, the
+# Olympics, a World Cup or FIBA. A photo is national-team when its tag names a country of the NBA's
+# players or says national team / Team USA / Olympic / FIBA; a line, when it says national team,
+# Team <country>, Olympic(s), World Cup, FIBA, EuroBasket or AmeriCup.
+COUNTRIES = ("usa", "united states", "canada", "france", "germany", "serbia", "slovenia", "greece", "spain",
+             "australia", "lithuania", "latvia", "turkey", "turkiye", "nigeria", "cameroon", "croatia",
+             "montenegro", "italy", "japan", "philippines", "dominican republic", "puerto rico", "brazil",
+             "argentina", "senegal", "south sudan", "new zealand", "finland", "bosnia", "israel", "china")
+NATIONAL_PHOTO = re.compile(r"\b(?:" + "|".join(re.escape(c) for c in COUNTRIES)
+                            + r"|national team|team usa|olympics?|fiba)\b")
+NATIONAL_LINE = re.compile(r"\b(?:national team|team (?:" + "|".join(re.escape(c) for c in COUNTRIES)
+                           + r")|olympics?|world cup|fiba|eurobasket|americup)\b")
+
+
+def national_photo(c: dict) -> bool:
+    return bool(NATIONAL_PHOTO.search(fold((c.get("tag") or {}).get("t") or "")))
+
+
 def team_fits(c: dict, line: str, person: str, names: list[str] | tuple = ()) -> bool:
     """The team part of D30, for every photo (D38, his answer 2026-11-16: Claude-scored picks too;
     run 43934705382 showed Jalen Green in a Rockets jersey on a Suns line). A clip has no tag and no
     team mark, so it always fits."""
     t = c.get("tag") or {}
+    if national_photo(c) and not NATIONAL_LINE.search(fold(line or "")):
+        return False                         # D45: national colours only on a national-team line
     if person:
         teams_of(person)                     # his current spell's start year (names_a_time)
     # D43 (his answer 2026-11-16): the photo's own person's name words are no team either ("Tragic

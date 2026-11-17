@@ -146,6 +146,8 @@ the "Safety tests" step before anything is installed or made.
  80. D40 (his answer): a tie in people() goes to the one named first in the headline
  81. D36 (his answer): a Wikipedia description naming a magazine, newspaper, website, network,
      company, team or league is never a person ("Sports Illustrated")
+ 82. D45 (his answer): a national-team photo (tag names a country or national team/Team USA/
+     Olympic/FIBA) fits only a line about a national team, the Olympics, a World Cup or FIBA
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4261,3 +4263,25 @@ class AMagazineIsNoPerson(unittest.TestCase):
             self.assertEqual(media.real_people(names), ["Jordan Poole"])
         for n in names:
             media._person_cache.pop(n, None)
+
+
+class NationalColoursOnlyOnNationalLines(unittest.TestCase):
+    """82. D45 (run 43945813466; his answer 2026-11-16): five FIBA photos of RJ Barrett in Canada
+    colours (one game, Germany v Canada 2023) filled the Knicks-Raptors lines. Checked on all 1518
+    cached tags: 62 count as national-team photos, every one really is (USA, Turkey, Canada...)."""
+
+    def test_rule(self):
+        import media
+        barrett = {"kind": "photo", "title": "2023-08-09 Deutschland gegen Kanada (Basketball-Länderspiel) by Sandro Halank–063.jpg",
+                   "own_category": True, "team": "", "tag": {"v": "C", "s": "game", "t": "stares at camera, Canada jersey"}}
+        with patch.object(media, "teams_of", lambda p: ("new york knicks", set())):
+            self.assertFalse(media.team_fits(barrett, "So he stayed, hit a three, and the Knicks won in overtime.", "RJ Barrett"))
+            self.assertFalse(media.team_fits(barrett, "I think being knocked down is a foul, not a flop.", "RJ Barrett"))
+            self.assertTrue(media.team_fits(barrett, "He played for Team Canada with Shai.", "RJ Barrett"))
+            self.assertTrue(media.team_fits(barrett, "Back at the Olympics, he was the star.", "RJ Barrett"))
+            knicks = {**barrett, "tag": {"v": "C", "s": "game", "t": "drives in Knicks jersey"}}
+            self.assertTrue(media.team_fits(knicks, "I think being knocked down is a foul, not a flop.", "RJ Barrett"))
+        for t, nat in (("dunks in a USA jersey", True), ("claps in Team USA shirt", True), ("stands, Turkey jersey 23", True),
+                       ("smiles upward, FIBA World Cup 2023 lanyard", True), ("drives in Knicks jersey", False),
+                       ("stands in Lakers warmup", False)):
+            self.assertEqual(media.national_photo({"tag": {"t": t}}), nat, t)

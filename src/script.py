@@ -1894,7 +1894,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     # D57 (run 44047143877; his answer 2026-11-17): a historic beef is exempt, as meant: its mark
     # is on the TOPIC (fill_with_evergreen), never on the ranked entry, so both beefs of a weak
     # day were skipped and the run made no Short
-    if not topic.get("evergreen") and not any(src.get("main") for src in sources):
+    if not (topic.get("evergreen") or judged.get("evergreen")) and not any(src.get("main") for src in sources):
         # a fresh story whose own article could not be read in ANY copy is only a headline: other
         # stories' articles cannot give it depth (run 43407418420: Cunningham's claim about Luka,
         # its one copy unread, two Luka-injury pieces read, a Short that could only say "an outlet

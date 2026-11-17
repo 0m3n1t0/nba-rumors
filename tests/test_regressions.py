@@ -156,6 +156,7 @@ the "Safety tests" step before anything is installed or made.
  86. D49 + D50 + D51 (his answers): a line naming a man with an NBA career shows only the men it
      names (first or last name); a rookie with no usable NBA photo may show his college photo on
      his own line naming no team or time, marked for the final read
+ 87. D52 (his answer): one Wikipedia page is one person ("Stephen Curry" = "Steph Curry")
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4448,3 +4449,26 @@ class TheLinesManOnly(unittest.TestCase):
         pools = {"Draymond Green": [self.ph("Draymond Green 2022.jpg")], "Yaxel Lendeborg": []}
         got = self.fill("Is Draymond right to protect Lendeborg?", pools, ["Yaxel Lendeborg", "Draymond Green"])
         self.assertEqual(got["title"], "Draymond Green 2022.jpg")    # Draymond is named by his first name
+
+
+class OnePageOnePerson(unittest.TestCase):
+    """87. D52 (run 43288011054; his answer 2026-11-17): "Stephen Curry" and "Steph Curry" (one
+    Wikipedia page) took two of the four places and Paolo Banchero fell out."""
+
+    def test_the_more_named_one_stays(self):
+        import media
+        pages = {"Stephen Curry": "Stephen Curry", "Steph Curry": "Stephen Curry", "Alperen Sengun": "Alperen Şengün",
+                 "Steve Kerr": "Steve Kerr", "Paolo Banchero": "Paolo Banchero"}
+
+        def real(names):
+            media._wiki_title.update({n: pages[n] for n in names if n in pages})
+            return [n for n in names if n in pages]
+        short = {"headline": "Stephen Curry and Alperen Sengun trade words",
+                 "beats": [{"say": "Stephen Curry said it. Steph Curry laughed. Steve Kerr agreed. Paolo Banchero watched."}]}
+        try:
+            with patch.object(media, "real_people", real):
+                got = media.people(short)
+        finally:
+            for n in pages:
+                media._wiki_title.pop(n, None)
+        self.assertEqual(got, ["Stephen Curry", "Alperen Sengun", "Steve Kerr", "Paolo Banchero"])

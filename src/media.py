@@ -341,6 +341,10 @@ def people(short: dict) -> list[str]:
     # Wikipedia decides; if Wikipedia cannot be reached, the old list is used as before.
     real = real_people(ranked)
     pool = ranked if real is None else real
+    # D52 (his answer 2026-11-17): one Wikipedia page, one person: "Stephen Curry" and "Steph Curry"
+    # took two of the four places (run 43288011054: Banchero fell out); the more-named one stays
+    seen_pages: set[str] = set()
+    pool = [n for n in pool if (page := _wiki_title.get(n, n)) not in seen_pages and not seen_pages.add(page)]
     # "Rudy Gobert" and "Gobert Again": a "name" that starts with another name's surname is a
     # fragment of the headline, not a second person. D35 (his answer 2026-11-16): only a CONFIRMED
     # name can make another a fragment, so the rule runs after Wikipedia, among the real names.

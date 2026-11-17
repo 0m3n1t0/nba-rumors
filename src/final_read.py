@@ -162,8 +162,11 @@ def main() -> None:
     lines = ["## 🔎 Independent final read", "",
              "A fresh Claude read each finished Short against its sources. Only a clear error with real evidence holds it.", ""]
     limit = False
+    import only
     for path in sorted(SCRIPTS.glob("short_*.json")):
         name = path.stem
+        if not only.wanted(name):               # stage 4e redoes one Short
+            continue
         short = load(path, {})
         if not short.get("hook"):
             continue

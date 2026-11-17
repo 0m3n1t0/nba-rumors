@@ -109,7 +109,10 @@ def main() -> None:
         return
     lines = ["## ✂️ yt-edit (dead air in our narration)", "", "| Short | cuts | removed | new length | where |",
              "|---|---|---|---|---|"]
+    import only
     for path in timings:
+        if not only.wanted(path.name.replace(".timing.json", "")):     # stage 4e redoes one Short
+            continue
         timing = json.loads(path.read_text(encoding="utf-8"))
         seg = segments_file(timing["words"], path.with_suffix(".segments.json"))
         report = tool("yt-edit", "deadair.py", str(seg), "--floor", str(FLOOR)) or {}

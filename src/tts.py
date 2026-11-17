@@ -303,7 +303,10 @@ def main() -> None:
 
     lines = ["## 🎙️ Voice", "", "| Short | Ready | Length | Beats | Engine | Words heard | Time |",
              "|---|---|---|---|---|---|---|"]
+    import only
     for path in scripts:
+        if not only.wanted(path.stem):          # stage 4e redoes one Short
+            continue
         short = json.loads(path.read_text(encoding="utf-8"))
         parts = [{"say": short["hook"]["text"], "on_screen": "HOOK", "tone": "tense"}] + short["beats"]
         text = " ".join(p["say"].strip() for p in parts)

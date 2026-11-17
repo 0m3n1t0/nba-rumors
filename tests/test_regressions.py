@@ -191,6 +191,9 @@ the "Safety tests" step before anything is installed or made.
  103. D67 (his answers: "D49's copy"): a man whose every usable photo is a national-team one may be
      shown in one on his own line naming no team or time (Brooks); never on a team or time line;
      an NBA photo comes first; the final read sees "NATIONAL, NO NBA PHOTO EXISTS"
+ 104. stage 4e (his answers): the final read's errors are fixed and the Short redone while each try
+     leaves fewer errors; only the error lines change, by the repair pass's checks (a hook by the
+     hook rules); a wrong picture never again in that Short; no new voice = the old words stay
  98. D2-a/c/d (his answers): the hook truth check and the final read catch facts joined or
      shortened into another meaning; the hook check catches a superlative or always/never/
      everyone word the source does not say; an opinion says an open future as likely, not settled
@@ -5223,3 +5226,213 @@ class HisNationalTeamWhenNoNBAPhoto(TheLinesManOnly):
     def test_must_show_him(self):
         pools = {"Dillon Brooks": [self.canada("Dillon Brooks Canada 2023.jpg", v="O")]}
         self.assertIsNone(self.fill("Brooks said he was trying to de-escalate it.", pools, ["Dillon Brooks"]))
+
+
+CURRY_SOURCES = [
+    {"publisher": "Bleacher Report", "title": "Steph Curry explains pay cut", "summary": "",
+     "text": "Curry took a slight pay cut, telling ESPN's Anthony Slater that he wanted to eliminate distractions "
+             "and give the Warriors some flexibility. Curry agreed to a two-year, $116 million extension that gave "
+             "$10 million in cap space back to the Warriors next summer. \"I assumed that it would probably be one "
+             "of, if not the last, contract I signed,\" Curry said."},
+    {"publisher": "Yahoo Sports", "title": "Short-handed Warriors struggle without Steph Curry", "summary": "",
+     "text": "The Warriors are 1-3 without Curry. They opened with a 38-14 deficit. \"Another terrible start,\" "
+             "Kerr told reporters after Monday's loss."}]
+CURRY_SHORT = {
+    "n": 1, "headline": "Steph Curry explains pay cut", "lead": "curry",
+    "hook": {"text": "Steph Curry just admitted his new Warriors contract is probably his last."},
+    "beats": [
+        {"say": "He took a pay cut that gave the Warriors 10 million in cap space.", "on_screen": "Curry", "stage": "setup"},
+        {"say": "He said it's probably his last contract.", "on_screen": "Curry", "stage": "conflict"},
+        {"say": "Without him, the Warriors are one and three, and Kerr called it terrible.", "on_screen": "Kerr",
+         "stage": "escalation"},
+        {"say": "Is the cap room enough for Curry, or is it too late?", "on_screen": "Curry", "stage": "exit"}],
+    "titles": [{"title": "Curry's LAST contract?"}], "thumbnail_text": "CURRY'S LAST DEAL?", "claims": [],
+    "compliance": {"verdict": "PASS", "checks": {"title_accuracy": {"verdict": "PASS", "notes": []},
+                                                 "thumbnail_accuracy": {"verdict": "PASS", "notes": []}}}}
+KERR_ERROR = {"line": 3, "kind": "NOT IN THE SOURCES", "what": "Kerr said terrible about a start",
+              "evidence": 'Source: "Another terrible start," Kerr told reporters. Line: "Kerr called it terrible."'}
+
+
+class FixAfterTheRead(unittest.TestCase):
+    """104. Stage 4e (run 44110628783; his answers 2026-11-17): Curry's Short was held for two wrong
+    lines and lost (he reviews nothing). Now only the lines with an error are fixed (the same checks
+    as the repair pass; a hook by the hook rules), a wrong picture is never used again in that
+    Short, the Short is redone (voice when the words changed, all pictures, the final read) and
+    it goes on while each try leaves fewer errors."""
+
+    def setUp(self):
+        import fix_after_read as f
+        import script
+        self.f, self.s = f, script
+        self.saved = (script.ask_claude, f.stage, f.SCRIPTS, f.MEDIA, f.SOURCES, f.REVIEW, f.AUDIO)
+        self.tmp = Path(tempfile.mkdtemp())
+        for d in ("scripts", "media", "sources", "review", "audio"):
+            (self.tmp / d).mkdir()
+        f.SCRIPTS, f.MEDIA, f.SOURCES, f.REVIEW, f.AUDIO = (self.tmp / d for d in
+                                                            ("scripts", "media", "sources", "review", "audio"))
+
+    def tearDown(self):
+        f, s = self.f, self.s
+        s.ask_claude, f.stage, f.SCRIPTS, f.MEDIA, f.SOURCES, f.REVIEW, f.AUDIO = self.saved
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def answer(self, lines):
+        self.s.ask_claude = lambda prompt, model="", where="": {"lines": lines}
+
+    def test_only_the_wrong_line_changes(self):
+        self.answer([{"line": 3, "says": "Without him, the Warriors are one and three, and Kerr called another "
+                                         "start terrible."},
+                     {"line": 1, "says": "He took a huge pay cut."}])             # not an error line: ignored
+        new, why = self.f.fix_text(copy.deepcopy(CURRY_SHORT), [KERR_ERROR], CURRY_SOURCES, [])
+        self.assertEqual(why, "")
+        self.assertEqual(new["beats"][2]["say"], "Without him, the Warriors are one and three, and Kerr called "
+                                                 "another start terrible.")
+        self.assertEqual(new["beats"][0]["say"], CURRY_SHORT["beats"][0]["say"])
+        self.assertEqual(new["hook"]["text"], CURRY_SHORT["hook"]["text"])
+        self.assertIn("compliance", new)
+        self.assertIn("another start terrible", new["spoken"])          # the gate reads the fixed words
+        self.assertEqual(new["unsupported_numbers"], [])
+        self.assertEqual(new["compliance"]["checks"]["title_accuracy"], {"verdict": "PASS", "notes": []})
+
+    def test_a_fix_that_invents_is_refused(self):
+        self.answer([{"line": 3, "says": "Without him, they are 1 and 7, and Kerr called it terrible."}])
+        new, why = self.f.fix_text(copy.deepcopy(CURRY_SHORT), [KERR_ERROR], CURRY_SOURCES, [])
+        self.assertIsNone(new)
+        self.assertIn("number", why)
+
+    def test_a_hook_fix_keeps_the_hook_rules(self):
+        err = {**KERR_ERROR, "line": 0}
+        self.answer([{"line": 0, "says": "The Warriors made a deal."}])               # too short, no Curry
+        new, why = self.f.fix_text(copy.deepcopy(CURRY_SHORT), [err], CURRY_SOURCES, [])
+        self.assertIsNone(new)
+        self.answer([{"line": 0, "says": "Steph Curry just said his new Warriors deal is probably his last."}])
+        new, why = self.f.fix_text(copy.deepcopy(CURRY_SHORT), [err], CURRY_SOURCES, [])
+        self.assertEqual(new["hook"]["text"], "Steph Curry just said his new Warriors deal is probably his last.")
+
+    def test_the_picture_the_evidence_names(self):
+        a = {"kind": "photo", "page": "pa", "person": "Steve Kerr", "tag": {"t": "on the sideline"}, "beat": 3}
+        b = {"kind": "photo", "page": "pb", "person": "Luka Doncic", "tag": {"t": "looks ahead in Dallas jersey"},
+             "beat": 3}
+        items = [None, None, None, {**a, "alts": [b]}]
+        err = {"line": 3, "kind": "WRONG PICTURE", "evidence": 'Picture: "Luka Doncic | looks ahead in Dallas jersey"'}
+        self.assertEqual(self.f.refused_pictures([err], items), ["pb"])
+        err = {"line": 3, "kind": "WRONG PICTURE", "evidence": 'Picture: "Steve Kerr | game"'}   # his name only
+        self.assertEqual(self.f.refused_pictures([err], items), ["pa", "pb"])     # none named: the whole line
+
+    def run_loop(self, reads, voice_ok=True):
+        """reads: the final read's error lists after each try."""
+        f = self.f
+        (f.SCRIPTS / "short_1.json").write_text(json.dumps(CURRY_SHORT))
+        (f.SOURCES / "short_1.json").write_text(json.dumps(CURRY_SOURCES))
+        (f.REVIEW / "short_1.json").write_text(json.dumps({"verdict": "REVIEW", "errors": [KERR_ERROR, KERR_ERROR]}))
+        done, left = [], list(reads)
+
+        def stage(module, name):
+            done.append(module)
+            if module == "tts.py" and voice_ok:
+                (f.AUDIO / "short_1.timing.json").write_text(str(len(done)))
+                import os as _os
+                _os.utime(f.AUDIO / "short_1.timing.json", (10 ** 9 + len(done), 10 ** 9 + len(done)))
+            if module == "final_read.py":
+                errs = left.pop(0)
+                (f.REVIEW / "short_1.json").write_text(json.dumps({"verdict": "REVIEW" if errs else "PASS",
+                                                                   "errors": errs}))
+        f.stage = stage
+        self.answer([{"line": 3, "says": "Without him, the Warriors are one and three, and Kerr called another "
+                                         "start terrible."}])
+        return f.fix_short("short_1"), done
+
+    def test_goes_on_while_errors_get_fewer(self):
+        tries, done = self.run_loop([[KERR_ERROR], []])
+        self.assertEqual(len(tries), 2)
+        self.assertEqual(json.loads((self.f.REVIEW / "short_1.json").read_text())["verdict"], "PASS")
+        self.assertEqual(done[:4], ["tts.py", "audio_qc.py", "media.py", "final_read.py"])
+
+    def test_stops_without_progress(self):
+        tries, done = self.run_loop([[KERR_ERROR, KERR_ERROR], [KERR_ERROR]])
+        self.assertEqual(len(tries), 1)
+        self.assertIn("no progress", tries[0]["stopped"])
+
+    def test_no_new_voice_keeps_the_old_words(self):
+        tries, done = self.run_loop([[]], voice_ok=False)
+        self.assertIn("no new voice", tries[0]["stopped"])
+        kept = json.loads((self.f.SCRIPTS / "short_1.json").read_text())
+        self.assertEqual(kept["beats"][2]["say"], CURRY_SHORT["beats"][2]["say"])
+        self.assertNotIn("media.py", done)
+
+    def test_one_short_only(self):
+        import only
+        with patch.dict("os.environ", {"NBA_ONLY": "short_2"}):
+            self.assertTrue(only.wanted("short_2"))
+            self.assertFalse(only.wanted("short_1"))
+            self.assertTrue(only.active())
+        with patch.dict("os.environ", {"NBA_ONLY": ""}):
+            self.assertTrue(only.wanted("short_1"))
+            self.assertFalse(only.active())
+
+
+class RedoOneShortsPictures(unittest.TestCase):
+    """104 (pictures). When stage 4e redoes a Short's pictures, the refused ones never come back
+    (round 1, round 2 and the fill all skip them), and the pictures replaced stay in the permanent
+    licence record, marked "replaced" (his answer)."""
+
+    def test_refused_never_offered(self):
+        import media
+        seen = []
+        saved = (media.plan, media.shortlist_photos, media.candidates, media.contact_sheet, media.spoken)
+        try:
+            media.plan = lambda short: [{"person": "Steve Kerr", "queries": []}]
+            media.spoken = lambda short: [{"say": "Kerr called it terrible."}]
+            media.shortlist_photos = lambda *a, **k: None
+            media.candidates = lambda *a, **k: [{"kind": "photo", "page": "pa"}, {"kind": "photo", "page": "pb"}]
+
+            def sheet(cands, *a, **k):
+                seen.extend(c["page"] for c in cands)
+                raise media.UsageLimit("stop here")
+            media.contact_sheet = sheet
+            media.REFUSED.clear()
+            media.REFUSED.add("pb")
+            with self.assertRaises(media.UsageLimit):
+                media.collect_for({"headline": "h", "beats": []}, Path(tempfile.mkdtemp()), set())
+            self.assertEqual(seen, ["pa"])
+            self.assertIn("pb", media.REJECTED)                 # the fill and the VS card skip it too
+        finally:
+            media.plan, media.shortlist_photos, media.candidates, media.contact_sheet, media.spoken = saved
+            media.REFUSED.clear()
+
+    def test_replaced_stay_marked(self):
+        import media
+        saved = media.LEDGER
+        media.LEDGER = Path(tempfile.mkdtemp())
+        try:
+            media.record_replaced("short_1", [{"kind": "photo", "title": "Luka.jpg", "page": "pb"}])
+            rec = json.loads((media.LEDGER / "assets.jsonl").read_text().splitlines()[0])
+            self.assertTrue(rec["replaced"])
+            self.assertEqual(rec["source_page"], "pb")
+        finally:
+            shutil.rmtree(media.LEDGER, ignore_errors=True)
+            media.LEDGER = saved
+
+    def test_the_other_shorts_keep_their_clips_and_music(self):
+        import media
+        saved = (media.SCRIPTS, media.MEDIA, media.ROOT)
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            media.SCRIPTS, media.MEDIA, media.ROOT = tmp / "scripts", tmp / "media", tmp
+            media.SCRIPTS.mkdir()
+            (media.MEDIA / "short_1").mkdir(parents=True)
+            for n in (1, 2):
+                (media.SCRIPTS / f"short_{n}.json").write_text("{}")
+            (media.MEDIA / "short_2.json").write_text(json.dumps([{"kind": "video", "id": "clip9", "alts": []}]))
+            (media.MEDIA / "short_2_music.json").write_text(json.dumps({"file": "data/media/short_2/music.mp3",
+                                                                         "library_key": "dark/Night Drive.mp3",
+                                                                         "url": "https://x/t.mp3"}))
+            (media.MEDIA / "short_1" / "music.mp3").write_text("m")
+            (media.MEDIA / "short_1_music.json").write_text(json.dumps({"file": "media/short_1/music.mp3"}))
+            with patch.dict("os.environ", {"NBA_ONLY": "short_1"}):
+                self.assertEqual(media.others_used(), {"clip9", "Night Drive.mp3", "https://x/t.mp3"})
+            self.assertEqual(media.music_kept("short_1")["file"], "media/short_1/music.mp3")
+            self.assertIsNone(media.music_kept("short_2"))                 # its file is not there
+        finally:
+            media.SCRIPTS, media.MEDIA, media.ROOT = saved
+            shutil.rmtree(tmp, ignore_errors=True)

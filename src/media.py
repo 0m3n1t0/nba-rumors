@@ -1848,6 +1848,7 @@ def retry_needed(cands: list, pick: dict | None) -> bool:
 
 
 REJECTED: set[str] = set()   # photos Claude looked at and refused (wrong person, bad framing)
+REFUSED: set[str] = set()    # stage 4e: pictures the final read found wrong in this Short (never again in it)
 
 
 def rejected_photos(cands: list[dict], choice: dict) -> set[str]:
@@ -1914,6 +1915,7 @@ def shortlist_photos(short: dict, beats: list[dict], plans: list[dict]) -> dict[
 def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
     folder.mkdir(parents=True, exist_ok=True)
     REJECTED.clear()
+    REJECTED.update(REFUSED)        # stage 4e: the final read's wrong pictures stay out of this Short
     beats = spoken(short)
     plans = plan(short)
     work = Path(tempfile.mkdtemp(prefix="media_"))
@@ -1925,6 +1927,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             try:
                 cands = candidates(p, work, i, used, (people(short) or [""])[0], tuple(people(short)[1:3]),
                                    lists.get(i, []) if lists is not None else None)
+                cands = [c for c in cands if c.get("page") not in REFUSED]      # stage 4e
                 if cands:
                     contact_sheet(cands, sheets / f"beat_{i}.jpg",
                                   f"BEAT {i}: {beats[i].get('say', '')[:90]}" if i < len(beats) else f"BEAT {i}")
@@ -1966,7 +1969,8 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
                 # person's faces now come only from the tag shortlist kept in "faces" below
                 more = [c for c in candidates(extra, work, 100 + i, used, (people(short) or [""])[0], tuple(people(short)[1:3]),
                                               [] if lists is not None else None)
-                        if (c.get("id") or c["page"]) not in {x.get("id") or x["page"] for x in per_beat[i]}]
+                        if (c.get("id") or c["page"]) not in {x.get("id") or x["page"] for x in per_beat[i]}
+                        and c.get("page") not in REFUSED]                                      # stage 4e
                 keep = [per_beat[i][k - 1] for k in (picks.get(i, {}).get("ranking") or [])[:2]
                         if isinstance(k, int) and 1 <= k <= len(per_beat[i])]
                 faces = [c for c in per_beat[i] if c["kind"] == "photo" and c not in keep]
@@ -2851,6 +2855,51 @@ def record_assets(name: str, short: dict, shots: list, music: dict | None) -> No
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+def record_replaced(name: str, old: list) -> None:
+    """Stage 4e (his answer 2026-11-17: "they stay, marked"): the record is permanent and only grows;
+    a picture replaced when the Short was redone gets a "replaced" line."""
+    if not old:
+        return
+    import datetime as dt
+    LEDGER.mkdir(parents=True, exist_ok=True)
+    now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    run = os.environ.get("GITHUB_RUN_ID", "local")
+    with open(LEDGER / "assets.jsonl", "a", encoding="utf-8") as f:
+        for x in old:
+            f.write(json.dumps({"time": now, "run": run, "short": name, "replaced": True, "kind": x.get("kind"),
+                                "title": x.get("title", ""), "source_page": x.get("page", "")},
+                               ensure_ascii=False) + "\n")
+
+
+def others_used() -> set:
+    """Stage 4e redoes one Short: the other Shorts' clips and music stay theirs (one run, no repeat)."""
+    import only
+    used = set()
+    for other in sorted(SCRIPTS.glob("short_*.json")):
+        if only.wanted(other.stem) or not re.fullmatch(r"short_\d+", other.stem):
+            continue
+        for it in load_json(MEDIA / f"{other.stem}.json", []) + load_json(MEDIA / f"{other.stem}_vs.json", []):
+            for x in [y for y in [it] + ((it or {}).get("alts") or []) if y]:
+                if x.get("kind") == "video" and x.get("id"):
+                    used.add(x["id"])
+        m = load_json(MEDIA / f"{other.stem}_music.json", None) or {}
+        used |= {v for v in (Path(m.get("library_key") or "").name, m.get("url")) if v}   # as pick_music marks them
+    return used
+
+
+def music_kept(name: str) -> dict | None:
+    """Stage 4e: the Short's own music stays when its file is still there."""
+    m = load_json(MEDIA / f"{name}_music.json", None)
+    return m if m and m.get("file") and (ROOT / m["file"]).exists() else None
+
+
+def load_json(path: Path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
 def music_ledger() -> dict:
     """The licence record of every library track (YouTube Audio Library). New tracks are added
     as NOT confirmed and are not used until the owner confirms them in the private repository:
@@ -2895,9 +2944,18 @@ def main() -> None:
               "|---|---|---|---|---|---|"]
     used: set = set()
     errors_by_short: dict[str, list[str]] = {}
+    import only
+    if only.active():
+        used |= others_used()
     for script_path in sorted(SCRIPTS.glob("short_*.json")):
+        if not only.wanted(script_path.stem):
+            continue
         short = json.loads(script_path.read_text(encoding="utf-8"))
         name = script_path.stem
+        REFUSED.clear()
+        REFUSED.update(load_json(MEDIA / f"{name}_refused.json", []))
+        before = (load_json(MEDIA / f"{name}_vs.json", []) + load_json(MEDIA / f"{name}.json", [])) \
+            if only.active() else []
         MOOD[0] = "tense"
         short["_name"] = name
         MEDIA_ERRORS.clear()
@@ -2933,7 +2991,8 @@ def main() -> None:
         (MEDIA / f"{name}_vs.json").write_text(json.dumps(vs, indent=2, ensure_ascii=False), encoding="utf-8")
         errors_by_short[name] = list(MEDIA_ERRORS)
         (MEDIA / f"{name}.json").write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
-        music = pick_music(MOOD[0], MEDIA / name, used)
+        kept_music = music_kept(name) if only.active() else None    # stage 4e keeps the Short's music
+        music = kept_music or pick_music(MOOD[0], MEDIA / name, used)
         (MEDIA / f"{name}_music.json").write_text(json.dumps(music, indent=2, ensure_ascii=False), encoding="utf-8")
         desc = short.get("description", "").split("\n\n" + CREDIT_MARK)[0]
         shots = vs + [x for it in items if it for x in [it] + (it.get("alts") or [it.get("alt")]) if x]
@@ -2942,7 +3001,11 @@ def main() -> None:
         short["description"] = desc
         short.pop("_name", None)
         script_path.write_text(json.dumps(short, indent=2, ensure_ascii=False), encoding="utf-8")
-        record_assets(name, short, shots, music)
+        if before:            # stage 4e: the pictures picked before stay in the record, marked replaced
+            now_pages = {x.get("page") for x in shots}
+            record_replaced(name, [y for it in before if it for y in [it] + (it.get("alts") or []) if y
+                                   and y.get("page") not in now_pages])
+        record_assets(name, short, shots, None if kept_music else music)    # kept music: already recorded
         photos = sum(1 for i in shots if i["kind"] == "photo")
         clips = sum(1 for i in shots if i["kind"] == "video")
         real = sum(1 for i in shots if i.get("real"))

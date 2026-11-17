@@ -2306,6 +2306,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         "repaired": repaired,
         "receipt": receipt,
         "softened_quotes": softened,
+        "lead": lead,                 # stage 4e: a fixed hook keeps the story's lead up front (D27)
         # the story is measurably hot today: fan-reaction lines are backed by real data
         "audience_hot": bool((topic.get("reddit") or 0) > 0 or (topic.get("google_trend") or 0) > 0
                              or (topic.get("youtube_heat") or 0) >= 3 or (topic.get("search_hits") or 0) >= 3),

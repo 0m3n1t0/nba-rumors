@@ -198,6 +198,20 @@ jobs:
           mkdir -p data && cat "$GITHUB_STEP_SUMMARY" >> data/summary.md 2>/dev/null || true
           exit ${status:-0}
 
+      - name: "Stage 4e: fix what the final read found (his answers 2026-11-17)"
+        if: hashFiles('data/skip_reason.txt') == ''
+        env:
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
+          OPENVERSE_CLIENT_SECRET: ${{ secrets.OPENVERSE_CLIENT_SECRET }}
+          WIKIMEDIA_TOKEN: ${{ secrets.WIKIMEDIA_TOKEN }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/stage_summary.md"; : > "$GITHUB_STEP_SUMMARY"   # full report: private only
+          python src/fix_after_read.py || status=$?
+          mkdir -p data && cat "$GITHUB_STEP_SUMMARY" >> data/summary.md 2>/dev/null || true
+          exit ${status:-0}
+
       - name: "Stage 5: render the Shorts (MP4)"
         if: hashFiles('data/skip_reason.txt') == ''
         run: |

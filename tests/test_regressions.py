@@ -163,6 +163,8 @@ the "Safety tests" step before anything is installed or made.
  90. D56 (his answer): an infobox listing his NBA spells with none "present" means he plays for no
      team now, whatever an open Wikidata spell says (Redick); an empty infobox field never swallows
      the next one (Draymond's "years1 = ...-present" was lost)
+ 91. D57 (his answer): a historic beef is exempt from the "own article read" rule (its mark is on
+     the topic): run 44047143877 skipped both beefs and made no Short
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4582,3 +4584,37 @@ class RetiredPlaysForNobody(WikipediaCareerJoinsWikidata):
     def test_an_empty_field_swallows_nothing(self):
         teams, current, since, start = self.m.wiki_career(self.DRAYMOND)
         self.assertEqual((teams, current, since, start), ({"golden state warriors"}, "golden state warriors", 2012, 2012))
+
+
+class HistoricBeefNeedsNoOwnArticle(unittest.TestCase):
+    """91. D57 (run 44047143877; his answer 2026-11-17): on a weak day both historic beefs (Dwight
+    Howard vs Kobe, Kawhi vs the Spurs) were skipped with "the story's own article could not be read":
+    the exemption read judged["evergreen"], but fill_with_evergreen marks the TOPIC. No Short was made."""
+
+    def _build(self, topic):
+        import script
+        calls = []
+
+        class Stop(Exception):
+            pass
+
+        def ask(prompt, model=""):
+            calls.append(1)
+            raise Stop()
+        sources = [{"publisher": "ESPN", "title": "t", "text": "x" * 5000, "tier": 1, "main": False}]
+        with patch.object(script, "gather_sources", lambda t, e, i: sources), patch.object(script, "ask_claude", ask):
+            editor = {"topics": [topic], "ranked": [{"id": 0, "nba": True, "kind": "player_vs_player"}]}
+            try:
+                script.build_short(1, 0, editor, "voice", {"hooks": [{"name": "x", "shape": "y", "example": "z"}], "rules": []})
+            except Stop:
+                return "reached Claude"
+            except ValueError as exc:
+                return str(exc)
+        return "built"
+
+    def test_beef_goes_on_fresh_story_stops(self):
+        beef = {"headline": "Dwight Howard vs Kobe Bryant (back in the news)", "items": [], "verified": True,
+                "star_names": ["Dwight Howard", "Kobe Bryant"], "evergreen": "Dwight Howard vs Kobe Bryant"}
+        self.assertEqual(self._build(beef), "reached Claude")
+        fresh = {k: v for k, v in beef.items() if k != "evergreen"}
+        self.assertIn("own article could not be read", self._build(fresh))

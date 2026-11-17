@@ -902,6 +902,39 @@ def quotes_in(text: str) -> list[str]:
     return [m.group(2) for rx in QUOTE_PATTERNS for m in rx.finditer(text or "") if len(m.group(2)) >= QUOTE_MIN]
 
 
+def missing_inside(quote: str, words: list[str], toks: list[str], owner: list[int]) -> str:
+    """D66 (run 44110628783; his answers 2026-11-17): Brooks's "I was trying to de-escalate it"
+    left out "just" from "I was just trying to de-escalate it": every quoted word is in the source,
+    so it counted as exact. The source's own words from the quote's first word to its last, when
+    words are missing only INSIDE the quote (quoting part of a sentence stays as it is), within the
+    old limit (1.6 x + 2) and never across narration ("...," Brooks said, "..."). "" = nothing to do."""
+    q = _toks(quote)
+    if len(q) < 2:
+        return ""
+    for i in [k for k, w in enumerate(toks) if w == q[0]][:300]:
+        pos, k = [i], i
+        for w in q[1:]:
+            k += 1
+            while k < len(toks) and toks[k] != w and k - pos[-1] <= 3:
+                k += 1
+            if k >= len(toks) or toks[k] != w:
+                break
+            pos.append(k)
+        if len(pos) != len(q):
+            continue
+        span = pos[-1] - pos[0] + 1
+        if span == len(q) or span > 1.6 * len(q) + 2:
+            continue
+        first, last = owner[pos[0]], owner[pos[-1]]
+        between = words[first:last + 1]
+        if any(re.search(r"[\"\u201c\u201d]", w[1:-1] if len(w) > 2 else "") or w.endswith(":") or
+               re.match(r"(said|says|told|asked)\b", w, re.I) for w in between[1:-1]):
+            continue
+        text = " ".join(between).replace('"', "").replace("\u201c", "").replace("\u201d", "")
+        return re.sub(r"^[^\w']+|[^\w']+$", "", text)
+    return ""
+
+
 def soften_quotes(beats: list[dict], sources: list[dict]) -> list[str]:
     """Balance between "word for word" and "the same meaning": a quote the writer reworded is
     CORRECTED to the source's exact words (it stays a quote, so "my coach" is still the
@@ -919,7 +952,14 @@ def soften_quotes(beats: list[dict], sources: list[dict]) -> list[str]:
             score, passage = source_passage(q, words, toks, owner)
             pt = _toks(passage)
             nums_ok = all(n in pt for n in re.findall(r"\d+", q))
-            if score >= 0.999 or score < QUOTE_GIST or not passage or not nums_ok \
+            if score >= 0.999:
+                inner = missing_inside(q, words, toks, owner)       # D66: a word left out inside
+                if not inner:
+                    return m.group(0)
+                tail = re.search(r"[^\w']*$", q).group(0)           # keep the quote's own end (".")
+                fixed.append(f"{q.strip()} -> {inner}{tail}")
+                return f"{m.group(1)}{inner}{tail}{m.group(3)}"
+            if score < QUOTE_GIST or not passage or not nums_ok \
                     or len(pt) > 1.6 * len(qt) + 2:
                 return m.group(0)
             fixed.append(f"{q.strip()} -> {passage}")

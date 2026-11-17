@@ -186,6 +186,8 @@ the "Safety tests" step before anything is installed or made.
      kept only as a doubt is saved
  101. (his answers): a payoff that is only "I think ..." in under 8 words with no because / so / since
      gets one reason from the repair; "Doc was half right and fully clumsy." stays an answer
+ 102. D66 (his answers): a quote with a word left out INSIDE gets the source's exact words (from its
+     first word to its last); quoting part of a sentence stays; never across "..., he said, ..."
  98. D2-a/c/d (his answers): the hook truth check and the final read catch facts joined or
      shortened into another meaning; the hook check catches a superlative or always/never/
      everyone word the source does not say; an opinion says an open future as likely, not settled
@@ -5115,3 +5117,41 @@ class VerdictNeedsAReason(unittest.TestCase):
                     "Doc was half right and fully clumsy.", "I think baiting is no excuse for swinging.",
                     "I'd say it's smart. The cap room comes right when they need it."):
             self.assertFalse(script.bare_opinion(self.pay(say)), say)
+
+
+class WordLeftOutOfAQuote(unittest.TestCase):
+    """102. D66 (run 44110628783; his answers 2026-11-17): Brooks said "I was just trying to
+    de-escalate it"; the Short said "I was trying to de-escalate it." Every quoted word was in the
+    source, so it counted as exact. In the kept runs only this quote changes."""
+
+    SRC = [{"title": "Brooks", "summary": "",
+            "text": "\"I was just trying to de-escalate it,\" Brooks said after the game. \"You weren't trying "
+                    "to de-escalate,\" Green said on his podcast. \"You were trying to be the villain.\""}]
+
+    def soft(self, say):
+        import script
+        beats = [{"say": say}]
+        got = script.soften_quotes(beats, self.SRC)
+        return beats[0]["say"], got
+
+    def test_word_inside_restored(self):
+        say, got = self.soft('Brooks said, "I was trying to de-escalate it."')
+        self.assertEqual(say, 'Brooks said, "I was just trying to de-escalate it."')
+        self.assertEqual(len(got), 1)
+
+    def test_part_of_a_sentence_stays(self):
+        say, got = self.soft('Green said, "trying to be the villain."')
+        self.assertEqual(say, 'Green said, "trying to be the villain."')
+        self.assertEqual(got, [])
+
+    def test_exact_quote_stays(self):
+        say, got = self.soft('Brooks said, "I was just trying to de-escalate it."')
+        self.assertEqual(got, [])
+
+    def test_never_across_narration(self):
+        import script
+        words, toks, owner = script._source_words(self.SRC)
+        self.assertEqual(script.missing_inside("de-escalate it You weren't trying", words, toks, owner), "")
+        src = [{"title": "", "summary": "", "text": '"I was just trying," Brooks said. "To calm it down."'}]
+        words, toks, owner = script._source_words(src)
+        self.assertEqual(script.missing_inside("I was just trying to calm it down", words, toks, owner), "")

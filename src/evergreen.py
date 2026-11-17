@@ -36,7 +36,7 @@ ABOUT_THEM = re.compile(
     r"blasts?|blasted|rips?|ripped|slams?|slammed|calls? out|called out|praises?|praised|defends?|"
     r"defended|apologi[sz]es?|apologi[sz]ed|"
     r"feud|beef|rivalry|rift|relationship|friendship|fallout|falling out|tension|clash|"
-    r"history|reunion|regrets?|regretted|story|stories|truth|why|on (?:his|their|the) relationship)\b", re.I)
+    r"history|reunion|regrets?|regretted|story|stories|truth|on (?:his|their|the) relationship)\b", re.I)
 
 
 def about_them(title: str) -> bool:

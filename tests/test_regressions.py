@@ -179,7 +179,8 @@ the "Safety tests" step before anything is installed or made.
  97. D2-b (his answers): 12+ words in a row of a source quote, said without quote marks on a line
      naming the man that quote's paragraph names, are put in quote marks (only the copied words)
  99. (his yes 2026-11-17): an article about two people of a historic beef is found by the past
-     forms too ("Isiah Thomas claimed..."); the bank holds every pair once
+     forms too ("Isiah Thomas claimed..."); the bank holds every pair once; D64: "why" alone does
+     not make an article about them
  98. D2-a/c/d (his answers): the hook truth check and the final read catch facts joined or
      shortened into another meaning; the hook check catches a superlative or always/never/
      everyone word the source does not say; an opinion says an open future as likely, not settled
@@ -5035,6 +5036,13 @@ class PastFormsAboutThem(unittest.TestCase):
         self.assertTrue(e.about_them("Shaq slammed Kobe in old interview"))
         self.assertTrue(e.about_them("Durant fired back at Perkins"))
         self.assertFalse(e.about_them("Thunder's Shai Gilgeous-Alexander Threatens Kevin Durant, Russell Westbrook Record"))
+
+    def test_why_alone_is_not_about_them(self):
+        # D64 (his answer 2026-11-17): "why" made an injury note a fresh reason for a beef
+        import evergreen as e
+        self.assertFalse(e.about_them("Why Kyrie Irving will not play vs. Celtics? Mavs announce huge injury update"))
+        self.assertFalse(e.about_them('"It\'s like giving up a diamond for some garnets" - Phil Jackson on why Knicks weren\'t good enough'))
+        self.assertTrue(e.about_them("Kyrie Irving explains why he will not follow LeBron James path"))
 
     def test_every_pair_once(self):
         import evergreen as e

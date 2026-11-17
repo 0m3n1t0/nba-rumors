@@ -466,6 +466,29 @@ def pair_made_recently(people: list[str], made: list[dict], now=None) -> str:
     return ""
 
 
+SAME_HEADLINE_DAYS = 7
+
+
+def same_headline_made(topic: dict, made: list[dict], now=None) -> bool:
+    """D53 (run 44040546534; his answer 2026-11-17): a story whose headline was already made in the
+    last 7 days is always a repeat, with no exception: a real new development comes in a new article
+    with a new headline. Run 44040546534 made "Steve Kerr rightfully beginning to tinker..." again 47
+    minutes after the first (the editor called it new), and Nov 10-11 made one headline 3 times."""
+    from datetime import datetime, timezone
+    head = fold(topic.get("headline", "")).strip()
+    if not head:
+        return False
+    now = now or datetime.now(timezone.utc)
+    for m in made:
+        try:
+            age = (now - datetime.fromisoformat(m["time"])).total_seconds() / 86400
+        except (KeyError, ValueError, TypeError):
+            continue
+        if age < SAME_HEADLINE_DAYS and fold(m.get("headline", "")).strip() == head:
+            return True
+    return False
+
+
 def made_recently() -> list[dict]:
     try:
         return json.loads((DATA / "history" / "made.json").read_text(encoding="utf-8"))
@@ -504,6 +527,11 @@ def parse(text: str, n_topics: int, topics: list[dict] | None = None) -> dict:
             r["kind"] = "filler"          # an opinion piece is never a Short
     repeats = {r["id"] for r in data["ranked"] if r.get("repeat")}
     made = made_recently()
+    for r in data["ranked"]:
+        if topics and 0 <= r["id"] < len(topics) and r["id"] not in repeats and same_headline_made(topics[r["id"]], made):
+            repeats.add(r["id"])
+            r["repeat"] = True
+            r["why"] = f"the same headline was already made in the last {SAME_HEADLINE_DAYS} days. " + r.get("why", "")
     for r in data["ranked"]:
         if topics and 0 <= r["id"] < len(topics) and r["id"] not in repeats:
             earlier = same_feud_recent(topics[r["id"]], made)

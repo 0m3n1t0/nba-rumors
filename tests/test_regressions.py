@@ -157,6 +157,8 @@ the "Safety tests" step before anything is installed or made.
      names (first or last name); a rookie with no usable NBA photo may show his college photo on
      his own line naming no team or time, marked for the final read
  87. D52 (his answer): one Wikipedia page is one person ("Stephen Curry" = "Steph Curry")
+ 88. D53 (his answer): a story whose headline was already made in the last 7 days is always a
+     repeat, whatever the editor says
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4472,3 +4474,34 @@ class OnePageOnePerson(unittest.TestCase):
             for n in pages:
                 media._wiki_title.pop(n, None)
         self.assertEqual(got, ["Stephen Curry", "Alperen Sengun", "Steve Kerr", "Paolo Banchero"])
+
+
+class SameHeadlineIsARepeat(unittest.TestCase):
+    """88. D53 (run 44040546534; his answer 2026-11-17): "Steve Kerr rightfully beginning to tinker
+    with Warriors' Steph Curry-less lineup" was made again 47 minutes after the first; the editor
+    called it "a new development" and the feud guard needs two people in the headline."""
+
+    HEAD = "Steve Kerr rightfully beginning to tinker with Warriors' Steph Curry-less lineup"
+
+    def test_repeat_whatever_the_editor_says(self):
+        import editor
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        made = [{"time": (now - timedelta(minutes=47)).isoformat(), "headline": self.HEAD}]
+        topics = [{"headline": self.HEAD}, {"headline": "Draymond Green calls out the refs"}]
+        answer = json.dumps({"ranked": [{"id": 0, "repeat": False, "why": "a new development", "kind": "player_vs_player"},
+                                        {"id": 1, "repeat": False, "why": "", "kind": "player_vs_player"}],
+                             "shorts": [0, 1]})
+        with patch.object(editor, "made_recently", lambda: made):
+            data = editor.parse(answer, 2, topics)
+        self.assertTrue(data["ranked"][0]["repeat"])
+        self.assertEqual(data["shorts"], [1])
+
+    def test_only_seven_days(self):
+        import editor
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        topic = {"headline": self.HEAD}
+        self.assertTrue(editor.same_headline_made(topic, [{"time": (now - timedelta(days=6)).isoformat(), "headline": self.HEAD}]))
+        self.assertFalse(editor.same_headline_made(topic, [{"time": (now - timedelta(days=8)).isoformat(), "headline": self.HEAD}]))
+        self.assertFalse(editor.same_headline_made(topic, [{"time": now.isoformat(), "headline": "Steve Kerr benches Kuminga"}]))

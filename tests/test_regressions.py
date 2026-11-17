@@ -159,6 +159,7 @@ the "Safety tests" step before anything is installed or made.
  87. D52 (his answer): one Wikipedia page is one person ("Stephen Curry" = "Steph Curry")
  88. D53 (his answer): a story whose headline was already made in the last 7 days is always a
      repeat, whatever the editor says
+ 89. D54 (his answer): an address that failed to download is not tried again in the same run
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4505,3 +4506,29 @@ class SameHeadlineIsARepeat(unittest.TestCase):
         self.assertTrue(editor.same_headline_made(topic, [{"time": (now - timedelta(days=6)).isoformat(), "headline": self.HEAD}]))
         self.assertFalse(editor.same_headline_made(topic, [{"time": (now - timedelta(days=8)).isoformat(), "headline": self.HEAD}]))
         self.assertFalse(editor.same_headline_made(topic, [{"time": now.isoformat(), "headline": "Steve Kerr benches Kuminga"}]))
+
+
+class DeadAddressOnce(unittest.TestCase):
+    """89. D54 (run 44040546534; his answer 2026-11-17): Lindsey_Harding.jpg (404) was downloaded 8
+    times in one Short."""
+
+    def test_once(self):
+        import io
+        import media
+        from contextlib import redirect_stdout
+        calls = []
+
+        def get(url, timeout=30):
+            calls.append(url)
+            raise OSError("HTTP Error 404: Not Found")
+        url = "https://upload.wikimedia.org/wikipedia/commons/0/0d/Lindsey_Harding.jpg"
+        media._dead_urls.discard(url)
+        try:
+            with patch.object(media, "get", get), redirect_stdout(io.StringIO()):
+                path = media.ROOT / "data" / "_test_dead.jpg"
+                self.assertFalse(media.download(url, path))
+                self.assertFalse(media.download(url, path))
+                self.assertFalse(media.download(url, path))
+            self.assertEqual(calls, [url])
+        finally:
+            media._dead_urls.discard(url)

@@ -1402,12 +1402,20 @@ def pixabay_videos(query: str) -> list[dict]:
 
 # ---------- assemble one Short ----------
 
+# D54 (run 44040546534; his answer 2026-11-17): one dead address (Lindsey_Harding.jpg, 404) was
+# downloaded 8 times in one Short. An address that failed once is not tried again in this run.
+_dead_urls: set[str] = set()
+
+
 def download(url: str, path: Path, timeout: int = 120) -> bool:
+    if url in _dead_urls:
+        return False
     try:
         path.write_bytes(get(url, timeout=timeout))
         return True
     except Exception as exc:
-        print(f"[!] download failed {url[:80]}: {exc}")
+        print(f"[!] download failed {url[:80]}: {exc} (not tried again in this run)")
+        _dead_urls.add(url)
         return False
 
 

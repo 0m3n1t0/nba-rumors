@@ -5040,3 +5040,5 @@ class PastFormsAboutThem(unittest.TestCase):
         import evergreen as e
         keys = [e.key_of(a, b) for a, b, _ in e.BANK]
         self.assertEqual(len(keys), len(set(keys)))
+        self.assertEqual(len(keys), 61)              # 29 + the 32 he approved (2026-11-17)
+        self.assertIn("Allen Iverson vs Larry Brown", keys)

@@ -167,6 +167,8 @@ the "Safety tests" step before anything is installed or made.
      the topic): run 44047143877 skipped both beefs and made no Short
  92. D60 (his answer): a year in his past allows only a jersey of a team he played for that year
      (infobox spells, both halves of a season): Howard's Hawks photo on "He won the 2020 title"
+ 93. D59 (his answers): a team named by its city counts, in a line and on a jersey ("Philly",
+     "Cleveland jersey"); Los Angeles never; New York = Knicks; "New York Times" is a newspaper
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4695,3 +4697,36 @@ class PastYearPastTeam(unittest.TestCase):
             self.assertTrue(m.team_fits({**self.ph("dribbles, Cavaliers jersey"), "team": "former"}, line, "Kyrie Irving"))
             self.assertFalse(m.team_fits(self.ph("drives, Mavericks jersey"), line, "Kyrie Irving"))
             self.assertTrue(m.team_fits(self.ph("drives, Mavericks jersey"), "In 2024 he carried Dallas.", "Kyrie Irving"))
+
+
+class CityIsTheTeam(unittest.TestCase):
+    """93. D59 (run 44053022347; his answers 2026-11-17): LeBron in a "Cleveland jersey" on "LeBron,
+    now with the 76ers" and on "Philly is 12 and 3": the city named no team. 16 cached jersey tags and
+    31 kept lines name a team only by city; "New York Times" is in 26 kept lines."""
+
+    def test_lines(self):
+        t = __import__("media").teams_in
+        self.assertEqual(t("He is at career lows at 41, but Philly is 12 and 3."), {"philadelphia 76ers"})
+        self.assertEqual(t("Kyrie is 34, and Dallas is 7 and 5 with him."), {"dallas mavericks"})
+        self.assertEqual(t("He was traded to New York."), {"new york knicks"})
+        self.assertEqual(t("Oklahoma City won."), {"oklahoma city thunder"})
+        self.assertEqual(t("OKC is rolling."), {"oklahoma city thunder"})
+        self.assertEqual(t("The New York Times reported it, the Boston Globe too."), set())
+        self.assertEqual(t("Per the New York Post, Boston won."), {"boston celtics"})
+        self.assertEqual(t("Los Angeles is 12 and 2."), set())
+        self.assertEqual(t("they left dallas in a hurry"), set())          # no capital: no team (D41)
+
+    def test_jerseys(self):
+        j = __import__("media").jersey_team
+        self.assertEqual(j({"s": "game", "t": "grimaces and shouts, Cleveland jersey"}), "cleveland cavaliers")
+        self.assertEqual(j({"s": "game", "t": "stands in Oklahoma City jersey looking ahead"}), "oklahoma city thunder")
+        self.assertEqual(j({"s": "game", "t": "walks with teammate, Houston"}), "houston rockets")
+        self.assertEqual(j({"s": "game", "t": "dribbles, Los Angeles jersey"}), "")
+        self.assertEqual(j({"s": "game", "t": "looks up, Lakers jersey"}), "los angeles lakers")
+
+    def test_the_run_case(self):
+        import media
+        photo = {"kind": "photo", "title": "LeBron James Wiz", "team": "",
+                 "tag": {"v": "C", "s": "game", "t": "grimaces and shouts, Cleveland jersey"}}
+        with patch.object(media, "teams_of", lambda p: ("philadelphia 76ers", set())):
+            self.assertFalse(media.team_fits(photo, "He is at career lows at 41, but Philly is 12 and 3.", "LeBron James"))

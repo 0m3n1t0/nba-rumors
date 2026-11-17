@@ -454,6 +454,23 @@ NBA_TEAMS = {
     "san antonio spurs": ["spurs"], "toronto raptors": ["raptors"], "utah jazz": ["jazz"],
     "washington wizards": ["wizards"],
 }
+# D59 (run 44053022347; his answers 2026-11-17): a team named by its CITY ("Cleveland jersey",
+# "Philly is 12 and 3") is that team, in a line and on a jersey. Los Angeles never (Lakers or
+# Clippers); New York is the Knicks; a city followed by a newspaper word is the newspaper ("New York
+# Times", "Boston Globe"), not the team.
+CITY_TEAMS = {
+    "atlanta hawks": ["atlanta"], "boston celtics": ["boston"], "brooklyn nets": ["brooklyn"],
+    "charlotte hornets": ["charlotte"], "chicago bulls": ["chicago"], "cleveland cavaliers": ["cleveland"],
+    "dallas mavericks": ["dallas"], "denver nuggets": ["denver"], "detroit pistons": ["detroit"],
+    "golden state warriors": ["golden state"], "houston rockets": ["houston"], "indiana pacers": ["indiana"],
+    "memphis grizzlies": ["memphis"], "miami heat": ["miami"], "milwaukee bucks": ["milwaukee"],
+    "minnesota timberwolves": ["minnesota"], "new orleans pelicans": ["new orleans"], "new york knicks": ["new york"],
+    "oklahoma city thunder": ["oklahoma city", "okc"], "orlando magic": ["orlando"],
+    "philadelphia 76ers": ["philadelphia", "philly"], "phoenix suns": ["phoenix"], "portland trail blazers": ["portland"],
+    "sacramento kings": ["sacramento"], "san antonio spurs": ["san antonio"], "toronto raptors": ["toronto"],
+    "utah jazz": ["utah"], "washington wizards": ["washington"],
+}
+NEWSPAPER_AFTER = r"(?![ \t]+(?:times|post|globe|daily news|tribune|journal|star|sun|chronicle)\b)"
 _teams: dict[str, tuple[str, set[str]]] = {}     # Wikidata item -> (current team, former teams)
 _team_since: dict[str, int] = {}                  # Wikidata item -> year his current spell began
 _nba_debut: dict[str, int] = {}                   # Wikidata item -> year his first NBA spell began
@@ -643,7 +660,8 @@ def career_teams(person: str) -> set[str]:
 # only "<team> jersey/uniform" or a team closing the tag after a comma. A team named any other way
 # is usually the opponent ("dribbles past Cavaliers defender", "against Thunder, Wizards"): every
 # such tag in the 1179 tagged photos named the other side, so it is never read as his jersey.
-_JERSEY_WORDS = "|".join(sorted((re.escape(w) for ws in NBA_TEAMS.values() for w in ws), key=len, reverse=True))
+_JERSEY_WORDS = "|".join(sorted((re.escape(w) for d in (NBA_TEAMS, CITY_TEAMS) for ws in d.values() for w in ws),
+                                 key=len, reverse=True))
 JERSEY = re.compile(rf"\b({_JERSEY_WORDS})\s+(?:jersey|uniform|colou?rs)\b"
                     rf"|,\s*({_JERSEY_WORDS})(?:\s+(?:jersey|uniform|black|white|red|blue|green|gold|purple"
                     rf"|yellow|road|home|throwback|city))*\s*$")
@@ -656,7 +674,7 @@ def jersey_team(tag: dict | None) -> str:
     if tag.get("s") not in PLAYING:
         return ""
     found = {w for m in JERSEY.finditer(fold(tag.get("t") or "").strip()) for w in m.groups() if w}
-    teams = {t for t, ws in NBA_TEAMS.items() if found & set(ws)}
+    teams = {t for t, ws in NBA_TEAMS.items() if found & set(ws + CITY_TEAMS.get(t, []))}
     return teams.pop() if len(teams) == 1 else ""
 
 
@@ -2287,6 +2305,8 @@ def college_faces(person: str, shown: set) -> list[dict]:
 # a line that names a team or a time ("the Cavs", "in 2018", "this season", "last year", "now")
 TEAM_WORD = re.compile(r"\b(" + "|".join(sorted({re.escape(w) for t, ws in NBA_TEAMS.items() for w in [t] + ws},
                                                 key=len, reverse=True)) + r")\b", re.I)
+CITY_WORD = re.compile(r"\b(" + "|".join(sorted({re.escape(w) for ws in CITY_TEAMS.values() for w in ws},
+                                                key=len, reverse=True)) + r")\b" + NEWSPAPER_AFTER, re.I)
 LINE_YEAR = re.compile(r"\b((?:19|20)\d\d)\b")
 LINE_NOW = re.compile(r"\b(?:this|last|next) (?:season|year)\b|\bnow\b|\btonight\b|\btoday\b", re.I)
 
@@ -2307,7 +2327,8 @@ def teams_in(line: str, names: list[str] | tuple = ()) -> set[str]:
         for w in keep_case(n).split():
             text = re.sub(rf"\b{re.escape(w)}\b", " ", text, flags=re.I)
     words = {m.group(1).lower() for m in TEAM_WORD.finditer(text) if m.group(1)[0].isupper() or m.group(1)[0].isdigit()}
-    return {t for t, ws in NBA_TEAMS.items() if words & {t, *ws}}
+    words |= {m.group(1).lower() for m in CITY_WORD.finditer(text) if m.group(1)[0].isupper()}    # D59
+    return {t for t, ws in NBA_TEAMS.items() if words & {t, *ws, *CITY_TEAMS.get(t, [])}}
 
 
 def names_a_time(line: str, person: str) -> bool:

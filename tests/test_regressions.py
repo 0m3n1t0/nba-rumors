@@ -992,6 +992,8 @@ class WikimediaPolite(unittest.TestCase):
                       urllib.request.urlopen)
         self.calls, self.slept, self.answers = [], [], []
         wiki_http._sleep = self.slept.append
+        # 2026-11-17: a full waiting budget for each test (an earlier test's real 429s had spent it)
+        wiki_http.WAIT_BUDGET[0] = 90.0
 
         class Reply:
             def __init__(s, body): s.body = body
@@ -2883,6 +2885,14 @@ class FinalLaws(unittest.TestCase):
         m = media
         saved = (m.commons_photos, m.flickr_photos, m.openverse_photos, dict(m._all_photos),
                  m.photo_tags.tag_person, m.photo_tags.shortlists, m.career_teams)
+        import wiki_http
+
+        def offline(*a, **k):
+            raise OSError("tests never reach the network")
+        # 2026-11-17: this test reached Wikipedia for real (a 429 then spent the waiting budget the
+        # WikimediaPolite tests need, so they failed by turns); tests are offline (header above)
+        real_fetch, wiki_http.fetch = wiki_http.fetch, offline
+        self.addCleanup(setattr, wiki_http, "fetch", real_fetch)
         m._all_photos.clear()
         pool = [{"page": "a", "score": 30, "title": "Isiah Thomas 1989.jpg", "tag": {"v": "C", "s": "game", "t": "drives, Pistons"}},
                 {"page": "b", "score": 20, "title": "IT 2021.jpg", "tag": {"v": "C", "s": "game", "t": "dribbles in Wizards jersey"}}]

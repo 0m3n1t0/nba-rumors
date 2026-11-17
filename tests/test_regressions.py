@@ -160,6 +160,9 @@ the "Safety tests" step before anything is installed or made.
  88. D53 (his answer): a story whose headline was already made in the last 7 days is always a
      repeat, whatever the editor says
  89. D54 (his answer): an address that failed to download is not tried again in the same run
+ 90. D56 (his answer): an infobox listing his NBA spells with none "present" means he plays for no
+     team now, whatever an open Wikidata spell says (Redick); an empty infobox field never swallows
+     the next one (Draymond's "years1 = ...-present" was lost)
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4532,3 +4535,45 @@ class DeadAddressOnce(unittest.TestCase):
             self.assertEqual(calls, [url])
         finally:
             media._dead_urls.discard(url)
+
+
+class RetiredPlaysForNobody(WikipediaCareerJoinsWikidata):
+    """90. D56 (run 44040546534; his answer 2026-11-17). Wikidata ends JJ Redick's spells with an open
+    76ers spell from 2017, so a 76ers photo was "current"; his infobox lists six playing spells, none
+    "present" (career_end 2021; the Lakers only as coach). Checking it on all 55 people of the kept
+    runs found a bug of mine in D34: an empty field ("| career_end =") swallowed the next line, so
+    Draymond Green's "years1 = {{nbay|2012|start}}-present" was lost."""
+
+    REDICK = """| team = Los Angeles Lakers
+| career_start = 2006
+| career_end = 2021
+| years1 = {{nbay|2006|start}}–{{nbay|2012|end}}
+| team1 = [[Orlando Magic]]
+| years4 = {{nbay|2017|start}}–{{nbay|2018|end}}
+| team4 = [[Philadelphia 76ers]]
+| coach_years1 = {{nbay|2024|start}}–present
+| coach_team1 = [[Los Angeles Lakers]]"""
+    DRAYMOND = """| team = Golden State Warriors
+| career_start = 2012
+| career_end =
+| years1 = {{nbay|2012|start}}–present
+| team1 = [[Golden State Warriors]]"""
+
+    def test_redick_plays_for_nobody(self):
+        m = self.m
+        self.assertEqual(m.wiki_career(self.REDICK)[1], "")
+        m._wikidata["JJ Redick"] = "Q3"          # Wikidata: an open spell (here the Warriors, from 2019)
+        m._wiki_title["JJ Redick"] = "Jordan Poole"
+        saved = m.get
+
+        def get(url, timeout=30):
+            if "prop=revisions" in url:
+                return json.dumps({"query": {"pages": {"1": {"revisions": [{"slots": {"main": {"*": self.REDICK}}}]}}}}).encode()
+            return saved(url, timeout)
+        m.get = get
+        self.assertEqual(m.teams_of("JJ Redick"), ("", set()))
+        self.assertNotIn("Q3", m._team_since)
+
+    def test_an_empty_field_swallows_nothing(self):
+        teams, current, since, start = self.m.wiki_career(self.DRAYMOND)
+        self.assertEqual((teams, current, since, start), ({"golden state warriors"}, "golden state warriors", 2012, 2012))

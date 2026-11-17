@@ -549,11 +549,14 @@ def add_wiki_career(person: str, q: str) -> None:
     if start and q not in _nba_debut:
         _nba_debut[q] = start
     old = _teams.get(q, ("", set()))[0]
-    if current and current != old:
+    if current != old:
         _team_since.pop(q, None)
-        if since:
+        if current and since:
             _team_since[q] = since
-    now = current or old
+    # D56 (run 44040546534; his answer 2026-11-17): when his infobox lists his NBA playing spells
+    # and none is "present", he plays for no team now, whatever an open Wikidata spell says (JJ
+    # Redick: Wikidata ends with an open 76ers spell from 2017; he stopped in 2021 and coaches)
+    now = current
     _teams[q] = (now, career - {now}) if now else ("", set())
 
 
@@ -571,7 +574,9 @@ def wiki_career(text: str) -> tuple[set[str], str, int, int]:
     """(his NBA teams, the NBA team of the spell ending "present", the year it began, career_start)
     from an infobox's wikitext (playing career fields only: teamN / yearsN)."""
     fields = {m.group(1).lower(): m.group(2).strip()
-              for m in re.finditer(r"^\s*\|\s*([a-z_]+\d*)\s*=\s*(.*?)\s*$", text or "", re.M | re.I)}
+              # [ \t]* never crosses a line: an empty field ("| career_end =") must not swallow the next
+              # one (D56 check: Draymond Green's "years1 = ...-present" was lost so)
+              for m in re.finditer(r"^[ \t]*\|[ \t]*([a-z_]+\d*)[ \t]*=[ \t]*(.*?)[ \t]*$", text or "", re.M | re.I)}
 
     def team_name(v: str) -> str:
         link = re.search(r"\[\[([^\]|]+)", v)

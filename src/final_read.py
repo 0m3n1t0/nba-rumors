@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -112,12 +113,23 @@ def sources_text(sources: list[dict]) -> str:
                        for n, s in enumerate(sources, 1))
 
 
+EVIDENCE_PIECE = re.compile(r'["\u201c\u201d]([^"\u201c\u201d]+)["\u201c\u201d]')
+
+
 def real_evidence(evidence: str, rows: list[dict], sources: list[dict]) -> bool:
-    """The reader's evidence must be words that are really there (never an invented reason)."""
+    """The reader's evidence must be words that are really there (never an invented reason).
+    D65 (run 44110628783; his answers 2026-11-17): evidence that joins the line's words and the
+    source's ('Line: "...Kerr called it terrible." Source: "Another terrible start"') is never one
+    passage, so a real error was kept only as a doubt (6 of 7 in the kept runs were real). As
+    before, the whole evidence may be one real passage; else every piece in quote marks with 2+
+    words must be real, each where it is (the Short or the sources)."""
     material = " ".join([json.dumps(rows, ensure_ascii=False)] + [f"{s.get('title', '')} {s.get('summary') or ''} "
                                                                 f"{s.get('text') or ''}" for s in sources])
     toks = script._toks(material)
-    return len(script._toks(evidence)) >= 2 and script.quote_match(evidence, toks) >= EVIDENCE_MATCH
+    if len(script._toks(evidence)) >= 2 and script.quote_match(evidence, toks) >= EVIDENCE_MATCH:
+        return True
+    pieces = [x for x in EVIDENCE_PIECE.findall(evidence or "") if len(script._toks(x)) >= 2]
+    return bool(pieces) and all(script.quote_match(x, toks) >= EVIDENCE_MATCH for x in pieces)
 
 
 def judge(answer: dict, rows: list[dict], sources: list[dict]) -> dict:
@@ -128,7 +140,8 @@ def judge(answer: dict, rows: list[dict], sources: list[dict]) -> dict:
         if real_evidence(str(e.get("evidence") or ""), rows, sources):
             errors.append(e)
         else:                       # no real evidence: kept as a doubt, never a hold
-            doubts.append({"line": e.get("line"), "what": f"(evidence not found) {e.get('what', '')}"})
+            doubts.append({"line": e.get("line"), "what": f"(evidence not found) {e.get('what', '')}",
+                           "evidence": str(e.get("evidence") or "")})      # D65: kept, so we can see why
     return {"verdict": C.REVIEW if errors else C.PASS, "errors": errors, "doubts": doubts}
 
 

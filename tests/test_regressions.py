@@ -181,6 +181,9 @@ the "Safety tests" step before anything is installed or made.
  99. (his yes 2026-11-17): an article about two people of a historic beef is found by the past
      forms too ("Isiah Thomas claimed..."); the bank holds every pair once; D64: "why" alone does
      not make an article about them
+ 100. D65 (his answers): the final read's evidence may join the line's and the source's words; every
+     piece in quote marks with 2+ words must be real, each where it is; the evidence of an error
+     kept only as a doubt is saved
  98. D2-a/c/d (his answers): the hook truth check and the final read catch facts joined or
      shortened into another meaning; the hook check catches a superlative or always/never/
      everyone word the source does not say; an opinion says an open future as likely, not settled
@@ -5050,3 +5053,38 @@ class PastFormsAboutThem(unittest.TestCase):
         self.assertEqual(len(keys), len(set(keys)))
         self.assertEqual(len(keys), 61)              # 29 + the 32 he approved (2026-11-17)
         self.assertIn("Allen Iverson vs Larry Brown", keys)
+
+
+class EvidenceInPieces(unittest.TestCase):
+    """100. D65 (run 44110628783; his answers 2026-11-17): the final read saw "the Warriors are one
+    and three, and Kerr called it terrible" (Kerr: "Another terrible start") and lost it as a doubt:
+    the evidence joined the line and the source, which is never one passage."""
+
+    ROWS = [{"line": 3, "says": "Without him, the Warriors are one and three, and Kerr called it terrible.",
+             "pictures": ["Steve Kerr | on the sideline | game"]}]
+    SOURCES = [{"title": "Short-handed Warriors", "summary": "",
+                "text": "They opened with a 38-14 deficit. \"Another terrible start,\" Kerr told reporters after "
+                        "Monday's loss. \"We tried to change it up from San Antonio.\""}]
+
+    def test_joined_evidence_holds(self):
+        import final_read as f
+        # the source's words first, then the line's: never one passage, whatever the order of the text
+        ev = ('Source: "Another terrible start," Kerr told reporters. Line: "Without him, the Warriors are '
+              'one and three, and Kerr called it terrible."')
+        self.assertTrue(f.real_evidence(ev, self.ROWS, self.SOURCES))
+        got = f.judge({"errors": [{"line": 3, "kind": "NOT IN THE SOURCES", "what": "x", "evidence": ev}]},
+                      self.ROWS, self.SOURCES)
+        self.assertEqual(got["verdict"], "REVIEW")
+
+    def test_an_invented_piece_is_still_a_doubt(self):
+        import final_read as f
+        ev = 'Line: "Kerr called it terrible" Source: "Kerr said the team was terrible without Curry all season"'
+        self.assertFalse(f.real_evidence(ev, self.ROWS, self.SOURCES))
+        got = f.judge({"errors": [{"line": 3, "kind": "WRONG WORDS", "what": "x", "evidence": ev}]},
+                      self.ROWS, self.SOURCES)
+        self.assertEqual(got["verdict"], "PASS")
+        self.assertEqual(got["doubts"][0]["evidence"], ev)          # saved, so we can see why
+
+    def test_one_word_pieces_never_prove(self):
+        import final_read as f
+        self.assertFalse(f.real_evidence('"Kerr" "terrible" invented words here', self.ROWS, self.SOURCES))

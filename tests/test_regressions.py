@@ -184,6 +184,8 @@ the "Safety tests" step before anything is installed or made.
  100. D65 (his answers): the final read's evidence may join the line's and the source's words; every
      piece in quote marks with 2+ words must be real, each where it is; the evidence of an error
      kept only as a doubt is saved
+ 101. (his answers): a payoff that is only "I think ..." in under 8 words with no because / so / since
+     gets one reason from the repair; "Doc was half right and fully clumsy." stays an answer
  98. D2-a/c/d (his answers): the hook truth check and the final read catch facts joined or
      shortened into another meaning; the hook check catches a superlative or always/never/
      everyone word the source does not say; an opinion says an open future as likely, not settled
@@ -5088,3 +5090,28 @@ class EvidenceInPieces(unittest.TestCase):
     def test_one_word_pieces_never_prove(self):
         import final_read as f
         self.assertFalse(f.real_evidence('"Kerr" "terrible" invented words here', self.ROWS, self.SOURCES))
+
+
+class VerdictNeedsAReason(unittest.TestCase):
+    """101. Run 44110628783 (his answers 2026-11-17): Curry's payoff was only "I think the cut is
+    smart." In the kept runs only this payoff is caught; "I think baiting is no excuse for
+    swinging." (8 words) is not."""
+
+    def pay(self, say):
+        return [{"say": "Context.", "stage": "setup"}, {"say": say, "stage": "payoff"},
+                {"say": "Who wins, Curry or the Warriors?", "stage": "exit"}]
+
+    def test_caught(self):
+        import script
+        self.assertTrue(script.bare_opinion(self.pay("I think the cut is smart.")))
+        self.assertTrue(script.bare_opinion(self.pay("Honestly, he is right.")))
+        problems = script.repair_needed("Curry took a pay cut?", self.pay("I think the cut is smart."),
+                                        {"hard": [], "soft": []})
+        self.assertTrue(any("no reason" in p for p in problems))
+
+    def test_not_caught(self):
+        import script
+        for say in ("I think the cut is smart because it frees cap room.", "I think so too, he is right.",
+                    "Doc was half right and fully clumsy.", "I think baiting is no excuse for swinging.",
+                    "I'd say it's smart. The cap room comes right when they need it."):
+            self.assertFalse(script.bare_opinion(self.pay(say)), say)

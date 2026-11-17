@@ -1757,6 +1757,22 @@ def borrowed_take(beats: list[dict]) -> bool:
     return bool(pay) and all(AGREE_ONLY.search(p) for p in pay)
 
 
+BARE_OPINION_START = re.compile(r"^\W*(?:i\s+think|i'd\s+say|i\s+would\s+say|honestly)\b", re.I)
+BARE_OPINION_WORDS = 8       # his answer (2026-11-17): fewer than 8 words
+REASON_WORD = re.compile(r"\b(?:because|so|since)\b", re.I)
+
+
+def bare_opinion(beats: list[dict]) -> bool:
+    """Run 44110628783: the payoff was only "I think the cut is smart." - her verdict with no
+    reason. His answer (2026-11-17): a payoff whose every sentence starts with "I think", "I'd
+    say" or "honestly", has fewer than 8 words and no because / so / since. "Doc was half right
+    and fully clumsy." stays an answer (rule 6)."""
+    said = [s for b in beats if stage_of(b) == "payoff"
+            for s in compliance.split_sentences(b.get("say", "")) if s.strip() and not s.strip().endswith("?")]
+    return bool(said) and all(BARE_OPINION_START.search(s) and len(s.split()) < BARE_OPINION_WORDS
+                              and not REASON_WORD.search(s) for s in said)
+
+
 QUESTION_START = {"so", "is", "was", "did", "does", "do", "who", "what", "why", "how", "should", "could",
                   "would", "will", "can", "are", "were", "has", "have", "but", "and", "or", "the", "then",
                   "now", "which", "when", "where", "if", "i", "he", "she", "they", "it", "that", "this"}
@@ -1815,6 +1831,10 @@ def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[d
         problems.append("the payoff only agrees with someone else's view (\"I think that's right\"): "
                         "give her OWN reason or a point that view did not make, in one sentence, "
                         "built from facts in the sources")
+    elif bare_opinion(beats):
+        problems.append("the payoff is only her verdict with no reason (\"I think the cut is smart.\"): "
+                        "keep her verdict and add ONE reason in the same beat (because / so ...), built "
+                        "from facts in the sources")
     if beats and hook:
         new = new_names_at_exit(hook, beats)
         if new:

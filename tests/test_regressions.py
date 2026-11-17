@@ -152,6 +152,7 @@ the "Safety tests" step before anything is installed or made.
      title still needs his name)
  84. D46 + D47 (his answers): "Stephen A. Smith" (first + one initial + last) is found, and a
      Wikipedia "personality", "commentator", "host" or "podcaster" is a person
+ 85. D48 (his answer): the story's people are read from the hook too
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4330,3 +4331,20 @@ class StephenASmithIsAPerson(unittest.TestCase):
             got = media.people({"headline": "Stephen A. Smith defends LeBron James after Trump calls him a disgrace",
                                 "beats": [{"say": "Stephen A. said no."}]})
         self.assertEqual(got, ["Stephen A. Smith", "LeBron James"])
+
+
+class HookNamesPeople(unittest.TestCase):
+    """85. D48 (run 44034519940; his answer 2026-11-17): "Jayson Tatum just called Steve Kerr's Olympic
+    benching of him fishy." The beats only say "Tatum", and people() did not read the hook, so Tatum
+    was no person in his own Short (no jersey law, no top-ups for him)."""
+
+    def test_hook_counts(self):
+        import media
+        real = lambda names: [n for n in names if n in {"Jayson Tatum", "Steve Kerr", "Kevin Durant"}]
+        short = {"headline": "Steve Kerr rightfully beginning to tinker with Warriors' lineup",
+                 "hook": {"text": "Jayson Tatum just called Steve Kerr's Olympic benching of him fishy."},
+                 "beats": [{"say": "Tatum told Boardroom Kerr said to be patient because Kevin Durant was back."}]}
+        with patch.object(media, "real_people", real):
+            got = media.people(short)
+            self.assertEqual(got, ["Steve Kerr", "Jayson Tatum", "Kevin Durant"])
+            self.assertEqual(media.people({**short, "hook": "Jayson Tatum is mad."})[1], "Jayson Tatum")   # a plain string too

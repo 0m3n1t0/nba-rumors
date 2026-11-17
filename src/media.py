@@ -321,8 +321,15 @@ def people_names(text: str) -> set[str]:
             | {n for a, i, b in INITIAL_NAME.findall(text or "") if name_words_ok(n := f"{a} {i} {b}")})
 
 
+def hook_text(short: dict) -> str:
+    h = short.get("hook") or ""
+    return h.get("text", "") if isinstance(h, dict) else str(h)
+
+
 def people(short: dict) -> list[str]:
-    text = short.get("headline", "") + ". " + ". ".join(b.get("say", "") for b in short.get("beats", []))
+    # D48 (run 44034519940; his answer 2026-11-17): the hook is read too, like a beat ("Jayson Tatum"
+    # was named in full only in the hook, so he was no person in his own Short)
+    text = short.get("headline", "") + ". " + ". ".join([hook_text(short)] + [b.get("say", "") for b in short.get("beats", [])])
     counts = {n: text.count(n) + (5 if n in short.get("headline", "") else 0) for n in people_names(text)
               if not not_a_person(n)}
     # D40 (his answer 2026-11-16): a tie goes to the one named first in the headline (the text

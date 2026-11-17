@@ -172,6 +172,8 @@ the "Safety tests" step before anything is installed or made.
  94. D61 (his answers): a team he never played for nor coached does not judge his jersey (Garnett
      on "...after Denver took Carmelo"); a team he coached does (Rivers on the Bucks line); a line
      naming any NBA team still refuses a PRE-NBA photo
+ 95. D62 (his answers): a photo whose title or tag names his college (infobox) is PRE-NBA; a college
+     name that is also an NBA city counts only when the text does not name that NBA team
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4791,3 +4793,80 @@ class AnotherMansTeam(unittest.TestCase):
 | coach_team5 = [[Milwaukee Bucks]]
 | team1 = [[Atlanta Hawks]]""")
         self.assertEqual(got, {"orlando magic", "milwaukee bucks"})
+
+
+class HisCollegeIsPreNBA(unittest.TestCase):
+    """95. D62 (run 44078900140; his answers 2026-11-17): three undated Flickr photos "Kawhi Leonard
+    SDSU Aztecs" (tag "San Diego State") stood on his Spurs/NBA lines: the PRE-NBA words did not
+    know his college and the tag was not read for it. On the 527 kept photos 4 become PRE-NBA, all
+    Kawhi at San Diego State; on 1518 cached tags the college names hit only real college photos."""
+
+    KAWHI = "| college = [[San Diego State Aztecs men's basketball|San Diego State]] (2009–2011)"
+    ISIAH = "| college = [[Indiana Hoosiers men's basketball|Indiana]] (1979–1981)"
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = {k: dict(getattr(media, k)) for k in ("_wikidata", "_college")}
+        media._wikidata.update({"Kawhi Leonard": "Q-KL", "Isiah Thomas": "Q-IT"})
+        media._college["Q-KL"] = media.wiki_college(self.KAWHI)
+        media._college["Q-IT"] = media.wiki_college(self.ISIAH)
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            getattr(self.m, k).clear()
+            getattr(self.m, k).update(v)
+
+    def test_names(self):
+        self.assertEqual(self.m.wiki_college(self.KAWHI), ["san diego state aztecs", "san diego state", "aztecs"])
+
+    def test_photos(self):
+        m = self.m
+        ph = lambda title, t="": {"kind": "photo", "title": title, "team": "", "tag": {"v": "C", "s": "game", "t": t}}
+        with patch.object(m, "teams_of", lambda p: ("", set())):
+            self.assertTrue(m.college_photo(ph("Kawhi Leonard SDSU Aztecs"), "Kawhi Leonard"))
+            self.assertTrue(m.college_photo(ph("Kawhi Leonard", "reaches for rebound, San Diego State"), "Kawhi Leonard"))
+            self.assertFalse(m.college_photo(ph("Kawhi Leonard 2019", "shoots, Raptors jersey"), "Kawhi Leonard"))
+            self.assertTrue(m.college_photo(ph("Isiah Thomas and Bobby Knight 1981", "talks with coach in Indiana huddle"), "Isiah Thomas"))
+            self.assertFalse(m.college_photo(ph("Isiah Thomas Indiana Pacers coach"), "Isiah Thomas"))
+            self.assertTrue(m.college_photo(ph("Isiah Thomas Indiana Hoosiers"), "Isiah Thomas"))
+            line = "His last Spurs team, with Ginobili and Parker, got swept by Golden State."
+            photo = ph("Kawhi Leonard SDSU Aztecs", "dribbles past defender, San Diego State")
+            self.assertFalse(m.team_fits(photo, line, "Kawhi Leonard"))
+            self.assertEqual(photo["team"], "pre-nba")                    # the final read sees PRE-NBA
+
+    def test_photos_marks_by_title_before_any_tag(self):
+        m = self.m
+        f = {"kind": "photo", "title": "Kawhi Leonard SDSU Aztecs", "page": "https://www.flickr.com/photos/x/5420500049",
+             "url": "u", "source": "Flickr", "team": "", "score": 1}
+        m._all_photos.pop("Kawhi Leonard", None)
+        try:
+            with patch.object(m, "teams_of", lambda p: ("", set())), \
+                    patch.object(m, "commons_photos", lambda p: []), \
+                    patch.object(m, "flickr_photos", lambda p: [f]), \
+                    patch.object(m, "openverse_photos", lambda p: []):
+                got = m.photos("Kawhi Leonard")
+            self.assertEqual([x["team"] for x in got], ["pre-nba"])
+        finally:
+            m._all_photos.pop("Kawhi Leonard", None)
+
+    def test_college_is_kept_from_the_infobox(self):
+        m = self.m
+        answer = json.dumps({"query": {"pages": {"1": {"revisions": [{"slots": {"main": {"*": self.KAWHI}}}]}}}}).encode()
+        saved = (dict(m._wiki_title), dict(m._teams))
+        try:
+            m._wiki_title["Kawhi Leonard 2"] = "Kawhi Leonard"
+            with patch.object(m, "get", lambda url, timeout=30: answer):
+                m.add_wiki_career("Kawhi Leonard 2", "Q-KL2")
+            self.assertEqual(m._college["Q-KL2"], ["san diego state aztecs", "san diego state", "aztecs"])
+        finally:
+            for d, v in zip((m._wiki_title, m._teams), saved):
+                d.clear(); d.update(v)
+            m._college.pop("Q-KL2", None)
+
+    def test_tagged_pool_is_marked(self):
+        m = self.m
+        pool = [{"kind": "photo", "title": "Kawhi Leonard", "page": "p1", "url": "u", "hoops": True,
+                 "tag": {"v": "C", "s": "game", "t": "reaches for rebound, San Diego State"}}]
+        with patch.object(m, "teams_of", lambda p: ("", set())), patch.object(m, "photos", lambda p: pool):
+            self.assertEqual(m.person_photos("Kawhi Leonard", set()), [])

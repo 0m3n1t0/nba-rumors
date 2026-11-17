@@ -478,6 +478,7 @@ _nba_debut_day: dict[str, str] = {}               # Wikidata item -> "YYYY-MM-DD
 _career: dict[str, set[str]] = {}                 # Wikidata item -> every NBA team he played for
 _spells: dict[str, list[tuple[str, int, int]]] = {}   # Wikidata item -> (NBA team, first year, last year), infobox
 _coached: dict[str, set[str]] = {}                # Wikidata item -> NBA teams he coached (infobox coach_teamN)
+_college: dict[str, list[str]] = {}               # Wikidata item -> his college's names (infobox "college =")
 
 
 def teams_of(person: str) -> tuple[str, set[str]]:
@@ -563,6 +564,7 @@ def add_wiki_career(person: str, q: str) -> None:
     teams, current, since, start = wiki_career(text)
     _spells[q] = wiki_spells(text)
     _coached[q] = wiki_coached(text)
+    _college[q] = wiki_college(text)
     if not teams:
         return                         # no NBA spell on the page: nothing to add
     career = _career.setdefault(q, set())
@@ -625,6 +627,44 @@ def wiki_spells(text: str) -> list[tuple[str, int, int]]:
         if name in NBA_TEAMS and first:
             out.append((name, first, last))
     return out
+
+
+def wiki_college(text: str) -> list[str]:
+    """His college's names from the infobox: "[[San Diego State Aztecs men's basketball|San Diego
+    State]]" -> the full name, the short name and the nickname ("san diego state aztecs", "san diego
+    state", "aztecs")."""
+    m = re.search(r"^[ \t]*\|[ \t]*college[ \t]*=[ \t]*(.*?)[ \t]*$", text or "", re.M | re.I)
+    out: list[str] = []
+    for target, shown in re.findall(r"\[\[([^\]|]+)\|?([^\]]*)\]\]", m.group(1) if m else ""):
+        full = re.sub(r"\s+(?:men's|women's)?\s*basketball$", "", target.strip(), flags=re.I).strip()
+        short = (shown or full).strip()
+        nick = full[len(short):].strip() if full.lower().startswith(short.lower()) else ""
+        for part in (full, short, nick):
+            if part and fold(part) not in out:
+                out.append(fold(part))
+    return out
+
+
+def college_photo(c: dict, person: str) -> bool:
+    """D62 (run 44078900140; his answers 2026-11-17): a photo whose title or tag names HIS college
+    (infobox) is PRE-NBA: three undated "Kawhi Leonard SDSU Aztecs" photos (tag "San Diego State")
+    stood on his NBA lines. A college name that is also an NBA city (Washington, Indiana, Utah)
+    counts only when the same text does not name that NBA team ("Indiana Pacers" is the NBA)."""
+    if not person:
+        return False
+    teams_of(person)                         # loads his infobox (cached)
+    names = _college.get(_wikidata.get(person, ""), [])
+    if not names:
+        return False
+    text = fold((c.get("title") or "").replace("_", " ") + " " + ((c.get("tag") or {}).get("t") or ""))
+    for name in names:
+        if not re.search(rf"\b{re.escape(name)}\b", text):
+            continue
+        nba = [t for t, ws in CITY_TEAMS.items() if name in ws]
+        if any(re.search(rf"\b{re.escape(w)}\b", text) for t in nba for w in [t] + NBA_TEAMS.get(t, [])):
+            continue
+        return True
+    return False
 
 
 def wiki_coached(text: str) -> set[str]:
@@ -1353,7 +1393,7 @@ def photos(person: str) -> list[dict]:
         for f in found:
             if not f.get("date") and title_day(f.get("title", "")):
                 f["date"] = title_day(f["title"])    # the day in the file name (scene_of reads it too)
-            if pre_nba_by_day(person, f):
+            if pre_nba_by_day(person, f) or college_photo(f, person):
                 f["team"] = "pre-nba"
         # a file in his OWN Commons category is his, however its title spells him (run 43407418420:
         # 27 Flickr photos titled "Dejonte Murray" were Dejounte Murray and were all left out)
@@ -2282,6 +2322,9 @@ def person_photos(person: str, shown: set) -> list[dict]:
     (photo_tags.py) also: never one he is not in, never a political, stage, charity, red-carpet or
     school photo (no line asked for it), and the ones with his face clearly seen first."""
     pool = photos(person)
+    for c in pool:
+        if college_photo(c, person):         # D62: his college named in the TAG too (tags came later)
+            c["team"] = "pre-nba"
     tagged = any(c.get("tag") for c in pool)
     # run 43288011054: 45 of Curry's photos missed their tags (a broken answer) and one of them,
     # two strangers on a golf course, filled the closing beat. When a person HAS tagged photos, an
@@ -2393,6 +2436,8 @@ def team_fits(c: dict, line: str, person: str, names: list[str] | tuple = ()) ->
     run 43934705382 showed Jalen Green in a Rockets jersey on a Suns line). A clip has no tag and no
     team mark, so it always fits."""
     t = c.get("tag") or {}
+    if person and college_photo(c, person):
+        c["team"] = "pre-nba"                # D62: his college in the title or the tag
     if national_photo(c) and not NATIONAL_LINE.search(fold(line or "")):
         return False                         # D45: national colours only on a national-team line
     if person:

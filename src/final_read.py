@@ -39,6 +39,9 @@ it, against the SOURCE TEXTS it was written from. Report only CLEAR errors of th
    the wrong person, or cut so it says something else. Also when "X said / told / says" gives X
    a claim that, in the sources, is the outlet's own conclusion and not X's words ("Shams told
    ESPN that's just a checkpoint" when only the article's writer calls it a checkpoint).
+   The narrator's own opinion ("I think...", "My read...", "Honestly...") is her own words, never a
+   quote: it is never WRONG WORDS (a fact in it that the sources do not support is still NOT IN
+   THE SOURCES).
 3. NOT IN THE SOURCES: a fact, number, name or claim the sources do not support, or a rumor
    said as a fact. Also a fact the sources show has ENDED or changed, said as still true now
    ("eight straight wins now rest on him" when the sources say the streak ended). Also facts

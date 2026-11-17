@@ -5092,6 +5092,14 @@ class EvidenceInPieces(unittest.TestCase):
         self.assertEqual(got["verdict"], "PASS")
         self.assertEqual(got["doubts"][0]["evidence"], ev)          # saved, so we can see why
 
+    def test_her_opinion_is_never_a_quote(self):
+        # his answer 2026-11-17: "I think the cut is smart." was read as a quote (run 44110628783)
+        import final_read as f
+        p = " ".join(f.PROMPT.split())
+        self.assertIn('The narrator\'s own opinion ("I think...", "My read...", "Honestly...") is her own '
+                      'words, never a quote: it is never WRONG WORDS', p)
+        self.assertIn("is still NOT IN THE SOURCES", p)
+
     def test_one_word_pieces_never_prove(self):
         import final_read as f
         self.assertFalse(f.real_evidence('"Kerr" "terrible" invented words here', self.ROWS, self.SOURCES))

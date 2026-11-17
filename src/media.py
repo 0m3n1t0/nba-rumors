@@ -459,6 +459,7 @@ _team_since: dict[str, int] = {}                  # Wikidata item -> year his cu
 _nba_debut: dict[str, int] = {}                   # Wikidata item -> year his first NBA spell began
 _nba_debut_day: dict[str, str] = {}               # Wikidata item -> "YYYY-MM-DD" it began (when dated to the month)
 _career: dict[str, set[str]] = {}                 # Wikidata item -> every NBA team he played for
+_spells: dict[str, list[tuple[str, int, int]]] = {}   # Wikidata item -> (NBA team, first year, last year), infobox
 
 
 def teams_of(person: str) -> tuple[str, set[str]]:
@@ -542,6 +543,7 @@ def add_wiki_career(person: str, q: str) -> None:
         print(f"[!] Wikipedia career failed for {person}: {exc}")
         return
     teams, current, since, start = wiki_career(text)
+    _spells[q] = wiki_spells(text)
     if not teams:
         return                         # no NBA spell on the page: nothing to add
     career = _career.setdefault(q, set())
@@ -568,6 +570,42 @@ def nbay_year(years: str) -> int:
         return int(m.group(1)) + (1 if m.group(2).lower() == "end" else 0)
     m = re.search(r"\b(\d{4})\b", years or "")
     return int(m.group(1)) if m else 0
+
+
+def spell_years(years: str) -> tuple[int, int]:
+    """Calendar years an infobox spell covers, both halves of a season counted (D60): "{{nbay|2019|
+    full=y}}" -> 2019-2020, "{{nbay|2006|start}}-{{nbay|2012|end}}" -> 2006-2013, "...-present" ->
+    to 9999; (0, 0) when no year is read."""
+    marks = re.findall(r"\{\{\s*nbay\s*\|\s*(\d{4})\s*\|?\s*(start|end|full\s*=\s*y)?", years or "", re.I)
+    if marks:
+        first = int(marks[0][0]) + (1 if (marks[0][1] or "").lower() == "end" else 0)
+        y, kind = int(marks[-1][0]), (marks[-1][1] or "").lower().replace(" ", "")
+        last = y + 1 if kind in ("end", "full=y") or len(marks) == 1 and kind == "start" else y
+    else:
+        plain = [int(x) for x in re.findall(r"\b(\d{4})\b", years or "")]
+        if not plain:
+            return 0, 0
+        first, last = plain[0], plain[-1]
+    if re.search(r"present", years or "", re.I):
+        last = 9999
+    return first, last
+
+
+def wiki_spells(text: str) -> list[tuple[str, int, int]]:
+    """Every NBA playing spell of his infobox with its calendar years (teamN / yearsN)."""
+    fields = {m.group(1).lower(): m.group(2).strip()
+              for m in re.finditer(r"^[ \t]*\|[ \t]*([a-z_]+\d*)[ \t]*=[ \t]*(.*?)[ \t]*$", text or "", re.M | re.I)}
+    out = []
+    for key, value in fields.items():
+        m = re.fullmatch(r"team(\d+)", key)
+        if not m:
+            continue
+        link = re.search(r"\[\[([^\]|]+)", value)
+        name = fold((link.group(1) if link else re.sub(r"<[^>]*>|\{\{[^}]*\}\}", "", value)).strip())
+        first, last = spell_years(fields.get(f"years{m.group(1)}", ""))
+        if name in NBA_TEAMS and first:
+            out.append((name, first, last))
+    return out
 
 
 def wiki_career(text: str) -> tuple[set[str], str, int, int]:
@@ -2328,11 +2366,20 @@ def team_fits(c: dict, line: str, person: str, names: list[str] | tuple = ()) ->
     # D43 (his answer 2026-11-16): the photo's own person's name words are no team either ("Tragic
     # Magic" on a Magic Johnson photo, when the script never says his full name)
     named = teams_in(line, list(names) + ([person] if person else []))
+    jersey, current = jersey_team(t), (teams_of(person)[0] if person else "")
+    # D60 (run 44053022347; his answer 2026-11-17): a year in his past (before today's spell, or any
+    # year when he plays for no team now) allows only a jersey of a team he played for that year
+    # (infobox spells, both halves of a season): Howard in Hawks colours on "He won the 2020 title"
+    spells = _spells.get(_wikidata.get(person, ""), []) if person else []
+    if jersey and spells:
+        since = _team_since.get(_wikidata.get(person, ""), 0)
+        past = [int(y) for y in LINE_YEAR.findall(line or "") if not current or (since and int(y) < since)]
+        if past and not any(a <= y <= b for y in past for team, a, b in spells if team == jersey):
+            return False
     if not named and not names_a_time(line, person):
         return True
     if c.get("team") == "pre-nba":
         return False
-    jersey, current = jersey_team(t), (teams_of(person)[0] if person else "")
     if named:
         if jersey:
             return jersey in named

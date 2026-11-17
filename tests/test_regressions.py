@@ -165,6 +165,8 @@ the "Safety tests" step before anything is installed or made.
      the next one (Draymond's "years1 = ...-present" was lost)
  91. D57 (his answer): a historic beef is exempt from the "own article read" rule (its mark is on
      the topic): run 44047143877 skipped both beefs and made no Short
+ 92. D60 (his answer): a year in his past allows only a jersey of a team he played for that year
+     (infobox spells, both halves of a season): Howard's Hawks photo on "He won the 2020 title"
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4618,3 +4620,78 @@ class HistoricBeefNeedsNoOwnArticle(unittest.TestCase):
         self.assertEqual(self._build(beef), "reached Claude")
         fresh = {k: v for k, v in beef.items() if k != "evergreen"}
         self.assertIn("own article could not be read", self._build(fresh))
+
+
+class PastYearPastTeam(unittest.TestCase):
+    """92. D60 (run 44053022347; his answer 2026-11-17). Howard (retired: no team now, D56) in Hawks
+    colours on "He won the 2020 title as a rotation player": a year was a time with no team to match,
+    so anything passed. Now a past year allows only the jersey of a team he played for that year."""
+
+    HOWARD = """| years1 = {{nbay|2004|start}}–{{nbay|2011|end}}
+| team1 = [[Orlando Magic]]
+| years4 = {{nbay|2016|full=y}}
+| team4 = [[Atlanta Hawks]]
+| years7 = {{nbay|2019|full=y}}
+| team7 = [[Los Angeles Lakers]]
+| years8 = {{nbay|2020|full=y}}
+| team8 = [[Philadelphia 76ers]]"""
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = (dict(media._spells), dict(media._wikidata), dict(media._team_since))
+        media._wikidata.update({"Dwight Howard": "Q-DH", "Kyrie Irving": "Q-KI"})
+        media._spells["Q-DH"] = media.wiki_spells(self.HOWARD)
+        media._spells["Q-KI"] = [("cleveland cavaliers", 2011, 2017), ("boston celtics", 2017, 2019),
+                                 ("brooklyn nets", 2019, 2023), ("dallas mavericks", 2023, 9999)]
+        media._team_since["Q-KI"] = 2023
+
+    def tearDown(self):
+        m = self.m
+        for d, v in zip((m._spells, m._wikidata, m._team_since), self.saved):
+            d.clear(); d.update(v)
+
+    @staticmethod
+    def ph(t):
+        return {"kind": "photo", "title": "x", "team": "", "tag": {"v": "C", "s": "game", "t": t}}
+
+    def test_spells_are_kept_from_the_infobox(self):
+        m = self.m
+        m._spells.pop("Q-DH2", None)
+        answer = json.dumps({"query": {"pages": {"1": {"revisions": [{"slots": {"main": {"*": self.HOWARD}}}]}}}}).encode()
+        saved = (dict(m._wiki_title), dict(m._teams), dict(m._career))
+        try:
+            m._wiki_title["Dwight Howard 2"] = "Dwight Howard"
+            with patch.object(m, "get", lambda url, timeout=30: answer):
+                m.add_wiki_career("Dwight Howard 2", "Q-DH2")
+            self.assertIn(("atlanta hawks", 2016, 2017), m._spells["Q-DH2"])
+        finally:
+            for d, v in zip((m._wiki_title, m._teams, m._career), saved):
+                d.clear(); d.update(v)
+            m._spells.pop("Q-DH2", None)
+
+    def test_spell_years(self):
+        sy = self.m.spell_years
+        self.assertEqual(sy("{{nbay|2019|full=y}}"), (2019, 2020))
+        self.assertEqual(sy("{{nbay|2006|start}}–{{nbay|2012|end}}"), (2006, 2013))
+        self.assertEqual(sy("{{nbay|2012|end}}"), (2013, 2013))
+        self.assertEqual(sy("{{nbay|2023|start}}–present"), (2023, 9999))
+        self.assertEqual(sy("2019–2023"), (2019, 2023))
+
+    def test_howard_2020(self):
+        m = self.m
+        line = "I think the fix was a smaller Dwight. He won the 2020 title as a rotation player."
+        with patch.object(m, "teams_of", lambda p: ("", set())):
+            self.assertFalse(m.team_fits(self.ph("dunks, Hawks jersey"), line, "Dwight Howard"))
+            self.assertTrue(m.team_fits(self.ph("smiles on court, Lakers jersey"), line, "Dwight Howard"))
+            self.assertTrue(m.team_fits(self.ph("dunks, 76ers jersey"), line, "Dwight Howard"))   # 2020-21: either half
+            self.assertTrue(m.team_fits(self.ph("holds ball looking aside"), line, "Dwight Howard"))  # no jersey read
+            self.assertTrue(m.team_fits(self.ph("dunks, Hawks jersey"), "Kobe tore an Achilles.", "Dwight Howard"))
+
+    def test_active_player_d42_still_holds(self):
+        m = self.m
+        line = "They won the 2016 title, but Kyrie requested a 2017 trade."
+        with patch.object(m, "teams_of", lambda p: ("dallas mavericks", set())):
+            self.assertTrue(m.team_fits({**self.ph("dribbles, Cavaliers jersey"), "team": "former"}, line, "Kyrie Irving"))
+            self.assertFalse(m.team_fits(self.ph("drives, Mavericks jersey"), line, "Kyrie Irving"))
+            self.assertTrue(m.team_fits(self.ph("drives, Mavericks jersey"), "In 2024 he carried Dallas.", "Kyrie Irving"))

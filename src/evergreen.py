@@ -26,13 +26,17 @@ GOOGLE = "https://news.google.com/rss/search?q={q}+when:{days}d&hl=en-US&gl=US&c
 FRESH_DAYS = 30
 FRESH_MIN = 2          # articles naming both people in the last FRESH_DAYS days
 REUSE_DAYS = 90
+# (2026-11-17, his yes: the past forms too - "Isiah Thomas claimed..." was not counted; a past
+# verb never makes an old article fresh: freshness is only the last FRESH_DAYS days of Google News)
 # B20 step 2a: an article ABOUT the two of them (what one says of the other, the history, the
 # feud), not one that only names both ("Shai threatens Durant and Westbrook's record").
 ABOUT_THEM = re.compile(
-    r"\b(says?|said|recalls?|remembers?|reveals?|revealed|responds?|fires? back|admits?|explains?|"
-    r"opens? up|claims?|blasts?|rips?|slams?|calls? out|praises?|defends?|apologi[sz]es?|"
+    r"\b(says?|said|recalls?|recalled|remembers?|remembered|reveals?|revealed|responds?|responded|"
+    r"fires? back|fired back|admits?|admitted|explains?|explained|opens? up|opened up|claims?|claimed|"
+    r"blasts?|blasted|rips?|ripped|slams?|slammed|calls? out|called out|praises?|praised|defends?|"
+    r"defended|apologi[sz]es?|apologi[sz]ed|"
     r"feud|beef|rivalry|rift|relationship|friendship|fallout|falling out|tension|clash|"
-    r"history|reunion|regrets?|story|stories|truth|why|on (?:his|their|the) relationship)\b", re.I)
+    r"history|reunion|regrets?|regretted|story|stories|truth|why|on (?:his|their|the) relationship)\b", re.I)
 
 
 def about_them(title: str) -> bool:
@@ -66,7 +70,6 @@ BANK = [
     ("Joel Embiid", "Karl-Anthony Towns", "the Joel Embiid and Karl-Anthony Towns rivalry"),
     ("Trae Young", "New York Knicks", "Trae Young and the Knicks crowd"),
     ("Rajon Rondo", "Chris Paul", "the Rajon Rondo and Chris Paul feud"),
-    ("Kevin Durant", "Kendrick Perkins", "the Kevin Durant and Kendrick Perkins feud"),
     ("Draymond Green", "Rudy Gobert", "the Draymond Green chokehold on Rudy Gobert"),
     ("Luka Doncic", "Dallas Mavericks", "the Luka Doncic trade from Dallas"),
     ("Anthony Davis", "New Orleans Pelicans", "Anthony Davis forcing his way out of New Orleans"),

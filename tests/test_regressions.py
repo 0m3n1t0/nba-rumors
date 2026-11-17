@@ -178,6 +178,8 @@ the "Safety tests" step before anything is installed or made.
      anyone in the story; when on_screen names nobody either, as before
  97. D2-b (his answers): 12+ words in a row of a source quote, said without quote marks on a line
      naming the man that quote's paragraph names, are put in quote marks (only the copied words)
+ 99. (his yes 2026-11-17): an article about two people of a historic beef is found by the past
+     forms too ("Isiah Thomas claimed..."); the bank holds every pair once
  98. D2-a/c/d (his answers): the hook truth check and the final read catch facts joined or
      shortened into another meaning; the hook check catches a superlative or always/never/
      everyone word the source does not say; an opinion says an open future as likely, not settled
@@ -5019,3 +5021,22 @@ class CarefulTruthRules(unittest.TestCase):
         for prompt in (script.PROMPT, script.HUMANIZE):
             self.assertIn("a future the sources leave open is said as likely, never as settled",
                           " ".join(prompt.split()))
+
+
+class PastFormsAboutThem(unittest.TestCase):
+    """99. Run 44098884631 (his yes 2026-11-17): "Isiah Thomas claimed racial stereotypes led people
+    to overlook Magic Johnson's basketball IQ" (two days old) was not counted as an article about
+    them: the words had "claims" but not "claimed". Kevin Durant / Kendrick Perkins was in the bank
+    twice. Freshness is still only the date window, never the verb."""
+
+    def test_past_forms(self):
+        import evergreen as e
+        self.assertTrue(e.about_them("Isiah Thomas claimed racial stereotypes led people to overlook Magic Johnson's basketball IQ"))
+        self.assertTrue(e.about_them("Shaq slammed Kobe in old interview"))
+        self.assertTrue(e.about_them("Durant fired back at Perkins"))
+        self.assertFalse(e.about_them("Thunder's Shai Gilgeous-Alexander Threatens Kevin Durant, Russell Westbrook Record"))
+
+    def test_every_pair_once(self):
+        import evergreen as e
+        keys = [e.key_of(a, b) for a, b, _ in e.BANK]
+        self.assertEqual(len(keys), len(set(keys)))

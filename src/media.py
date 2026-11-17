@@ -477,6 +477,7 @@ _nba_debut: dict[str, int] = {}                   # Wikidata item -> year his fi
 _nba_debut_day: dict[str, str] = {}               # Wikidata item -> "YYYY-MM-DD" it began (when dated to the month)
 _career: dict[str, set[str]] = {}                 # Wikidata item -> every NBA team he played for
 _spells: dict[str, list[tuple[str, int, int]]] = {}   # Wikidata item -> (NBA team, first year, last year), infobox
+_coached: dict[str, set[str]] = {}                # Wikidata item -> NBA teams he coached (infobox coach_teamN)
 
 
 def teams_of(person: str) -> tuple[str, set[str]]:
@@ -561,6 +562,7 @@ def add_wiki_career(person: str, q: str) -> None:
         return
     teams, current, since, start = wiki_career(text)
     _spells[q] = wiki_spells(text)
+    _coached[q] = wiki_coached(text)
     if not teams:
         return                         # no NBA spell on the page: nothing to add
     career = _career.setdefault(q, set())
@@ -622,6 +624,17 @@ def wiki_spells(text: str) -> list[tuple[str, int, int]]:
         first, last = spell_years(fields.get(f"years{m.group(1)}", ""))
         if name in NBA_TEAMS and first:
             out.append((name, first, last))
+    return out
+
+
+def wiki_coached(text: str) -> set[str]:
+    """The NBA teams of his infobox's coaching career (coach_team1, coach_team2, ...)."""
+    out = set()
+    for m in re.finditer(r"^[ \t]*\|[ \t]*coach_team\d+[ \t]*=[ \t]*(.*?)[ \t]*$", text or "", re.M | re.I):
+        link = re.search(r"\[\[([^\]|]+)", m.group(1))
+        name = fold((link.group(1) if link else re.sub(r"<[^>]*>|\{\{[^}]*\}\}", "", m.group(1))).strip())
+        if name in NBA_TEAMS:
+            out.add(name)
     return out
 
 
@@ -2387,6 +2400,14 @@ def team_fits(c: dict, line: str, person: str, names: list[str] | tuple = ()) ->
     # D43 (his answer 2026-11-16): the photo's own person's name words are no team either ("Tragic
     # Magic" on a Magic Johnson photo, when the script never says his full name)
     named = teams_in(line, list(names) + ([person] if person else []))
+    nba_line = bool(named)
+    # D61 (his answers 2026-11-17): a team he never played for NOR coached does not judge his jersey
+    # ("Garnett won MVP in 2003 to 04, right after Denver took Carmelo": Denver is Carmelo's team;
+    # "Rivers took over a 32-14 Bucks team": the Bucks are his, as coach); a line naming any NBA team
+    # still refuses a PRE-NBA photo (Gary Trent's college photo on a Bucks line)
+    career = (career_teams(person) | _coached.get(_wikidata.get(person, ""), set())) if person else set()
+    if career:
+        named &= career
     jersey, current = jersey_team(t), (teams_of(person)[0] if person else "")
     # D60 (run 44053022347; his answer 2026-11-17): a year in his past (before today's spell, or any
     # year when he plays for no team now) allows only a jersey of a team he played for that year
@@ -2398,7 +2419,7 @@ def team_fits(c: dict, line: str, person: str, names: list[str] | tuple = ()) ->
         if past and not any(a <= y <= b for y in past for team, a, b in spells if team == jersey):
             return False
     if not named and not names_a_time(line, person):
-        return True
+        return not (nba_line and c.get("team") == "pre-nba")
     if c.get("team") == "pre-nba":
         return False
     if named:

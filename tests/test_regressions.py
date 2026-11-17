@@ -169,6 +169,9 @@ the "Safety tests" step before anything is installed or made.
      (infobox spells, both halves of a season): Howard's Hawks photo on "He won the 2020 title"
  93. D59 (his answers): a team named by its city counts, in a line and on a jersey ("Philly",
      "Cleveland jersey"); Los Angeles never; New York = Knicks; "New York Times" is a newspaper
+ 94. D61 (his answers): a team he never played for nor coached does not judge his jersey (Garnett
+     on "...after Denver took Carmelo"); a team he coached does (Rivers on the Bucks line); a line
+     naming any NBA team still refuses a PRE-NBA photo
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4730,3 +4733,61 @@ class CityIsTheTeam(unittest.TestCase):
                  "tag": {"v": "C", "s": "game", "t": "grimaces and shouts, Cleveland jersey"}}
         with patch.object(media, "teams_of", lambda p: ("philadelphia 76ers", set())):
             self.assertFalse(media.team_fits(photo, "He is at career lows at 41, but Philly is 12 and 3.", "LeBron James"))
+
+
+class AnotherMansTeam(unittest.TestCase):
+    """94. D61 (his answers 2026-11-17). "Garnett won MVP in 2003 to 04, right after Denver took
+    Carmelo third": Denver is Carmelo's team, yet Garnett's Wolves photo went. A team he never
+    played for nor coached no longer judges his jersey. The first version worsened Doc Rivers ("took
+    over a 32-14 Bucks team: You're the coach"): the Bucks are his as COACH, so his coached teams
+    count too (rule i). On 508 kept photos exactly one changes: Garnett, kept."""
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = {k: dict(getattr(media, k)) for k in ("_wikidata", "_career", "_coached", "_spells", "_team_since")}
+        media._wikidata.update({"Kevin Garnett": "Q-KG", "Doc Rivers": "Q-DR", "Gary Trent": "Q-GT"})
+        media._career.update({"Q-KG": {"minnesota timberwolves", "boston celtics", "brooklyn nets"},
+                              "Q-DR": {"atlanta hawks", "los angeles clippers", "new york knicks", "san antonio spurs"},
+                              "Q-GT": {"portland trail blazers", "toronto raptors"}})
+        media._coached["Q-DR"] = {"orlando magic", "boston celtics", "los angeles clippers", "philadelphia 76ers",
+                                  "milwaukee bucks"}
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            getattr(self.m, k).clear()
+            getattr(self.m, k).update(v)
+
+    def test_cases(self):
+        m = self.m
+        ph = lambda t, team="": {"kind": "photo", "title": "x", "team": team, "tag": {"v": "C", "s": "game", "t": t}}
+        with patch.object(m, "teams_of", lambda p: ("", set())):
+            self.assertTrue(m.team_fits(ph("drives, Timberwolves jersey"),
+                                        "Garnett won MVP in 2003 to 04, right after Denver took Carmelo third.", "Kevin Garnett"))
+            self.assertFalse(m.team_fits(ph("smiles on the bench", "former"),
+                                         'Rivers took over a 32-14 Bucks team: "You\'re the coach."', "Doc Rivers"))
+            self.assertFalse(m.team_fits(ph("shoots in college", "pre-nba"),
+                                         "Will the NBA punish the Bucks over Trent, or will it blink?", "Gary Trent"))
+            self.assertTrue(m.team_fits(ph("shoots in college", "pre-nba"),
+                                        "Will the league punish him, or will it blink?", "Gary Trent"))
+
+    def test_coached_teams_are_kept(self):
+        m = self.m
+        text = "| team1 = [[Atlanta Hawks]]\n| years1 = 1983–1991\n| coach_team5 = [[Milwaukee Bucks]]"
+        answer = json.dumps({"query": {"pages": {"1": {"revisions": [{"slots": {"main": {"*": text}}}]}}}}).encode()
+        saved = (dict(m._wiki_title), dict(m._teams))
+        try:
+            m._wiki_title["Doc Rivers 2"] = "Doc Rivers"
+            with patch.object(m, "get", lambda url, timeout=30: answer):
+                m.add_wiki_career("Doc Rivers 2", "Q-DR2")
+            self.assertEqual(m._coached["Q-DR2"], {"milwaukee bucks"})
+        finally:
+            for d, v in zip((m._wiki_title, m._teams), saved):
+                d.clear(); d.update(v)
+
+    def test_coached_teams_read(self):
+        got = self.m.wiki_coached("""| coach_team1 = [[Orlando Magic]]
+| coach_years5 = {{nbay|2023|end}}–{{nbay|2025|end}}
+| coach_team5 = [[Milwaukee Bucks]]
+| team1 = [[Atlanta Hawks]]""")
+        self.assertEqual(got, {"orlando magic", "milwaukee bucks"})

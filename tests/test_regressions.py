@@ -153,6 +153,9 @@ the "Safety tests" step before anything is installed or made.
  84. D46 + D47 (his answers): "Stephen A. Smith" (first + one initial + last) is found, and a
      Wikipedia "personality", "commentator", "host" or "podcaster" is a person
  85. D48 (his answer): the story's people are read from the hook too
+ 86. D49 + D50 + D51 (his answers): a line naming a man with an NBA career shows only the men it
+     names (first or last name); a rookie with no usable NBA photo may show his college photo on
+     his own line naming no team or time, marked for the final read
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4348,3 +4351,100 @@ class HookNamesPeople(unittest.TestCase):
             got = media.people(short)
             self.assertEqual(got, ["Steve Kerr", "Jayson Tatum", "Kevin Durant"])
             self.assertEqual(media.people({**short, "hook": "Jayson Tatum is mad."})[1], "Jayson Tatum")   # a plain string too
+
+
+class TheLinesManOnly(unittest.TestCase):
+    """86. D49 + D50 + D51 (run 44034519940; his answers 2026-11-17). Draymond's photos stood on
+    "Lendeborg sat with a towel over his head" (Lendeborg has only Michigan photos, PRE-NBA), and in
+    kept runs Jaylen Brown stood on Paul George's line. Now a line naming a man with an NBA career
+    shows only the men it names; a rookie with no usable NBA photo may be shown in college on his
+    own line naming no team or time; a line names a man by first OR last name ("Kyrie has...")."""
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = {k: getattr(media, k) for k in ("photos", "download", "picture_hash", "image_ok", "teams_of",
+                                                      "career_teams", "beat_seconds", "spoken")}
+        media.download = lambda url, path, timeout=60: (Path(path).write_text("x"), True)[1]
+        media.image_ok = lambda path: True
+        media.picture_hash = lambda path: None
+        media.teams_of = lambda person: ("golden state warriors", set())
+        media.career_teams = lambda p: {"golden state warriors"} if p in ("Yaxel Lendeborg", "Draymond Green") else set()
+        media.beat_seconds = lambda short, i: 2.0
+        self.folder = media.ROOT / "data" / "_test_linesman"
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(self.m, k, v)
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+    @staticmethod
+    def ph(title, team="", v="C", t="sits on bench"):
+        return {"kind": "photo", "title": title, "page": "p-" + title, "url": "u-" + title, "author": "a",
+                "team": team, "hoops": True, "tag": {"v": v, "s": "game", "t": t}}
+
+    def fill(self, line, pools, who):
+        m = self.m
+        m.spoken = lambda short: [{"say": line}]
+        m.photos = lambda person: pools.get(person, [])
+        import io
+        from contextlib import redirect_stdout
+        with redirect_stdout(io.StringIO()):
+            return m.fill_empty([None], 1, self.folder, set(), who, {"_name": "t", "beats": [{"say": line}]})[0]
+
+    def test_rookie_gets_his_college_photo_not_a_teammate(self):
+        pools = {"Yaxel Lendeborg": [self.ph("20260211 Yaxel Lendeborg 05.jpg", "pre-nba")],
+                 "Draymond Green": [self.ph("Draymond Green 2022.jpg")]}
+        got = self.fill("Lendeborg sat with a towel over his head.", pools, ["Draymond Green", "Yaxel Lendeborg"])
+        self.assertEqual(got["title"], "20260211 Yaxel Lendeborg 05.jpg")
+        self.assertTrue(got["college_only"])
+        import final_read
+        self.assertIn("PRE-NBA, NO NBA PHOTO EXISTS", final_read.picture_line(got))
+
+    def test_college_photo_never_on_a_team_or_time_line(self):
+        pools = {"Yaxel Lendeborg": [self.ph("20260211 Yaxel Lendeborg 05.jpg", "pre-nba")],
+                 "Draymond Green": [self.ph("Draymond Green 2022.jpg")]}
+        self.assertIsNone(self.fill("Tonight Lendeborg scored 28 for the Warriors.", pools,
+                                    ["Draymond Green", "Yaxel Lendeborg"]))      # the picture stays longer
+
+    def test_an_nba_photo_comes_first(self):
+        pools = {"Yaxel Lendeborg": [self.ph("Yaxel Lendeborg Warriors 2026.jpg"),
+                                     self.ph("20260211 Yaxel Lendeborg 05.jpg", "pre-nba")]}
+        got = self.fill("Lendeborg sat with a towel over his head.", pools, ["Yaxel Lendeborg"])
+        self.assertEqual(got["title"], "Yaxel Lendeborg Warriors 2026.jpg")
+        self.assertNotIn("college_only", got)
+
+    def test_college_only_when_no_nba_photo_at_all(self):
+        nba = self.ph("Yaxel Lendeborg Warriors 2026.jpg")
+        pools = {"Yaxel Lendeborg": [nba, self.ph("20260211 Yaxel Lendeborg 05.jpg", "pre-nba")]}
+        m = self.m
+        lines = ["Lendeborg scored 28.", "Lendeborg sat with a towel over his head."]
+        m.spoken = lambda short: [{"say": x} for x in lines]
+        m.photos = lambda person: pools.get(person, [])
+        import io
+        from contextlib import redirect_stdout
+        with redirect_stdout(io.StringIO()):                       # his NBA photo is already on beat 0
+            got = m.fill_empty([{**nba, "file": "data/x.jpg", "match": 8, "alts": []}, None], 2, self.folder, set(),
+                               ["Yaxel Lendeborg"], {"_name": "t", "beats": [{}, {}]})
+        self.assertIsNone(got[1])                                  # he HAS an NBA photo: no college one
+
+    def test_college_photo_must_show_him(self):
+        pools = {"Yaxel Lendeborg": [self.ph("20260211 Nick Martinelli and Yaxel Lendeborg.jpg", "pre-nba", v="O"),
+                                     self.ph("20260211 Yaxel Lendeborg 01.jpg", "pre-nba", v="S")]}
+        self.assertIsNone(self.fill("Lendeborg sat with a towel over his head.", pools, ["Yaxel Lendeborg"]))
+
+    def test_reporters_line_may_show_the_player(self):
+        pools = {"Draymond Green": [self.ph("Draymond Green 2022.jpg")]}
+        got = self.fill("Shams Charania told ESPN it's a checkpoint.", pools, ["Shams Charania", "Draymond Green"])
+        self.assertEqual(got["title"], "Draymond Green 2022.jpg")
+
+    def test_first_name_counts(self):
+        m = self.m
+        self.assertTrue(m.names_him("Is Draymond right to protect him?", "Draymond Green"))
+        self.assertTrue(m.names_him("Kyrie has a $42.4 million deal.", "Kyrie Irving"))
+        self.assertTrue(m.names_him("Green said no.", "Draymond Green"))
+        self.assertFalse(m.names_him("Draymonds everywhere.", "Draymond Green"))   # a whole word only
+        self.assertFalse(m.names_him("Lendeborg sat.", "Draymond Green"))
+        pools = {"Draymond Green": [self.ph("Draymond Green 2022.jpg")], "Yaxel Lendeborg": []}
+        got = self.fill("Is Draymond right to protect Lendeborg?", pools, ["Yaxel Lendeborg", "Draymond Green"])
+        self.assertEqual(got["title"], "Draymond Green 2022.jpg")    # Draymond is named by his first name

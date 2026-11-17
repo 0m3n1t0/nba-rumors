@@ -2207,6 +2207,28 @@ def person_photos(person: str, shown: set) -> list[dict]:
         sorted(ok, key=lambda c: (c.get("team") == "former", not c.get("hoops")))   # D28: a former team after
 
 
+def names_him(line: str, person: str) -> bool:
+    """Does the line name him? His last name (as before) or, D51 (his answer 2026-11-17), his first
+    name as a word ("Kyrie has a $42.4 million...", "Is Draymond right..."): 24 of 241 kept lines
+    name a story person by first name only. Two men with one first name (two Jalens) both count."""
+    words = fold(person).split()
+    text = fold(line or "")
+    return bool(words) and (words[-1] in text or bool(re.search(rf"\b{re.escape(words[0])}\b", text)))
+
+
+def college_faces(person: str, shown: set) -> list[dict]:
+    """D49 (run 44034519940; his answer 2026-11-17): a rookie with NO usable NBA photo (Yaxel
+    Lendeborg: all 18 tagged photos are Michigan, PRE-NBA) may be shown in a college photo, his face
+    or back seen, on his own line when it names no team or time (topup_ok rejects PRE-NBA on the
+    others). Marked "college_only" so the final read knows no NBA photo exists."""
+    if person_photos(person, set()):
+        return []
+    return [{**c, "college_only": True} for c in photos(person)[:photo_tags.MAX_PER_PERSON]
+            if not already_shown(c, shown, c["page"]) and c["page"] not in REJECTED     # no NBA one is usable: all college
+            and his_by_title(c, person) and (c.get("tag") or {}).get("v") in ("C", "B")
+            and (c.get("tag") or {}).get("s") not in photo_tags.NOT_BY_DEFAULT]
+
+
 # a line that names a team or a time ("the Cavs", "in 2018", "this season", "last year", "now")
 TEAM_WORD = re.compile(r"\b(" + "|".join(sorted({re.escape(w) for t, ws in NBA_TEAMS.items() for w in [t] + ws},
                                                 key=len, reverse=True)) + r")\b", re.I)
@@ -2337,6 +2359,7 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
             if x:
                 mark_shown(x, shown, x.get("page"))
     faces = {person: person_photos(person, shown) for person in (who or [])}
+    college_tried: set[str] = set()
     lines = [b.get("say", "") for b in spoken(short)] if short else [""] * n_beats
     scenes = count_scenes(x for it in items if it for x in [it] + list(it.get("alts") or []))
     # D32 (run 43513168042: Embiid's last two beats kept one picture and the log said nothing):
@@ -2394,10 +2417,18 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
         return pick_face(i, tag, full_ok=False) or pick_face(i, tag, full_ok=True)
 
     def pick_face(i: int, tag: str, full_ok: bool) -> dict | None:
-        said = [p for p in (who or []) if fold(p.split()[-1]) in fold(lines[i] if i < len(lines) else "")]
+        said = [p for p in (who or []) if names_him(lines[i] if i < len(lines) else "", p)]
         if not who and full_ok:
             skip(i, "no person recognised")
-        for person in said + [p for p in (who or []) if p not in said]:
+        # D50 (his answer 2026-11-17): a line naming a man with an NBA career shows only the men it
+        # names (Paul George's line got Jaylen Brown); a line naming only reporters, executives or
+        # nobody may show anyone in the story, as before (Windhorst's line: the player he discussed)
+        players = [p for p in said if career_teams(p)]
+        for person in players:
+            if not faces.get(person) and person not in college_tried:
+                college_tried.add(person)                 # D49: his college photos, once
+                faces[person] = college_faces(person, shown)
+        for person in (said if players else said + [p for p in (who or []) if p not in said]):
             if not faces.get(person) and full_ok:
                 skip(i, f"no photo of {person} left")
             waiting = []

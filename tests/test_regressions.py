@@ -148,6 +148,8 @@ the "Safety tests" step before anything is installed or made.
      company, team or league is never a person ("Sports Illustrated")
  82. D45 (his answer): a national-team photo (tag names a country or national team/Team USA/
      Olympic/FIBA) fits only a line about a national team, the Olympics, a World Cup or FIBA
+ 83. D44 (his answer): the gate counts an own-category photo as his, like D39's top-ups (a group
+     title still needs his name)
  75. D34 (his answers): his Wikipedia infobox is always read with Wikidata: its NBA teams join his
      career (Murray, Fears had only a college team: no jersey law; Kyrie: no Nets); the current
      team is the playing spell ending "present" and wins over Wikidata; its year: "2022 end" = 2023;
@@ -4285,3 +4287,22 @@ class NationalColoursOnlyOnNationalLines(unittest.TestCase):
                        ("smiles upward, FIBA World Cup 2023 lanyard", True), ("drives in Knicks jersey", False),
                        ("stands in Lakers warmup", False)):
             self.assertEqual(media.national_photo({"tag": {"t": t}}), nat, t)
+
+
+class GateKnowsOwnCategory(unittest.TestCase):
+    """83. D44 (run 43945813466; his answer 2026-11-16): D39 lets an own-category photo fill whatever
+    its title says, but the gate still held "a picture not judged and not named after the story's
+    people" (RJ Barrett's own-category photos): my D39 missed the gate. Now the gate mirrors it."""
+
+    def test_gate_mirrors_d39(self):
+        import compliance as C
+        import gate, media
+        self.assertEqual(gate.GROUP_TITLE.pattern, media.GROUP_TITLE.pattern)
+        own = {"kind": "photo", "match": None, "own_category": True, "license": "CC BY-SA 4.0",
+               "page": "https://commons.wikimedia.org/wiki/File:x.jpg", "author": "Sandro Halank",
+               "title": "2023-08-09 Deutschland gegen Kanada (Basketball-Länderspiel) by Sandro Halank–063.jpg"}
+        flags = {"people": ["RJ Barrett"]}
+        self.assertEqual(gate.check_visuals([own], flags)[0], C.PASS)
+        self.assertEqual(gate.check_visuals([{**own, "own_category": False}], flags)[0], C.REVIEW)
+        self.assertEqual(gate.check_visuals([{**own, "title": "LaMelo Ball and Dejonte Murray.jpg"}],
+                                            {"people": ["Dejounte Murray"]})[0], C.REVIEW)

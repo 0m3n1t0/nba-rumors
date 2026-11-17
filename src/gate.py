@@ -60,6 +60,9 @@ def full_name_in(title: str, person: str) -> bool:
     return bool(parts) and all(re.search(rf"\b{re.escape(w)}\b", t) for w in (parts[:1] + parts[-1:]))
 
 
+GROUP_TITLE = re.compile(r"\b(and|with|vs|versus|family)\b|&", re.I)   # = media.GROUP_TITLE
+
+
 def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:
     verdict, notes = C.PASS, []
     if flags.get("unjudged"):
@@ -72,8 +75,12 @@ def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:
     for x in shown:
         # a picture Claude never judged (a top-up) must be a photo NAMED after one of the story's
         # people in full; anything else could be a random object, so a person looks first
+        # D44 (his answer 2026-11-16): rule 56 as D39 uses it for top-ups (media.his_by_title): a
+        # photo in a person's OWN Commons category is his whatever its title says, unless the
+        # title names a group (run 43945813466: RJ Barrett's own-category photos were held)
         if x.get("match") is None and x.get("kind") == "photo" and who \
-                and not any(full_name_in(x.get("title", ""), w) for w in who):
+                and not any(full_name_in(x.get("title", ""), w) for w in who) \
+                and not (x.get("own_category") and not GROUP_TITLE.search(x.get("title", ""))):
             verdict = C.worst(verdict, C.REVIEW)
             notes.append(f"picture not judged and not named after the story's people: {(x.get('title') or '')[:50]}")
         # a clip Claude never judged (last-resort stock footage) may show anything: an amateur,

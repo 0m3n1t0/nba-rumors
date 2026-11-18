@@ -2632,7 +2632,12 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
         return pick_face(i, tag, full_ok=False) or pick_face(i, tag, full_ok=True)
 
     def pick_face(i: int, tag: str, full_ok: bool) -> dict | None:
-        said = [p for p in (who or []) if names_him(lines[i] if i < len(lines) else "", p)]
+        # D72 (his answer 2026-11-18): the top-ups read the writer's on_screen first, as the pick
+        # does (D71): when it names a man with an NBA career, the men it names ("Still, Wade says he
+        # has to get stronger" with "Victor Wembanyama dunking" shows Wembanyama, not Wade);
+        # otherwise the spoken line first, then the note (D50, D63), as before
+        said = screen_players(screens[i] if i < len(screens) else "", who or []) \
+            or [p for p in (who or []) if names_him(lines[i] if i < len(lines) else "", p)]
         if not said:
             # D63 (run 44088855986; his answer 2026-11-17): a line naming nobody ("My read: he had
             # seven of the 18 turnovers") shows whom the writer put on screen ("Jokic with the

@@ -216,6 +216,9 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 108. D72 (his answer 2026-11-18): the top-ups read on_screen first too, when it names a player (one
+     line, one man: Wembanyama, not Wade, on "Still, Wade says he has to get stronger"); test 96's
+     "the spoken name still wins" now holds only for a note naming no player (a changed rule).
 """
 
 from __future__ import annotations
@@ -4943,11 +4946,21 @@ class WhoTheWriterPutOnScreen(TheLinesManOnly):
                                pools, ["DeMar DeRozan", "Nikola Jokic"])
         self.assertEqual(got["title"], "DeMar DeRozan (25715231917).jpg")     # the story's order, as before
 
-    def test_the_spoken_name_still_wins(self):
+    def test_the_spoken_name_wins_when_the_note_names_no_player(self):
+        # changed by D72 (his answer 2026-11-18): a note naming a player now comes first (see 108);
+        # the spoken name still wins over a note naming only a reporter or an executive (D50)
         pools = {"DeMar DeRozan": [self.ph("DeMar DeRozan (25715231917).jpg")],
                  "Nikola Jokic": [self.ph("Nikola Jokic (51914984866).jpg")]}
-        got = self.fill_screen("Yahoo says DeRozan doesn't look like the target.", "Jokic at the podium",
-                               pools, ["Nikola Jokic", "DeMar DeRozan"])
+        m = self.m
+        m.career_teams = lambda p: {"denver nuggets"} if p in ("DeMar DeRozan", "Nikola Jokic") else set()
+        m.spoken = lambda short: [{"say": "Yahoo says DeRozan doesn't look like the target.",
+                                   "on_screen": "Tim Connelly at the podium"}]
+        m.photos = lambda person: pools.get(person, [])
+        import io
+        from contextlib import redirect_stdout
+        with redirect_stdout(io.StringIO()):
+            got = m.fill_empty([None], 1, self.folder, set(), ["Nikola Jokic", "DeMar DeRozan", "Tim Connelly"],
+                               {"_name": "t", "beats": [{}]})[0]
         self.assertEqual(got["title"], "DeMar DeRozan (25715231917).jpg")
 
 
@@ -5796,3 +5809,29 @@ class ScreenNamesOnlyHim(unittest.TestCase):
         self.assertIn("onscreen = screen_players(screen, who_all)", src)
         self.assertIn("team_ok = (lambda j, ok=team_ok: ok(j) and shows_only(cands[j], onscreen, who_all, screen))", src)
         self.assertIn("order = [j for j in order if team_ok(j)]", src)
+
+
+class TopUpsReadTheNoteFirst(WhoTheWriterPutOnScreen):
+    """108. D72 (his answer 2026-11-18). The pick (D71) reads the writer's on_screen, the top-ups
+    read the spoken line first: kept run 44078900140, "Still, Wade says he has to get stronger"
+    (on_screen "Victor Wembanyama dunking") could show Wembanyama first and Wade next. Now the
+    top-ups read the note first when it names a player; otherwise as before (D50, D63)."""
+
+    POOLS = {"Dwyane Wade": [{"kind": "photo", "title": "Dwyane Wade splits defense.jpg", "page": "p-w", "url": "u-w",
+                              "author": "a", "team": "", "hoops": True, "tag": {"v": "C", "s": "game", "t": "drives"}}],
+             "Victor Wembanyama": [{"kind": "photo", "title": "Victor Wembanyama 2026.jpg", "page": "p-v", "url": "u-v",
+                                    "author": "b", "team": "", "hoops": True, "tag": {"v": "C", "s": "game", "t": "dunks"}}]}
+
+    def test_the_run_case(self):
+        got = self.fill_screen("Still, Wade says he has to get stronger.", "Victor Wembanyama dunking",
+                               self.POOLS, ["Dwyane Wade", "Victor Wembanyama"])
+        self.assertEqual(got["title"], "Victor Wembanyama 2026.jpg")
+
+    def test_a_note_naming_nobody_as_before(self):
+        got = self.fill_screen("Still, Wade says he has to get stronger.", "a crowded arena",
+                               self.POOLS, ["Victor Wembanyama", "Dwyane Wade"])
+        self.assertEqual(got["title"], "Dwyane Wade splits defense.jpg")
+
+    def test_the_code_reads_the_note_first(self):
+        src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
+        self.assertIn('said = screen_players(screens[i] if i < len(screens) else "", who or []) \\', src)

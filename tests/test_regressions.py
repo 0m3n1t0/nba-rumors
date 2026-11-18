@@ -216,6 +216,10 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 112. D77 (his answers 2026-11-18): a full eval keeps each story's script, sources, voice timing and
+     pictures (as before the fix after the read; text only); a QUICK eval (from_stage media or
+     final_read) puts them back and redoes only those stages, read against its base; no video, no
+     gate.
  111. Stage 4 (his answers 2026-11-18): the eval counts, per failure class, the Shorts with a problem
      of it (his table; WRONG PICTURE = P1/P2; the gate's final_read/editorial/script_checks never
      twice; an unknown problem shows as "?").
@@ -5504,7 +5508,7 @@ class QualityEval(unittest.TestCase):
             return {"headline": story["headline"], "hook": {"text": "h", "score": 40}, "beats": [{"say": "b"}],
                     "ready": story["id"] != "run_short_3", "compliance": {"verdict": "PASS", "checks": {}}}
 
-        def stages():
+        def stages(*a, **k):        # D77: the full eval names the story, to keep its base
             (e.DATA / "review" / "short_1.json").write_text(json.dumps({"verdict": verdicts.get("read", "PASS"),
                                                                         "errors": []}))
             (e.DATA / "history").mkdir(parents=True, exist_ok=True)
@@ -6041,3 +6045,132 @@ class EvalCountsPerClass(unittest.TestCase):
         self.assertIn("| R1 | 1 | 0 |", out)
         self.assertNotIn("| ? |", out)
         self.assertIn("| a | ⛔ | F1 |", out)
+
+
+class QuickEval(unittest.TestCase):
+    """112. D77 (his answers 2026-11-18: "must the eval remake the whole Short?" - not always). A full
+    eval keeps, per story, what a quick one starts from (text only, in the private repo): the script
+    and its sources, the voice timing after audio_qc, the pictures after media - all BEFORE the fix
+    after the read changes them. A quick eval puts them back and redoes only the stages a change
+    touches (from media: media, final read, 4e; from the final read: final read, 4e); no video, no
+    gate; its summary is read against its base."""
+
+    def setUp(self):
+        import eval_run
+        self.e = eval_run
+        self.tmp = Path(tempfile.mkdtemp())
+        self.saved = (eval_run.DATA, eval_run.STATE, eval_run.EVAL, eval_run.make_script, eval_run.git)
+        eval_run.DATA, eval_run.STATE = self.tmp / "data", self.tmp / "state"
+        eval_run.EVAL = eval_run.STATE / "nba" / "eval"
+        eval_run.git = lambda *a: types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        for n in (1, 2):
+            d = eval_run.EVAL / "set" / f"s{n}"
+            d.mkdir(parents=True)
+            (d / "story.json").write_text(json.dumps({"id": f"s{n}", "headline": f"Story {n}", "topic": {}, "judged": {}}))
+            (d / "sources.json").write_text(json.dumps([{"title": f"src {n}"}]))
+        self.ran = []
+
+        def make(story, sources):
+            if story["id"] == "s2" and getattr(self, "s2_fails", False):
+                raise ValueError("the story's own article could not be read")
+            (eval_run.DATA / "sources" / "short_1.json").write_text(json.dumps(sources))
+            return {"headline": story["headline"], "hook": {"text": "h " + story["id"]}, "beats": [{"say": "b"}],
+                    "compliance": {"verdict": "PASS", "checks": {}}}
+        eval_run.make_script = make
+
+        def run(cmd, check=False, **k):
+            mod = Path(cmd[-1]).name
+            self.ran.append(mod)
+            D = eval_run.DATA
+            if mod == "tts.py":
+                (D / "audio" / "short_1.timing.json").write_text(json.dumps({"duration": 30, "by": "tts"}))
+            if mod == "audio_qc.py":
+                (D / "audio" / "short_1.timing.json").write_text(json.dumps({"duration": 30, "by": "qc"}))
+            if mod == "media.py":
+                (D / "media" / "short_1.json").write_text(json.dumps([{"title": "first pick.jpg"}]))
+                (D / "media" / "short_1_vs.json").write_text("[]")
+            if mod == "final_read.py":
+                (D / "review" / "short_1.json").write_text(json.dumps({"verdict": "PASS", "errors": []}))
+            if mod == "fix_after_read.py":      # 4e changes the pictures: the base must keep the ones before
+                (D / "media" / "short_1.json").write_text(json.dumps([{"title": "after 4e.jpg"}]))
+            return types.SimpleNamespace(returncode=0)
+        self.p = patch.object(eval_run.subprocess, "run", run)
+        self.p.start()
+
+    def tearDown(self):
+        self.p.stop()
+        e = self.e
+        e.DATA, e.STATE, e.EVAL, e.make_script, e.git = self.saved
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def full(self, label="full1", formats=""):
+        with patch.dict("os.environ", {"EVAL_LABEL": label, "NBA_FORMATS": formats, "EVAL_FROM": "", "EVAL_BASE": ""}):
+            self.e.main()
+
+    def quick(self, start, label="q1", base="", formats=""):
+        self.ran.clear()
+        with patch.dict("os.environ", {"EVAL_LABEL": label, "NBA_FORMATS": formats, "EVAL_FROM": start, "EVAL_BASE": base}):
+            self.e.main()
+
+    def test_the_full_eval_keeps_its_base_before_4e(self):
+        self.full()
+        b = self.e.EVAL / "base" / "full1"
+        self.assertEqual(json.loads((b / "meta.json").read_text()), {"formats": ""})
+        self.assertEqual(json.loads((b / "s1" / "script.json").read_text())["hook"]["text"], "h s1")
+        self.assertEqual(json.loads((b / "s1" / "sources.json").read_text()), [{"title": "src 1"}])
+        self.assertEqual(json.loads((b / "s1" / "timing.json").read_text())["by"], "qc")      # after audio_qc
+        self.assertEqual(json.loads((b / "s1" / "media.json").read_text()), [{"title": "first pick.jpg"}])
+        self.assertEqual(sorted(p.suffix for p in b.rglob("*.*")), [".json"] * 11)  # text only (no voice, no video)
+        self.assertEqual(self.ran.count("render.py"), 2)                            # the full eval: everything
+
+    def test_quick_from_media(self):
+        self.full()
+        self.quick("media")
+        self.assertEqual(self.ran, ["media.py", "final_read.py", "fix_after_read.py"] * 2)
+        r = json.loads((self.e.EVAL / "results" / "q1" / "s1.json").read_text())
+        self.assertEqual(r["mode"], "quick from media, on full1")
+        self.assertEqual(r["script"]["hook"], "h s1")                                   # the base's script
+        summary = (self.e.EVAL / "results" / "q1" / "summary.md").read_text()
+        self.assertIn("Before (full1)", summary)                                        # read against its base
+
+    def test_quick_from_the_final_read_puts_the_pictures_back(self):
+        self.full()
+        seen = []
+        run = self.e.subprocess.run
+
+        def spy(cmd, check=False, **k):
+            if Path(cmd[-1]).name == "final_read.py":
+                seen.append(json.loads((self.e.DATA / "media" / "short_1.json").read_text()))
+            return run(cmd, check=check, **k)
+        with patch.object(self.e.subprocess, "run", spy):
+            self.quick("final_read")
+        self.assertEqual(self.ran, ["final_read.py", "fix_after_read.py"] * 2)
+        self.assertEqual(seen, [[{"title": "first pick.jpg"}]] * 2)                      # the base's pictures, before 4e
+
+    def test_the_base_matches_formats_and_a_missing_story(self):
+        self.s2_fails = True
+        self.full("full1")
+        self.full("full2", formats="receipts")
+        self.quick("media")                                                              # no formats: full1
+        r2 = json.loads((self.e.EVAL / "results" / "q1" / "s2.json").read_text())
+        self.assertFalse(r2["made"])
+        self.assertIn("not in the full eval full1", r2["why_not"])
+        self.assertEqual(json.loads((self.e.EVAL / "results" / "q1" / "s1.json").read_text())["mode"],
+                         "quick from media, on full1")
+        # read against its own base, not the newest label (full2 came after full1)
+        self.assertIn("Before (full1)", (self.e.EVAL / "results" / "q1" / "summary.md").read_text())
+        self.quick("media", label="q2", formats="receipts")
+        self.assertEqual(json.loads((self.e.EVAL / "results" / "q2" / "s1.json").read_text())["mode"],
+                         "quick from media, on full2")
+
+    def test_no_base_or_a_wrong_stage_stops(self):
+        with self.assertRaises(SystemExit):
+            self.quick("media")
+        self.full()
+        with self.assertRaises(SystemExit):
+            self.quick("script")
+
+    def test_the_workflow_inputs(self):
+        wf = (ROOT / ".github" / "workflows" / "eval.yml").read_text(encoding="utf-8")
+        self.assertIn("EVAL_FROM: ${{ github.event.inputs.from_stage }}", wf)
+        self.assertIn("EVAL_BASE: ${{ github.event.inputs.base }}", wf)

@@ -12,6 +12,11 @@ video, gate), one at a time, so a change to a writing or checking rule shows in 
       <channel>/eval/results/<label>/summary.md     the table and the one number
   - It runs in parts: on the Claude limit it stops cleanly, keeps what is done, and the next run
     with the same label goes on from where it stopped. Each story is saved as soon as it is done.
+  - D77 (his answers 2026-11-18): a full eval also keeps, per story, the script, sources, voice
+    timing and pictures (text only, before the fix after the read) under <channel>/eval/base/<label>/.
+    A QUICK eval (input from_stage: media or final_read) puts them back and redoes only those
+    stages (no video, no gate), on the newest full eval made with the same formats (or input base),
+    and is read against it.
   - The one number: Shorts with no problem = the script stage did not hold it AND the final read
     (after the fix) found no error. A story with no Short made counts as a problem.
 """
@@ -38,6 +43,14 @@ WORK_DIRS = ("scripts", "sources", "audio", "media", "review", "video", "gate")
 
 class Limit(Exception):
     """The Claude limit: stop, keep what is done."""
+
+
+class _Done(Exception):
+    """A quick eval's story the base did not make: its result is already known."""
+
+    def __init__(self, result: dict):
+        super().__init__("done")
+        self.result = result
 
 
 def load(path: Path, default=None):
@@ -98,9 +111,56 @@ def make_script(story: dict, sources: list[dict]) -> dict:
         raise Limit(str(exc)) from exc
 
 
-def run_stages() -> None:
-    for module in STAGES:
+# D77 (his answers 2026-11-18): a QUICK eval redoes only the stages a change touches, on the script,
+# voice timing and pictures a FULL eval kept ("base"): text only, in the private repo (no voice, no
+# video); the quick eval makes no video and runs no gate (technical checks are the full eval's).
+QUICK = {"media": ("media.py", "final_read.py", "fix_after_read.py"),
+         "final_read": ("final_read.py", "fix_after_read.py")}
+KEPT = {"script": ("scripts", "short_1.json"), "sources": ("sources", "short_1.json"),
+        "timing": ("audio", "short_1.timing.json"), "media": ("media", "short_1.json"),
+        "media_vs": ("media", "short_1_vs.json")}
+AFTER = {"audio_qc.py": ("timing",), "media.py": ("media", "media_vs")}   # kept before 4e changes them
+
+
+def keep(story_id: str, label: str, what: tuple[str, ...]) -> None:
+    """A full eval keeps what a quick eval starts from, as it was BEFORE the fix after the read."""
+    folder = EVAL / "base" / label / story_id
+    folder.mkdir(parents=True, exist_ok=True)
+    for k in what:
+        sub, name = KEPT[k]
+        if (DATA / sub / name).exists():
+            shutil.copy2(DATA / sub / name, folder / f"{k}.json")
+
+
+def put_back(story_id: str, base: str, start: str) -> bool:
+    """A quick eval's starting point: the base's script, sources and voice timing; its pictures too
+    when it starts at the final read. False: the base did not keep this story."""
+    folder = EVAL / "base" / base / story_id
+    need = ("script", "sources", "timing") + (("media", "media_vs") if start == "final_read" else ())
+    if not all((folder / f"{k}.json").exists() for k in need if k != "media_vs"):
+        return False
+    for k in need:
+        if (folder / f"{k}.json").exists():
+            sub, name = KEPT[k]
+            shutil.copy2(folder / f"{k}.json", DATA / sub / name)
+    return True
+
+
+def newest_base(formats: str) -> str | None:
+    """The newest full eval that kept its stories, made with the same formats."""
+    index = load(EVAL / "results" / "index.json", []) or []
+    for lab in reversed(index):
+        meta = load(EVAL / "base" / lab / "meta.json", None)
+        if meta is not None and meta.get("formats", "") == formats:
+            return lab
+    return None
+
+
+def run_stages(story_id: str = "", label: str = "", modules: tuple[str, ...] = STAGES) -> None:
+    for module in modules:
         subprocess.run([sys.executable, str(ROOT / "src" / module)], check=False)
+        if story_id and module in AFTER:
+            keep(story_id, label, AFTER[module])
 
 
 def limit_hit() -> bool:
@@ -301,6 +361,20 @@ def main() -> None:
     def collected(lab):
         return [load(p, {}) for p in sorted((EVAL / "results" / lab).glob("*.json"))]
     previous = (prev_label, collected(prev_label)) if prev_label else None
+    formats = (os.environ.get("NBA_FORMATS") or "").strip()
+    start = (os.environ.get("EVAL_FROM") or "").strip()
+    base = None
+    if start:
+        if start not in QUICK:
+            sys.exit(f"[!] a quick eval starts at one of: {', '.join(QUICK)}")
+        base = (os.environ.get("EVAL_BASE") or "").strip() or newest_base(formats)
+        if not base or not (EVAL / "base" / base / "meta.json").exists():
+            sys.exit("[!] no full eval kept its stories for this quick eval (run a full eval first)")
+        previous = (base, collected(base))           # a quick eval is read against its base
+        print(f"[i] quick eval from {start}, on the full eval {base}")
+    else:
+        (EVAL / "base" / label).mkdir(parents=True, exist_ok=True)
+        (EVAL / "base" / label / "meta.json").write_text(json.dumps({"formats": formats}), encoding="utf-8")
     for folder in stories:
         story = load(folder / "story.json", {})
         if (out / f"{story['id']}.json").exists():
@@ -308,12 +382,25 @@ def main() -> None:
         sources = load(folder / "sources.json", [])
         clean_work()
         try:
-            short = make_script(story, sources)
-            (DATA / "scripts" / "short_1.json").write_text(json.dumps(short, indent=2, ensure_ascii=False), encoding="utf-8")
-            run_stages()
+            if start:
+                if not put_back(story["id"], base, start):
+                    was = load(EVAL / "results" / base / f"{story['id']}.json", {}) or {}
+                    result = result_of(story, None, f"not in the full eval {base}: {was.get('why_not', '')}"[:200])
+                    raise _Done(result)
+                short = load(DATA / "scripts" / "short_1.json", {})
+                run_stages(modules=QUICK[start])
+            else:
+                short = make_script(story, sources)
+                (DATA / "scripts" / "short_1.json").write_text(json.dumps(short, indent=2, ensure_ascii=False), encoding="utf-8")
+                keep(story["id"], label, ("script", "sources"))
+                run_stages(story["id"], label)
             if limit_hit():
                 raise Limit("reached during the voice, pictures or final read")
             result = result_of(story, short)
+            if start:
+                result["mode"] = f"quick from {start}, on {base}"
+        except _Done as done:
+            result = done.result
         except Limit as exc:
             print(f"[i] Claude limit: the eval stops here and goes on next time ({str(exc)[:100]})")
             break

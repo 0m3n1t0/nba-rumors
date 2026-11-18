@@ -15,6 +15,14 @@ on:
         description: "Short formats to turn on for this eval only (e.g. receipts). Empty = as in the daily runs."
         required: false
         default: ""
+      from_stage:
+        description: "Quick eval (D77): redo only from this stage (media or final_read) on a full eval's kept stories. Empty = a full eval."
+        required: false
+        default: ""
+      base:
+        description: "Quick eval: the full eval to start from. Empty = the newest one made with the same formats."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -99,6 +107,8 @@ jobs:
         env:
           EVAL_LABEL: ${{ github.event.inputs.label }}
           NBA_FORMATS: ${{ github.event.inputs.formats }}
+          EVAL_FROM: ${{ github.event.inputs.from_stage }}
+          EVAL_BASE: ${{ github.event.inputs.base }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
           OPENVERSE_CLIENT_SECRET: ${{ secrets.OPENVERSE_CLIENT_SECRET }}

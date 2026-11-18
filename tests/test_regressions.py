@@ -216,6 +216,9 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 110. Q1 (his answers 2026-11-18): the final read's prompt says a line found right is never an error,
+     and every error of every kind is checked once more, alone, by the main model; a plain "not an
+     error" moves it to the doubts (marked), in doubt or on a failed call it stays.
  109. D75 (his answer 2026-11-18): the hook truth check reads the next hook until one is true (the
      Howard eval: two overstated, the third led unread and was false).
  108. D72 (his answer 2026-11-18): the top-ups read on_screen first too, when it names a player (one
@@ -3103,6 +3106,7 @@ class IndependentFinalRead(unittest.TestCase):
                 (d / "sources" / f"short_{n}.json").write_text(json.dumps(self.SOURCES), encoding="utf-8")
             answers = iter([{"errors": [{"line": 1, "kind": "NONSENSE", "what": "broken",
                                          "evidence": "hurt Luka Doncic:Not a good play right there"}]},
+                            {"error": True},          # 110: the second check of that error (it stays)
                             script.UsageLimit("5-hour limit")])
 
             def fake(*a, **k):
@@ -5901,3 +5905,72 @@ class EveryLeadingHookIsRead(unittest.TestCase):
         with patch.object(script, "check_hook_truth", lambda h, s, lead="": read.append(h["text"]) or "ok"):
             script.truth_order(hooks, [])
         self.assertEqual(read, [])
+
+
+class FinalReadErrorsAreConfirmed(unittest.TestCase):
+    """110. Q1 (his answers 2026-11-18). The receipts eval's Kyrie Short was held by an "error" whose
+    own text said "...supported; but the Mavs-Kyrie claim is fine. The error: none here."; Howard's
+    "Yahoo Sports says Kobe demanded..." was called WRONG WORDS though the line gives the outlet its
+    own conclusion. Such false errors stop a Short and stall 4e (nothing to fix, the count never
+    drops). Now: a prompt rule, and a second check of each error (all kinds, the main model); a plain
+    false moves it to the doubts, marked; in doubt or on a failure it stays an error."""
+
+    SHORT = {"hook": {"text": "Kyrie Irving keeps saying Dallas is home."},
+             "beats": [{"say": "Masai Ujiri said they believe in him."}]}
+    SRC = [{"publisher": "ESPN", "title": "t", "text": "Mavs president Masai Ujiri said they believe in him."}]
+    FAKE = {"line": 1, "kind": "NOT IN THE SOURCES",
+            "what": "Masai Ujiri is said to be Mavs president - supported; the error: none here.",
+            "evidence": "Masai Ujiri said they believe in him."}
+    PIC = {"line": 0, "kind": "WRONG PICTURE", "what": "Kyrie in a Nets jersey on a Dallas line",
+           "evidence": "Kyrie Irving keeps saying Dallas is home."}
+
+    def run_read(self, second):
+        import final_read as fr
+        import script
+        calls = []
+
+        def ask(prompt, model="", where=""):
+            calls.append((where, model, prompt))
+            if where == "final_read":
+                return {"errors": [dict(self.FAKE), dict(self.PIC)], "doubts": []}
+            return second(prompt)
+        with patch.object(script, "ask_claude", ask):
+            return fr.read(self.SHORT, [], self.SRC), calls
+
+    def test_a_plain_no_moves_it_to_the_doubts(self):
+        res, calls = self.run_read(lambda p: {"error": False, "why": "its own text says it is fine"}
+                                   if "none here" in p.split("THE SHORT")[0] else {"error": True})
+        self.assertEqual([e["kind"] for e in res["errors"]], ["WRONG PICTURE"])     # the picture error stays
+        self.assertEqual(res["verdict"], "REVIEW")
+        self.assertTrue(any(d["what"].startswith("(second check: not an error: its own text says it is fine)")
+                            for d in res["doubts"]))
+        confirms = [c for c in calls if c[0] == "final_read_confirm"]
+        self.assertEqual(len(confirms), 2)                                         # every error, of every kind
+        import script
+        self.assertTrue(all(c[1] == script.CLAUDE_MODEL for c in confirms))        # the main model
+        self.assertIn("4. WRONG PICTURE", confirms[0][2])                          # the reader's own rules
+        self.assertIn('"kind": "NOT IN THE SOURCES"', confirms[0][2])
+
+    def test_both_false_the_short_passes(self):
+        res, _ = self.run_read(lambda p: {"error": False, "why": "fine"})
+        self.assertEqual((res["verdict"], res["errors"], len(res["doubts"])), ("PASS", [], 2))
+
+    def test_in_doubt_it_stays(self):
+        for second in (lambda p: {"error": True}, lambda p: {}, lambda p: {"error": "false"},
+                       lambda p: (_ for _ in ()).throw(RuntimeError("bad json"))):
+            res, _ = self.run_read(second)
+            self.assertEqual(len(res["errors"]), 2)
+            self.assertEqual(res["verdict"], "REVIEW")
+
+    def test_the_limit_still_stops_the_stage(self):
+        import script
+
+        def limit(p):
+            raise script.UsageLimit("limit")
+        with self.assertRaises(script.UsageLimit):
+            self.run_read(limit)
+
+    def test_the_prompt_rule(self):
+        import final_read as fr
+        self.assertIn("A line you checked and found right, or right with nothing wrong in\nit, is never an error", fr.PROMPT)
+        self.assertTrue(fr.RULES.startswith("1. NONSENSE") and fr.RULES.endswith("never delivers."))

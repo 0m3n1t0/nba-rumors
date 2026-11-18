@@ -212,6 +212,10 @@ the "Safety tests" step before anything is installed or made.
      middle beat re-asks the hook's question, the closing question loops to the hook and brings
      in no one the Short never introduced (run 43066151290)
  (12 also: a crop named after the person, "...-036 (White).jpg", is the same picture, run 43027675858)
+ 107. D71 (his answers 2026-11-18): when the writer's on_screen names a man with an NBA career, the
+     picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
+     his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
+     on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
 """
 
 from __future__ import annotations
@@ -5709,3 +5713,86 @@ class ReceiptsFormat(unittest.TestCase):
             self.assertEqual((noted, short["format"]), ([], "breakdown"))     # the breakdown prompt is as before
         finally:
             script.short_format, script.receipts_note = saved
+
+
+class ScreenNamesOnlyHim(unittest.TestCase):
+    """107. D71 (his answers 2026-11-18). Claude's "S" tier (another person of the story) stood in
+    when no photo of the man the line is about fitted: Draymond on "Steph Curry tore his oblique"
+    (the eval's Arenas Short, twice, 4e could not cure it); in kept runs 19 such pictures where the
+    writer's on_screen named someone else. Now the on_screen's men with an NBA career are the only
+    known men allowed; a generic or team picture still is; reporters and executives keep D50."""
+
+    WHO = ["Gilbert Arenas", "Steph Curry", "Draymond Green", "Jalen Green", "Carmelo Anthony",
+           "Kevin Garnett", "Shams Charania", "Dwyane Wade", "Victor Wembanyama", "Marcus Smart"]
+    PLAYERS = set(WHO) - {"Shams Charania"}
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.p = patch.object(media, "career_teams", lambda p: {"some team"} if p in self.PLAYERS else set())
+        self.p.start()
+
+    def tearDown(self):
+        self.p.stop()
+
+    @staticmethod
+    def ph(who, title="x.jpg"):
+        return {"kind": "photo", "title": title, "tag": {"v": "C", "s": "game", "t": "t", "who": who} if who else {}}
+
+    def ok(self, photo, screen):
+        m = self.m
+        return m.shows_only(photo, m.screen_players(screen, self.WHO), self.WHO, screen)
+
+    def test_the_run_cases(self):
+        self.assertFalse(self.ok(self.ph("Draymond Green"), "Steph Curry grimacing on the bench"))
+        self.assertTrue(self.ok(self.ph("Steph Curry"), "Steph Curry grimacing on the bench"))
+        self.assertFalse(self.ok(self.ph("Kevin Garnett"), "Carmelo Anthony speaking"))
+        self.assertTrue(self.ok(self.ph("Carmelo Anthony"), "Carmelo Anthony speaking"))
+
+    def test_a_generic_picture_still_may(self):
+        self.assertTrue(self.ok(self.ph(""), "Carmelo Anthony speaking"))
+        self.assertTrue(self.ok({"kind": "video", "title": "basketball game"}, "Carmelo Anthony speaking"))
+        self.assertTrue(self.ok(self.ph("", "Celtics at Wizards 2024-12-020.jpg"), "Carmelo Anthony speaking"))
+
+    def test_d50_reporters_as_before(self):
+        self.assertTrue(self.ok(self.ph("Steph Curry"), "Shams Charania on ESPN"))
+        self.assertTrue(self.ok(self.ph("Draymond Green"), "HOOK"))
+        self.assertTrue(self.ok(self.ph("Draymond Green"), ""))
+
+    def test_a_named_man_outside_the_story(self):
+        # kept run 44110628783: Steve Kerr's own photo on "Steve Kerr on the sideline, Warriors playing";
+        # a man whose career could not be looked up is no less named (Lendeborg next to Luka)
+        self.assertTrue(self.ok(self.ph("Steve Kerr"), "Steve Kerr on the sideline, Draymond Green playing"))
+        self.assertFalse(self.ok(self.ph("Steve Kerr"), "Draymond Green on the court"))
+        self.PLAYERS.discard("Kevin Garnett")
+        try:
+            self.assertTrue(self.ok(self.ph("Kevin Garnett"), "Kevin Garnett and Carmelo Anthony"))
+        finally:
+            self.PLAYERS.add("Kevin Garnett")
+        self.assertTrue(self.ok(self.ph("Did Marcus"), "Marcus Smart walking off"))      # an old tag's name
+        # the note says only "Steph", the tag says "Stephen Curry", and his career was not looked up
+        self.PLAYERS.discard("Steph Curry")
+        try:
+            self.assertTrue(self.ok(self.ph("Stephen Curry"), "Steph on the bench next to Carmelo Anthony"))
+            self.assertFalse(self.ok(self.ph("Kevin Garnett"), "Steph on the bench next to Carmelo Anthony"))
+        finally:
+            self.PLAYERS.add("Steph Curry")
+
+    def test_two_named_both_allowed(self):
+        self.assertTrue(self.ok(self.ph("Victor Wembanyama"), "Dwyane Wade and Victor Wembanyama"))
+        self.assertTrue(self.ok(self.ph("Dwyane Wade"), "Dwyane Wade and Victor Wembanyama"))
+
+    def test_spelling_and_namesakes(self):
+        self.assertTrue(self.ok(self.ph("Stephen Curry"), "Steph Curry on the bench"))       # an older tag's spelling
+        # names_him (D51) counts every story man whose surname the note carries: both Greens, as in the top-ups
+        self.assertTrue(self.ok(self.ph("Draymond Green"), "Jalen Green in a Suns jersey"))
+        self.assertFalse(self.ok(self.ph("Draymond Green"), "Steph Curry on the bench"))
+        self.assertTrue(self.ok(self.ph("", "Steph Curry 2024.jpg"), "Steph Curry on the bench"))
+        self.assertFalse(self.ok(self.ph("", "Kevin Garnett 2008-01-13.jpg"), "Carmelo Anthony speaking"))   # the kept run's photo
+
+    def test_the_pick_uses_it(self):
+        src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
+        self.assertIn('screen = beats[i].get("on_screen", "") if i < len(beats) else ""', src)
+        self.assertIn("onscreen = screen_players(screen, who_all)", src)
+        self.assertIn("team_ok = (lambda j, ok=team_ok: ok(j) and shows_only(cands[j], onscreen, who_all, screen))", src)
+        self.assertIn("order = [j for j in order if team_ok(j)]", src)

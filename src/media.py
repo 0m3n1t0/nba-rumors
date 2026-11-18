@@ -2000,6 +2000,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
         from collections import Counter
         scenes: Counter = Counter()  # photos shown per scene (photographer + day, see scene_of)
         who4 = people(short)[:4]
+        who_all = people(short)
         for i, cands in enumerate(per_beat):
             choice = picks.get(i, {})
             order = list(range(len(cands)))
@@ -2025,6 +2026,14 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             line = beats[i].get("say", "") if i < len(beats) else ""
             team_ok = (lambda j: team_fits(cands[j], line, photo_owner(cands[j], who4), who4)) if choice \
                 else (lambda j: True)
+            # D71 (Arenas: Draymond on "Steph Curry tore his oblique"; his answers 2026-11-18): when
+            # the writer's on_screen names a man with an NBA career, no OTHER known man is shown on
+            # that line, as first shot, second shot or spare (Claude's "S" tier used to stand in);
+            # a generic or team picture still may; on_screen naming only reporters or executives:
+            # as before (D50)
+            screen = beats[i].get("on_screen", "") if i < len(beats) else ""
+            onscreen = screen_players(screen, who_all)
+            team_ok = (lambda j, ok=team_ok: ok(j) and shows_only(cands[j], onscreen, who_all, screen))
             order = [j for j in order if team_ok(j)]
             k = ranked[0] + 1 if ranked else None
             chosen = None
@@ -2501,6 +2510,39 @@ def report_why(name: str, i: int, what: str, why: dict) -> None:
     """D32: one log line per beat left without a new picture, with every reason counted."""
     reasons = ", ".join(f"{r} x{n}" for r, n in (why.get(i) or Counter()).most_common()) or "no candidate at all"
     print(f"[i] {name} beat {i}: {what} ({reasons})")
+
+
+def screen_players(screen: str, who: list[str]) -> list[str]:
+    """D71: the story's men the writer's on_screen note names, when one of them has an NBA career
+    (D50: a note naming only reporters or executives limits nothing); "HOOK" or no name: none.
+    All the men it names are allowed (a man whose career could not be looked up is no less named)."""
+    named = [p for p in who if names_him(screen, p)]
+    return named if any(career_teams(p) for p in named) else []
+
+
+def same_man(owner: str, person: str, who: list[str]) -> bool:
+    """D71: is the photo's owner this story person? The same name, the same Wikidata item, or (a
+    tag written under another spelling, "Stephen Curry" for "Steph Curry", or an old tag's "Did
+    Marcus") the one story person whose last or first name the owner's name carries."""
+    if fold(owner).strip() == fold(person).strip():
+        return True
+    q = _wikidata.get(owner, "")
+    if q and q == _wikidata.get(person, ""):
+        return True
+    if any(fold(owner).strip() == fold(p).strip() for p in who):
+        return False                       # the owner is another story person under his own name
+    hit = [p for p in who if names_him(owner, p)]       # D51: his last or first name ("Did Marcus")
+    return hit == [person]
+
+
+def shows_only(c: dict, named: list[str], who: list[str], screen: str = "") -> bool:
+    """D71: a picture may stand on a line whose on_screen names these men only when it is one of
+    them, a man the note itself names (Steve Kerr, no story person, on "Steve Kerr on the
+    sideline, Warriors playing"), or nobody known (a generic or team picture)."""
+    if not named:
+        return True
+    owner = photo_owner(c, who)
+    return not owner or any(same_man(owner, p, who) for p in named) or names_him(screen, owner)
 
 
 def photo_owner(c: dict, who: list[str]) -> str:

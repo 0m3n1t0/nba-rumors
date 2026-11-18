@@ -216,6 +216,8 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 109. D75 (his answer 2026-11-18): the hook truth check reads the next hook until one is true (the
+     Howard eval: two overstated, the third led unread and was false).
  108. D72 (his answer 2026-11-18): the top-ups read on_screen first too, when it names a player (one
      line, one man: Wembanyama, not Wade, on "Still, Wade says he has to get stronger"); test 96's
      "the spoken name still wins" now holds only for a note naming no player (a changed rule).
@@ -5835,3 +5837,67 @@ class TopUpsReadTheNoteFirst(WhoTheWriterPutOnScreen):
     def test_the_code_reads_the_note_first(self):
         src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
         self.assertIn('said = screen_players(screens[i] if i < len(screens) else "", who or []) \\', src)
+
+
+class EveryLeadingHookIsRead(unittest.TestCase):
+    """109. D75 (his answer 2026-11-18). truth_order read the first hook and, when it was overstated,
+    the next one: when both were overstated the third led UNREAD. Eval (baseline, 23 stories): 4
+    such leads; Howard's was false ("Dwight Howard just admitted he left Kobe and the Lakers too
+    soon" where he only regrets it and wonders "what if"). Now the next hook is read until one is
+    true; all overstated: the overstated one leads and the gate holds (as before)."""
+
+    def order(self, verdicts, texts):
+        import script
+        read = []
+
+        def check(h, s, lead=""):
+            read.append(h["text"])
+            if verdicts.get(h["text"]) == "overstated":
+                h["overstated"] = "x"
+                return "overstated"
+            return "ok"
+        hooks = [{"text": t, "unsupported_details": []} for t in texts]
+        with patch.object(script, "check_hook_truth", check):
+            script.truth_order(hooks, [])
+        return [h["text"] for h in hooks], read
+
+    def test_the_howard_case(self):
+        texts = ["Dwight Howard just said his ego broke the Lakers.",
+                 "Dwight Howard never walked out on Kobe, he wonders.",
+                 "Dwight Howard just admitted he left Kobe and the Lakers too soon.",
+                 "Dwight Howard asks what if he'd stuck it out with Kobe Bryant."]
+        bad = {t: "overstated" for t in texts[:3]}
+        order, read = self.order(bad, texts)
+        self.assertEqual(order[0], texts[3])                  # the true one leads
+        self.assertEqual(read, texts)                         # every hook before it was read
+
+    def test_stops_at_the_first_true_one(self):
+        texts = ["A one", "B two", "C three", "D four"]
+        order, read = self.order({"A one": "overstated"}, texts)
+        self.assertEqual((order[0], read), ("B two", ["A one", "B two"]))
+        order, read = self.order({}, texts)
+        self.assertEqual(read, ["A one"])                     # a good first hook: one call only
+
+    def test_all_overstated_the_gate_holds(self):
+        texts = ["A one", "B two", "C three"]
+        order, read = self.order({t: "overstated" for t in texts}, texts)
+        self.assertEqual(sorted(read), sorted(texts))         # each read once, no endless loop
+        self.assertEqual(len(read), 3)
+
+    def test_unreadable_hooks_are_not_read(self):
+        import script
+        hooks = [{"text": "A", "unsupported_details": [], "overstated": "x"},
+                 {"text": "B detail", "unsupported_details": ["radio"]}]
+        read = []
+        with patch.object(script, "check_hook_truth", lambda h, s, lead="": read.append(h["text"]) or "overstated"):
+            script.truth_order(hooks, [])
+        self.assertEqual(read, ["A"])                         # a hook with an unsupported detail is never read
+        read.clear()
+        hooks = [{"text": "C detail", "unsupported_details": ["radio"]}, {"text": "D recycled", "unsupported_details": [], "recycled": True}]
+        with patch.object(script, "check_hook_truth", lambda h, s, lead="": read.append(h["text"]) or "ok"):
+            script.truth_order(hooks, [])
+        self.assertEqual(read, [])                            # as before: such a hook is held by its own check
+        hooks = [{"text": "E detail", "unsupported_details": ["radio"]}]
+        with patch.object(script, "check_hook_truth", lambda h, s, lead="": read.append(h["text"]) or "ok"):
+            script.truth_order(hooks, [])
+        self.assertEqual(read, [])

@@ -1551,17 +1551,19 @@ def rewrite_keeps_hook_rules(new: str, old: str, lead: str = "") -> bool:
 def truth_order(hooks: list[dict], sources: list[dict], lead: str = "") -> None:
     """D17: the chosen hook is read against the sources (check_hook_truth), then the hooks are
     ordered: unsupported details, recycled, overstated go behind. Audit 2026-11-13: when the first
-    hook was overstated and stepped behind, the one that took its place is read too (one more
-    call, only in that case), so no unread hook ever leads. D27: the order is applied FIRST too,
+    hook was overstated and stepped behind, the one that took its place is read too; D75: and so on
+    until a read hook leads (one more call per overstated hook), so no unread hook ever leads. D27: the order is applied FIRST too,
     so the hook that is read is the one that can lead (never a profane one, never one with an
     unsupported detail while a clean one waits)."""
     hooks.sort(key=hook_order_key)
-    first = hooks[0] if hooks else None
-    if first and not first["unsupported_details"] and not first.get("recycled"):
-        check_hook_truth(first, sources, lead)
-    hooks.sort(key=hook_order_key)
-    if first and first.get("overstated") and hooks[0] is not first \
-            and not hooks[0]["unsupported_details"] and not hooks[0].get("recycled"):
+    # D75 (Howard eval: two hooks overstated, the third led UNREAD and was false - "just admitted he
+    # left Kobe too soon"; 4 of 23 eval stories had an unread lead; his answer 2026-11-18): the next
+    # hook is read until one is true; when every readable hook is overstated, the overstated one
+    # leads and the gate holds the Short (as before)
+    read: list[int] = []
+    while hooks and id(hooks[0]) not in read and not hooks[0]["unsupported_details"] \
+            and not hooks[0].get("recycled"):
+        read.append(id(hooks[0]))
         check_hook_truth(hooks[0], sources, lead)
         hooks.sort(key=hook_order_key)
 

@@ -54,6 +54,29 @@ def check_limit(stdout: str, stderr: str) -> None:
         raise UsageLimit(f"{stdout} {stderr}".strip()[:200])
 
 
+# D68 (his answers 2026-11-18): Short formats. The editor proposes one only for a format turned on
+# (NBA_FORMATS, e.g. "receipts"); off, its instructions are exactly as before.
+FORMAT_RULE = """- "format": "receipts" when the headlines show a war of words where BOTH sides spoke in public
+  (one said something, the other answered: "fires back", "responds", "claps back"); otherwise
+  "breakdown". (The script stage checks the articles: when one side's own words are not there,
+  it is told as a breakdown.)
+- "sides": for "receipts" only, the two people's full names, the one who started it first
+  (["Charles Barkley", "Donovan Mitchell"]); otherwise [].
+"""
+
+
+def formats_on() -> set[str]:
+    return {x.strip() for x in os.environ.get("NBA_FORMATS", "").split(",") if x.strip()}
+
+
+def with_formats(prompt: str) -> str:
+    if "receipts" not in formats_on():
+        return prompt
+    hook_line = '''- "hook": the first sentence of a Short about it, max 15 words, punchy but TRUE to\n  the headlines (no invented facts, no invented quotes)\n'''
+    return (prompt.replace(hook_line, hook_line + FORMAT_RULE, 1)
+            .replace('"two_versions": "", "hook": "..."}],', '"two_versions": "", "hook": "...", "format": "breakdown", "sides": []}],', 1))
+
+
 PROMPT = """You are the head editor of "NBA Rumors", a fast-growing YouTube channel about
 NBA news, rumors, trades, injuries, feuds and locker room drama. Your job: decide
 which of today's stories will make NBA fans stop scrolling.
@@ -250,7 +273,8 @@ def build_input(topics: list[dict]) -> str:
             "star_names": t.get("star_names", []),
             "samples": [f'{it["title"]} ({it["publisher"]})' for it in t["items"][:4]],
         })
-    return PROMPT.replace("TOPICS:\n", plan_note() + niche_note() + history_note() + "TOPICS:\n") + json.dumps(rows, indent=1)
+    return with_formats(PROMPT).replace("TOPICS:\n", plan_note() + niche_note() + history_note() + "TOPICS:\n") \
+        + json.dumps(rows, indent=1)
 
 
 def ask_claude(prompt: str) -> str:

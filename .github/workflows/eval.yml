@@ -11,6 +11,10 @@ on:
         description: "Name of this eval (empty = the code's commit). Same name = go on where it stopped."
         required: false
         default: ""
+      formats:
+        description: "Short formats to turn on for this eval only (e.g. receipts). Empty = as in the daily runs."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -94,6 +98,7 @@ jobs:
       - name: "Eval: make the stories again (stops cleanly on the Claude limit)"
         env:
           EVAL_LABEL: ${{ github.event.inputs.label }}
+          NBA_FORMATS: ${{ github.event.inputs.formats }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
           OPENVERSE_CLIENT_SECRET: ${{ secrets.OPENVERSE_CLIENT_SECRET }}

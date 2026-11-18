@@ -2025,6 +2025,69 @@ def checked_receipt(receipt: str, beats: list[dict], sources: list[dict]) -> str
     return ""
 
 
+# D68 (his answers 2026-11-18): Short FORMATS so the channel is not one template with only the
+# topic changed (YouTube's "inauthentic content"). The first: RECEIPTS, quote against quote, in the
+# same six beats (every check and the render stay as they are). The editor proposes it from the
+# headlines and names the two sides; it is used only when the read articles hold a direct quote
+# from BOTH, each said by him: his first or last name next to said / told / wrote / added /
+# responded / replied / posted / explained / asked in the sentence with the quote marks.
+# Otherwise the Short is the usual breakdown.
+SPEECH_VERB = r"(?:said|says|told|tells|wrote|writes|added|adds|responded|responds|replied|replies|posted|posts|explained|explains|asked|asks)"
+
+
+def spoke(sources: list[dict], person: str) -> bool:
+    """True when the sources quote this person's OWN words (his name next to a speech verb in the
+    sentence with the quote marks; "...," Barkley said / Mitchell told reporters "...")."""
+    words = [w for w in re.findall(r"[A-Za-z\u00c0-\u024f'.-]+", person or "") if len(w) > 1]
+    names = {words[0], words[-1]} if words else set()
+    if not names:
+        return False
+    for src in sources:
+        text = f"{src.get('title', '')}. {src.get('summary') or ''}. {src.get('text') or ''}"
+        for sent in re.split(r"(?<=[.!?])\s+(?=[A-Z\u201c\"])|\n", text):
+            if not SOURCE_QUOTES.search(sent):
+                continue
+            out = SOURCE_QUOTES.sub(" Q ", sent)
+            for name in names:
+                nm = re.escape(name)
+                # "Barkley said" / "Mitchell told reporters", or the inverted "...," said Barkley -
+                # never "told Mitchell" / "said Mitchell's team" (there he is talked to or about)
+                if re.search(rf"\b{nm}(?:\s+\w+){{0,2}}\s+{SPEECH_VERB}\b", out) or \
+                        re.search(rf"\b(?:said|says|added|adds|wrote|writes)\s+{nm}\b(?!['\u2019]s)", out):
+                    return True
+    return False
+
+
+def short_format(judged: dict, sources: list[dict]) -> tuple[str, list[str]]:
+    """("receipts", [A, B]) when the editor proposed it and BOTH sides' own words are in the
+    sources; else ("breakdown", [])."""
+    sides = [str(s).strip() for s in (judged.get("sides") or []) if str(s).strip()]
+    on = {x.strip() for x in os.environ.get("NBA_FORMATS", "").split(",") if x.strip()}
+    if "receipts" not in on:                # his answer: off until measured on the eval set
+        return "breakdown", []
+    if judged.get("format") == "receipts" and len(sides) == 2 and all(spoke(sources, s) for s in sides):
+        return "receipts", sides
+    return "breakdown", []
+
+
+def receipts_note(sides: list[str]) -> str:
+    a, b = sides
+    return f"""
+
+THIS SHORT'S FORMAT: RECEIPTS. Both sides spoke in public: {a} and {b}. Tell it quote against
+quote, in the same six beats (keep their "stage" names):
+- the hook: open on the sharpest of their quotes, in quote marks, with the speaker's name in the
+  first 8 words ({a} to {b}: "..."); every other hook rule stays.
+- setup: the context in one line (what happened, when).
+- conflict: {a}'s exact words from the sources, in quote marks: who said it, where, when.
+- escalation: {b}'s exact answer from the sources, in quote marks: who said it, where, when.
+- twist: the fact from the sources that checks them (what really happened).
+- payoff: her verdict with one reason.
+- exit: the closing question.
+Every quote is that person's exact words from the sources, given to the right person; never
+invent or reword a quote."""
+
+
 def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict) -> dict:
     topic = editor["topics"][topic_id]
     judged = next((r for r in editor["ranked"] if r["id"] == topic_id), {})
@@ -2058,11 +2121,18 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         history=rivalry_history(topic["headline"]),
         sources=format_sources(sources),
     )
+    fmt, sides = short_format(judged, sources)          # D68
+    if fmt == "receipts":
+        prompt += receipts_note(sides)
+        print(f"[+] format: receipts ({sides[0]} vs {sides[1]})")
     draft = ask_claude(prompt)
     # Second pass: make it sound like a person, not a template (facts must not change).
     try:
         revised = ask_claude(HUMANIZE.format(voice=voice, sources=format_sources(sources),
-                                             draft=json.dumps(draft, indent=1)))
+                                             draft=json.dumps(draft, indent=1))
+                             + (f"\n\nKeep this Short's RECEIPTS format: the hook opens on a quote; conflict "
+                                f"is {sides[0]}'s exact words, escalation {sides[1]}'s exact answer, each in "
+                                "quote marks from the sources." if fmt == "receipts" else ""))
         if revised.get("hooks") and revised.get("beats"):
             # anything the editor did not return (strategy, angle, receipt, claims...) is kept
             draft = {**draft, **revised}
@@ -2307,6 +2377,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         "receipt": receipt,
         "softened_quotes": softened,
         "lead": lead,                 # stage 4e: a fixed hook keeps the story's lead up front (D27)
+        "format": fmt, "sides": sides,                # D68
         # the story is measurably hot today: fan-reaction lines are backed by real data
         "audience_hot": bool((topic.get("reddit") or 0) > 0 or (topic.get("google_trend") or 0) > 0
                              or (topic.get("youtube_heat") or 0) >= 3 or (topic.get("search_hits") or 0) >= 3),

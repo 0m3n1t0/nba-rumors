@@ -196,6 +196,8 @@ the "Safety tests" step before anything is installed or made.
      hook rules); a wrong picture never again in that Short; no new voice = the old words stay
  105. D69 (his answers): the quality eval: the kept stories made again as full Shorts, repetition
      check off, no permanent record touched but the photo tags, in parts, one number
+ 106. D68 (his answers): the RECEIPTS format (quote against quote, same six beats) only when the
+     editor proposes it and the articles hold BOTH sides' own words; else the breakdown as before
  98. D2-a/c/d (his answers): the hook truth check and the final read catch facts joined or
      shortened into another meaning; the hook check catches a superlative or always/never/
      everyone word the source does not say; an opinion says an open future as likely, not settled
@@ -5566,6 +5568,13 @@ class QualityEval(unittest.TestCase):
             self.assertEqual(seen["judged"]["kind"], "beef")
             self.assertEqual(seen["sources"], [{"title": "t", "main": True}])
             self.assertEqual(seen["recent"], [])               # the repetition check is off
+            # D68: a format turned on: the editor's format answer joins the story's judgment
+            fmt, e.editor_format = e.editor_format, lambda story: {"format": "receipts", "sides": ["A B", "C D"]}
+            try:
+                e.make_script({"topic": {"headline": "Story"}, "judged": {"kind": "beef"}, "known_headlines": []}, [])
+                self.assertEqual((seen["judged"]["format"], seen["judged"]["kind"]), ("receipts", "beef"))
+            finally:
+                e.editor_format = fmt
         finally:
             script.build_short, script.gather_sources, script.load_recent, script.SCRIPT_LEDGER = saved
             script.RECENT.clear()
@@ -5602,3 +5611,101 @@ class EvalSetKept(unittest.TestCase):
             self.assertEqual(plain["judged"], {"kind": "contract"})
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class ReceiptsFormat(unittest.TestCase):
+    """106. D68 (his answers 2026-11-18): the first Short format beyond the breakdown, RECEIPTS
+    (quote against quote, the same six beats). The editor proposes it and names the two sides; it
+    is used only when the articles hold BOTH sides' own words (his name next to said / told / wrote
+    ... in the sentence with the quote marks). In the eval set: Mitchell-Barkley, Green-Brooks and
+    Smith-Trump qualify; Arenas-Green (Green never answered) and Howard-Bryant do not."""
+
+    SRC = [{"title": "Mitchell fires back", "summary": "",
+            "text": "\"The Cavs aren't built for the playoffs,\" Barkley said on Inside the NBA. "
+                    "Donovan Mitchell told reporters, \"Chuck can say what he wants.\" "
+                    "Kerr was asked about \"the noise\" and smiled."}]
+
+    def test_spoke(self):
+        import script
+        self.assertTrue(script.spoke(self.SRC, "Charles Barkley"))
+        self.assertTrue(script.spoke(self.SRC, "Donovan Mitchell"))
+        self.assertFalse(script.spoke(self.SRC, "LeBron James"))
+        mention = [{"title": "", "summary": "", "text": "Barkley said Mitchell's team is \"soft\" again."}]
+        self.assertFalse(script.spoke(mention, "Donovan Mitchell"))       # talked about, not talking
+        told = [{"title": "", "summary": "", "text": "Barkley told Mitchell on air, \"You are not a closer.\""}]
+        self.assertFalse(script.spoke(told, "Donovan Mitchell"))          # talked to, not talking
+        self.assertTrue(script.spoke(told, "Charles Barkley"))
+        quiet = [{"title": "", "summary": "", "text": "Mitchell said nothing after the game."}]
+        self.assertFalse(script.spoke(quiet, "Donovan Mitchell"))         # no quote marks: no receipt
+
+    def setUp(self):
+        patcher = patch.dict("os.environ", {"NBA_FORMATS": "receipts"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_off_until_turned_on(self):
+        # his answer: off in the daily runs until measured on the eval set
+        import script
+        import editor
+        ok = {"format": "receipts", "sides": ["Charles Barkley", "Donovan Mitchell"]}
+        with patch.dict("os.environ", {"NBA_FORMATS": ""}):
+            self.assertEqual(script.short_format(ok, self.SRC), ("breakdown", []))
+            self.assertEqual(editor.with_formats(editor.PROMPT), editor.PROMPT)        # the editor as before
+        self.assertIn(editor.FORMAT_RULE, editor.with_formats(editor.PROMPT))
+
+    def test_format(self):
+        import script
+        ok = {"format": "receipts", "sides": ["Charles Barkley", "Donovan Mitchell"]}
+        self.assertEqual(script.short_format(ok, self.SRC), ("receipts", ["Charles Barkley", "Donovan Mitchell"]))
+        one_side = {"format": "receipts", "sides": ["Charles Barkley", "LeBron James"]}
+        self.assertEqual(script.short_format(one_side, self.SRC), ("breakdown", []))
+        self.assertEqual(script.short_format({"format": "breakdown", "sides": ok["sides"]}, self.SRC), ("breakdown", []))
+        self.assertEqual(script.short_format({}, self.SRC), ("breakdown", []))
+
+    def test_note(self):
+        import script
+        note = " ".join(script.receipts_note(["Charles Barkley", "Donovan Mitchell"]).split())
+        self.assertIn("conflict: Charles Barkley's exact words", note)
+        self.assertIn("escalation: Donovan Mitchell's exact answer", note)
+        self.assertIn("open on the sharpest of their quotes", note)
+
+    def test_the_editor_is_asked(self):
+        import editor
+        on = editor.with_formats(editor.PROMPT)
+        self.assertIn('"format": "receipts" when the headlines show a war of words', on)
+        self.assertIn('"format": "breakdown", "sides": []', on)
+        self.assertNotIn('"format"', editor.PROMPT)
+
+    def test_the_eval_asks_the_editor_rule(self):
+        import eval_run
+        import editor
+        import script
+        asked, saved = [], script.ask_claude
+        try:
+            script.ask_claude = lambda prompt, model="", where="": asked.append(prompt) or \
+                {"format": "receipts", "sides": ["Charles Barkley", "Donovan Mitchell"]}
+            story = {"headline": "Mitchell fires back at Barkley", "topic": {"items": [{"title": "Barkley rips Cavs"}]}}
+            self.assertEqual(eval_run.editor_format(story)["sides"], ["Charles Barkley", "Donovan Mitchell"])
+            self.assertIn(editor.FORMAT_RULE, asked[0])
+            with patch.dict("os.environ", {"NBA_FORMATS": ""}):
+                self.assertEqual(eval_run.editor_format(story), {})
+            self.assertEqual(len(asked), 1)                     # off: no call
+        finally:
+            script.ask_claude = saved
+
+    def test_the_writer_gets_it(self):
+        import script
+        harness = Script("test_repair_pass")
+        noted, saved = [], (script.short_format, script.receipts_note)
+        try:
+            script.short_format = lambda judged, sources: ("receipts", ["Luka Doncic", "Hawks fans"])
+            script.receipts_note = lambda sides: noted.append(sides) or "\nRECEIPTS"
+            short, _ = harness._build(Script.GOOD, draft_beats=Script.GOOD)
+            self.assertEqual(noted, [["Luka Doncic", "Hawks fans"]])
+            self.assertEqual((short["format"], short["sides"]), ("receipts", ["Luka Doncic", "Hawks fans"]))
+            script.short_format = lambda judged, sources: ("breakdown", [])
+            noted.clear()
+            short, _ = harness._build(Script.GOOD, draft_beats=Script.GOOD)
+            self.assertEqual((noted, short["format"]), ([], "breakdown"))     # the breakdown prompt is as before
+        finally:
+            script.short_format, script.receipts_note = saved

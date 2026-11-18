@@ -216,6 +216,9 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 111. Stage 4 (his answers 2026-11-18): the eval counts, per failure class, the Shorts with a problem
+     of it (his table; WRONG PICTURE = P1/P2; the gate's final_read/editorial/script_checks never
+     twice; an unknown problem shows as "?").
  110. Q1 (his answers 2026-11-18): the final read's prompt says a line found right is never an error,
      and every error of every kind is checked once more, alone, by the main model; a plain "not an
      error" moves it to the doubts (marked), in doubt or on a failed call it stays.
@@ -5974,3 +5977,67 @@ class FinalReadErrorsAreConfirmed(unittest.TestCase):
         import final_read as fr
         self.assertIn("A line you checked and found right, or right with nothing wrong in\nit, is never an error", fr.PROMPT)
         self.assertTrue(fr.RULES.startswith("1. NONSENSE") and fr.RULES.endswith("never delivers."))
+
+
+class EvalCountsPerClass(unittest.TestCase):
+    """111. Stage 4 of the class-fix plan (his answers 2026-11-18). The eval gave one number (19 of
+    23); now it also counts, per class of FAILURE_CLASSES.md, the Shorts with a problem of it, so a
+    fix shows in its own class. On the real baseline: P1/P2 1 (Arenas), F1 2 (Brunson, Howard),
+    F2 1 (Howard), R1 1 (Cunningham's unreadable article)."""
+
+    @staticmethod
+    def r(**k):
+        base = {"made": True, "problem": True, "final_read_full": {"errors": []}, "script_hold": {},
+                "gate_not_pass": [], "final_read_failed": ""}
+        base.update(k)
+        return base
+
+    def test_his_table(self):
+        import eval_run as e
+        fr = lambda *kinds: {"errors": [{"kind": k} for k in kinds]}
+        self.assertEqual(e.classes_of({"made": False, "problem": True}), ["R1"])
+        self.assertEqual(e.classes_of(self.r(final_read_full=fr("NOT IN THE SOURCES", "WRONG WORDS"))), ["F1", "F2"])
+        self.assertEqual(e.classes_of(self.r(final_read_full=fr("WRONG PICTURE"))), ["P1/P2"])
+        self.assertEqual(e.classes_of(self.r(final_read_full=fr("NONSENSE", "BROKEN PROMISE"))), ["S1"])
+        self.assertEqual(e.classes_of(self.r(final_read_failed="Claude limit reached: not read")), ["Q1"])
+        hard = lambda *n: {"retention_hard": list(n)}
+        self.assertEqual(e.classes_of(self.r(script_hold=hard("the hook says more than the sources (x)"))), ["F1"])
+        self.assertEqual(e.classes_of(self.r(script_hold=hard("every title says more than the sources (x)"))), ["F1"])
+        self.assertEqual(e.classes_of(self.r(script_hold=hard('a quote that no source puts in quote marks: "x"'))), ["F2"])
+        for n in ("beat 2 repeats what was already said", "beat 3 repeats the hook",
+                  "the last beat does not end with the question", "nothing beyond the headline (no answer)",
+                  'broken text in the spoken words: "..."'):
+            self.assertEqual(e.classes_of(self.r(script_hold=hard(n))), ["S1"], n)
+        self.assertEqual(e.classes_of(self.r(script_hold={"numbers": ["42"]})), ["F1"])
+        self.assertEqual(e.classes_of(self.r(script_hold={"details": ["radio"]})), ["F1"])
+        self.assertEqual(e.classes_of(self.r(script_hold={"quotes": ["x"]})), ["F2"])
+        self.assertEqual(e.classes_of(self.r(script_hold={"banned": ["smash"]})), ["S1"])
+        self.assertEqual(e.classes_of(self.r(script_hold={"too_similar_to": "old"})), ["E1"])
+        for k, c in (("factual_accuracy", "F1"), ("claim_classification", "F1"), ("source_verification", "F1"),
+                     ("title_accuracy", "F1"), ("thumbnail_accuracy", "F1"), ("original_storytelling", "F2"),
+                     ("repetition", "E1"), ("technical_quality", "R1"), ("music_licensing", "R1"),
+                     ("visual_licensing", "R1"), ("advertiser_suitability", "R1")):
+            self.assertEqual(e.classes_of(self.r(gate_not_pass=[k])), [c], k)
+            self.assertEqual(e.classes_of(self.r(script_hold={"compliance": {k: ["n"]}})), [c], k)
+
+    def test_never_twice_never_dropped_only_problems(self):
+        import eval_run as e
+        self.assertEqual(e.classes_of(self.r(gate_not_pass=["final_read", "editorial", "script_checks"])), [])
+        self.assertEqual(e.classes_of(self.r(gate_not_pass=["a_new_check"])), ["?"])
+        self.assertEqual(e.classes_of(self.r(script_hold={"retention_hard": ["a new hold"]})), ["?"])
+        self.assertEqual(e.classes_of(self.r(problem=False, gate_not_pass=["technical_quality"],
+                                             details_not_in_sources=1)), [])
+        # an old result (no final_read_full): the kinds of its short error lines
+        self.assertEqual(e.classes_of({"made": True, "problem": True, "final_read_errors": ["WRONG WORDS: x"]}), ["F2"])
+
+    def test_the_summary_counts_shorts(self):
+        import eval_run as e
+        rs = [self.r(final_read_full={"errors": [{"kind": "NOT IN THE SOURCES"}, {"kind": "NOT IN THE SOURCES"}]},
+                     headline="a", final_read="REVIEW", final_read_errors=["x", "y"], gate="REVIEW",
+                     script_held=False, script={"hook": "h"}),
+              {"made": False, "problem": True, "headline": "b", "why_not": "unreadable"}]
+        out = e.summary("now", rs, 2, ("before", rs[:1]))
+        self.assertIn("| F1 | 1 | 1 |", out)            # one Short, though two F1 errors
+        self.assertIn("| R1 | 1 | 0 |", out)
+        self.assertNotIn("| ? |", out)
+        self.assertIn("| a | ⛔ | F1 |", out)

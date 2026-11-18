@@ -164,6 +164,63 @@ def result_of(story: dict, short: dict | None, why_not: str = "") -> dict:
     }
 
 
+# Stage 4 of the class-fix plan (his answers 2026-11-18): every problem the eval records is counted
+# in its failure class (FAILURE_CLASSES.md); a class counts the Shorts with at least one problem of
+# it; WRONG PICTURE is P1/P2 together; the gate's final_read, editorial and script_checks are
+# already counted from the final read and the script hold, so never twice.
+CLASSES = ("P1/P2", "F1", "F2", "S1", "E1", "Q1", "R1")
+READ_KIND = {"NOT IN THE SOURCES": "F1", "WRONG WORDS": "F2", "WRONG PICTURE": "P1/P2",
+             "NONSENSE": "S1", "BROKEN PROMISE": "S1"}
+HARD = (("the hook says more than the sources", "F1"), ("every title says more than the sources", "F1"),
+        ("a quote that no source puts in quote marks", "F2"), ("repeats what was already said", "S1"),
+        ("repeats the hook", "S1"), ("the last beat does not end with the question", "S1"),
+        ("nothing beyond the headline", "S1"), ("broken text in the spoken words", "S1"))
+CHECK = {"factual_accuracy": "F1", "claim_classification": "F1", "source_verification": "F1",
+         "title_accuracy": "F1", "thumbnail_accuracy": "F1", "original_storytelling": "F2",
+         "repetition": "E1", "technical_quality": "R1", "music_licensing": "R1",
+         "visual_licensing": "R1", "advertiser_suitability": "R1"}
+NOT_TWICE = ("final_read", "editorial", "script_checks")
+
+
+def classes_of(r: dict) -> list[str]:
+    """The failure classes of one eval result with a problem (old results too: what they lack counts
+    as nothing). A problem the table does not know is shown as "?", never dropped."""
+    if not r.get("made"):
+        return ["R1"]
+    if not r.get("problem"):        # the same measure as "Shorts with no problem": a mark that held
+        return []                   # nothing (a detail the script stage let through) is no problem
+    out = set()
+    full = (r.get("final_read_full") or {}).get("errors")
+    kinds = [e.get("kind", "") for e in full] if full is not None else \
+        [str(x).split(":")[0] for x in r.get("final_read_errors") or []]
+    out |= {READ_KIND.get(k, "?") for k in kinds}
+    if r.get("final_read_failed"):
+        out.add("Q1")
+    hold = r.get("script_hold") or {}
+    for note in hold.get("retention_hard") or r.get("script_why") or []:
+        out.add(next((c for start, c in HARD if start in note), "?"))
+    if hold.get("numbers") or hold.get("details") or r.get("numbers_not_in_sources") or r.get("details_not_in_sources"):
+        out.add("F1")
+    if hold.get("quotes") or r.get("quotes_not_in_sources"):
+        out.add("F2")
+    if hold.get("banned"):
+        out.add("S1")
+    if hold.get("too_similar_to"):
+        out.add("E1")
+    for k in list(hold.get("compliance") or {}) + list(r.get("gate_not_pass") or []):
+        if k not in NOT_TWICE:
+            out.add(CHECK.get(k, "?"))
+    return sorted(out, key=lambda c: (CLASSES + ("?",)).index(c))
+
+
+def class_counts(results: list[dict]) -> dict[str, int]:
+    counts = {c: 0 for c in CLASSES + ("?",)}
+    for r in results:
+        for c in classes_of(r):
+            counts[c] += 1
+    return counts
+
+
 def summary(label: str, results: list[dict], total: int, previous: tuple[str, list[dict]] | None) -> str:
     done = len(results)
     ok = sum(1 for r in results if not r["problem"])
@@ -183,12 +240,20 @@ def summary(label: str, results: list[dict], total: int, previous: tuple[str, li
               "|---|---|" + ("---|" if previous else "")]
     for k in keys:
         lines.append(f"| {k} | {num(results, k)}" + (f" | {num(previous[1], k)}" if previous else "") + " |")
-    lines += ["", "| story | problem | script held | final read | errors | gate | hook |", "|---|---|---|---|---|---|---|"]
+    now, before = class_counts(results), class_counts(previous[1]) if previous else None
+    lines += ["", "Shorts with a problem of each class (FAILURE_CLASSES.md):", "",
+              "| class | now" + (f" | {previous[0]}" if previous else "") + " |", "|---|---|" + ("---|" if previous else "")]
+    for c in CLASSES + ("?",):
+        if c != "?" or now["?"] or (before and before["?"]):
+            lines.append(f"| {c} | {now[c]}" + (f" | {before[c]}" if before else "") + " |")
+    lines += ["", "| story | problem | classes | script held | final read | errors | gate | hook |",
+              "|---|---|---|---|---|---|---|---|"]
     for r in results:
         if not r.get("made"):
-            lines.append(f"| {r['headline'][:60]} | ⛔ | not made: {r.get('why_not', '')[:60]} | - | - | - | - |")
+            lines.append(f"| {r['headline'][:60]} | ⛔ | R1 | not made: {r.get('why_not', '')[:60]} | - | - | - | - |")
             continue
-        lines.append(f"| {r['headline'][:60]} | {'⛔' if r['problem'] else '✅'} | {'yes' if r['script_held'] else 'no'} | "
+        lines.append(f"| {r['headline'][:60]} | {'⛔' if r['problem'] else '✅'} | {' '.join(classes_of(r)) or '-'} | "
+                     f"{'yes' if r['script_held'] else 'no'} | "
                      f"{r['final_read']} | {len(r['final_read_errors'])} | {r['gate']} | {r['script']['hook'][:70]} |")
     return "\n".join(lines) + "\n"
 

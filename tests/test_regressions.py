@@ -5512,6 +5512,32 @@ class QualityEval(unittest.TestCase):
         self.assertEqual(sorted(p.stem for p in out.glob("run_*.json")), ["run_short_1", "run_short_2", "run_short_3"])
         self.assertEqual(made, ["run_short_2", "run_short_3"])            # the done one is not made again
 
+    def test_the_causes_are_kept(self):
+        # his yes 2026-11-18: every problem followed to its cause (gate notes, the script's hold,
+        # the final read in full, the fix tries, why each picture was chosen)
+        e = self.e
+        for d in ("review", "gate", "media", "audio", "scripts"):
+            (e.DATA / d).mkdir(parents=True, exist_ok=True)
+        (e.DATA / "gate" / "short_1.json").write_text(json.dumps({"verdict": "REVIEW", "checks": {
+            "editorial": {"verdict": "REVIEW", "notes": ["too similar to an earlier Short"]},
+            "voice": {"verdict": "PASS", "notes": []}}}))
+        (e.DATA / "review" / "short_1.json").write_text(json.dumps({"verdict": "PASS", "errors": [],
+                                                                    "doubts": [{"line": 2, "what": "x"}]}))
+        (e.DATA / "review" / "short_1_fixes.json").write_text(json.dumps([{"errors": [], "stopped": "no progress"}]))
+        (e.DATA / "media" / "short_1.json").write_text(json.dumps([{"title": "Draymond.jpg", "person": "Draymond Green",
+                                                                    "match": "named", "alts": []}]))
+        short = {"headline": "h", "hook": {"text": "h"}, "beats": [{"say": "b", "on_screen": "Steph Curry"}],
+                 "ready": False, "retention": {"hard": ["no question"]}, "too_similar_to": "Old Short",
+                 "compliance": {"verdict": "PASS", "checks": {}}}
+        r = e.result_of({"id": "a", "headline": "h"}, short)
+        self.assertEqual(r["gate_notes"], {"editorial": ["too similar to an earlier Short"]})
+        self.assertEqual(r["script_hold"]["retention_hard"], ["no question"])
+        self.assertEqual(r["script_hold"]["too_similar_to"], "Old Short")
+        self.assertEqual(r["final_read_full"]["doubts"], [{"line": 2, "what": "x"}])
+        self.assertEqual(r["fixes"][0]["stopped"], "no progress")
+        self.assertEqual(r["picture_choice"][0][0]["person"], "Draymond Green")
+        self.assertEqual(r["on_screen"], ["Steph Curry"])
+
     def test_not_made_is_a_problem(self):
         r = self.e.result_of({"id": "a", "headline": "h"}, None, "no article")
         self.assertTrue(r["problem"])

@@ -114,6 +114,23 @@ def result_of(story: dict, short: dict | None, why_not: str = "") -> dict:
         "empty_beats": sum(1 for it in media if not it),
         "gate": gate.get("verdict") or "-",
         "gate_not_pass": sorted(k for k, c in (gate.get("checks") or {}).items() if c.get("verdict") != "PASS"),
+        # why it was held, in full (his yes 2026-11-18: every problem followed to its cause)
+        "gate_notes": {k: c.get("notes") or [] for k, c in (gate.get("checks") or {}).items()
+                       if c.get("verdict") != "PASS"},
+        "script_hold": {"ready": short.get("ready", True),
+                        "retention_hard": (short.get("retention") or {}).get("hard") or [],
+                        "retention_soft": (short.get("retention") or {}).get("soft") or [],
+                        "compliance": {k: c.get("notes") or [] for k, c in checks.items() if c.get("verdict") != "PASS"},
+                        "numbers": short.get("unsupported_numbers") or [], "quotes": short.get("unsupported_quotes") or [],
+                        "details": short.get("unsupported_details") or [], "banned": short.get("banned_phrases") or [],
+                        "too_similar_to": short.get("too_similar_to") or "", "hooks_ok": short.get("hooks_ok")},
+        "final_read_full": {"errors": errors, "doubts": review.get("doubts") or []},
+        "fixes": fixes,
+        "picture_choice": [[{"title": x.get("title", ""), "person": x.get("person") or x.get("who"),
+                             "match": x.get("match"), "his_own": x.get("his_own"), "team": x.get("team"),
+                             "jersey": x.get("jersey"), "tag": (x.get("tag") or {}).get("t"), "kind": x.get("kind")}
+                            for x in [it] + (it.get("alts") or []) if x] if it else [] for it in media],
+        "on_screen": [b.get("on_screen", "") for b in short.get("beats") or []],
         "script": {"hook": (short.get("hook") or {}).get("text", ""), "beats": [b.get("say", "") for b in short.get("beats") or []],
                    "pictures": [[(x or {}).get("title", "") for x in [it] + (it.get("alts") or [])] if it else []
                                 for it in media]},

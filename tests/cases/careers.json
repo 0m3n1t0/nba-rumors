@@ -1,0 +1,1017 @@
+{
+ "_note": "One-time career snapshot (his answer 2026-11-18): Wikidata + English Wikipedia infobox as media.py reads them, taken 2026-11-18 from the sandbox. The case library runs on it offline; refresh only by a new snapshot, never by hand.",
+ "people": {
+  "Carmelo Anthony": {
+   "wikidata": "Q129041",
+   "wiki_title": "Carmelo Anthony",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 2003,
+   "career": [
+    "denver nuggets",
+    "houston rockets",
+    "los angeles lakers",
+    "new york knicks",
+    "oklahoma city thunder",
+    "portland trail blazers"
+   ],
+   "spells": [
+    [
+     "denver nuggets",
+     2003,
+     2011
+    ],
+    [
+     "new york knicks",
+     2011,
+     2017
+    ],
+    [
+     "oklahoma city thunder",
+     2017,
+     2018
+    ],
+    [
+     "houston rockets",
+     2018,
+     2019
+    ],
+    [
+     "portland trail blazers",
+     2019,
+     2021
+    ],
+    [
+     "los angeles lakers",
+     2021,
+     2022
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "syracuse orange",
+    "syracuse",
+    "orange"
+   ]
+  },
+  "Charles Barkley": {
+   "wikidata": "Q192707",
+   "wiki_title": "Charles Barkley",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 1984,
+   "career": [
+    "houston rockets",
+    "philadelphia 76ers",
+    "phoenix suns"
+   ],
+   "spells": [
+    [
+     "philadelphia 76ers",
+     1984,
+     1992
+    ],
+    [
+     "phoenix suns",
+     1992,
+     1996
+    ],
+    [
+     "houston rockets",
+     1996,
+     2000
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "auburn tigers",
+    "auburn",
+    "tigers"
+   ]
+  },
+  "Charles Bassey": {
+   "wikidata": "Q55183425",
+   "wiki_title": "Charles Bassey",
+   "current": "golden state warriors",
+   "former": [
+    "boston celtics",
+    "memphis grizzlies",
+    "philadelphia 76ers",
+    "san antonio spurs"
+   ],
+   "since": 2026,
+   "debut": 2021,
+   "career": [
+    "boston celtics",
+    "golden state warriors",
+    "memphis grizzlies",
+    "philadelphia 76ers",
+    "san antonio spurs"
+   ],
+   "spells": [
+    [
+     "philadelphia 76ers",
+     2021,
+     2022
+    ],
+    [
+     "san antonio spurs",
+     2022,
+     2025
+    ],
+    [
+     "memphis grizzlies",
+     2025,
+     2026
+    ],
+    [
+     "philadelphia 76ers",
+     2026,
+     2026
+    ],
+    [
+     "boston celtics",
+     2026,
+     2026
+    ],
+    [
+     "golden state warriors",
+     2026,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "western kentucky hilltoppers",
+    "western kentucky",
+    "hilltoppers"
+   ]
+  },
+  "DeMar DeRozan": {
+   "wikidata": "Q456374",
+   "wiki_title": "DeMar DeRozan",
+   "current": "denver nuggets",
+   "former": [
+    "chicago bulls",
+    "sacramento kings",
+    "san antonio spurs",
+    "toronto raptors"
+   ],
+   "since": 2026,
+   "debut": 2009,
+   "career": [
+    "chicago bulls",
+    "denver nuggets",
+    "sacramento kings",
+    "san antonio spurs",
+    "toronto raptors"
+   ],
+   "spells": [
+    [
+     "toronto raptors",
+     2009,
+     2018
+    ],
+    [
+     "san antonio spurs",
+     2018,
+     2021
+    ],
+    [
+     "chicago bulls",
+     2021,
+     2024
+    ],
+    [
+     "sacramento kings",
+     2024,
+     2026
+    ],
+    [
+     "denver nuggets",
+     2026,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "usc trojans",
+    "usc",
+    "trojans"
+   ]
+  },
+  "Derek Fisher": {
+   "wikidata": "Q105670147",
+   "wiki_title": "Derek Fisher",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 1996,
+   "career": [
+    "dallas mavericks",
+    "golden state warriors",
+    "los angeles lakers",
+    "oklahoma city thunder",
+    "utah jazz"
+   ],
+   "spells": [
+    [
+     "los angeles lakers",
+     1996,
+     2004
+    ],
+    [
+     "golden state warriors",
+     2004,
+     2006
+    ],
+    [
+     "utah jazz",
+     2006,
+     2007
+    ],
+    [
+     "los angeles lakers",
+     2007,
+     2012
+    ],
+    [
+     "oklahoma city thunder",
+     2012,
+     2012
+    ],
+    [
+     "dallas mavericks",
+     2012,
+     2013
+    ],
+    [
+     "oklahoma city thunder",
+     2013,
+     2014
+    ]
+   ],
+   "coached": [
+    "new york knicks"
+   ],
+   "college": [
+    "little rock trojans",
+    "little rock",
+    "trojans"
+   ]
+  },
+  "Donovan Mitchell": {
+   "wikidata": "Q114379793",
+   "wiki_title": "Donovan Mitchell",
+   "current": "cleveland cavaliers",
+   "former": [
+    "utah jazz"
+   ],
+   "since": 2022,
+   "debut": 2017,
+   "career": [
+    "cleveland cavaliers",
+    "utah jazz"
+   ],
+   "spells": [
+    [
+     "utah jazz",
+     2017,
+     2022
+    ],
+    [
+     "cleveland cavaliers",
+     2022,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "louisville cardinals",
+    "louisville",
+    "cardinals"
+   ]
+  },
+  "Draymond Green": {
+   "wikidata": "Q2614593",
+   "wiki_title": "Draymond Green",
+   "current": "golden state warriors",
+   "former": [],
+   "since": 2012,
+   "debut": 2012,
+   "career": [
+    "golden state warriors"
+   ],
+   "spells": [
+    [
+     "golden state warriors",
+     2012,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "michigan state spartans",
+    "michigan state",
+    "spartans"
+   ]
+  },
+  "Dwight Howard": {
+   "wikidata": "Q25278",
+   "wiki_title": "Dwight Howard",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 2004,
+   "career": [
+    "atlanta hawks",
+    "charlotte hornets",
+    "houston rockets",
+    "los angeles lakers",
+    "orlando magic",
+    "philadelphia 76ers",
+    "washington wizards"
+   ],
+   "spells": [
+    [
+     "orlando magic",
+     2004,
+     2012
+    ],
+    [
+     "los angeles lakers",
+     2012,
+     2013
+    ],
+    [
+     "houston rockets",
+     2013,
+     2016
+    ],
+    [
+     "atlanta hawks",
+     2016,
+     2017
+    ],
+    [
+     "charlotte hornets",
+     2017,
+     2018
+    ],
+    [
+     "washington wizards",
+     2018,
+     2019
+    ],
+    [
+     "los angeles lakers",
+     2019,
+     2020
+    ],
+    [
+     "philadelphia 76ers",
+     2020,
+     2021
+    ],
+    [
+     "los angeles lakers",
+     2021,
+     2022
+    ]
+   ],
+   "coached": [],
+   "college": []
+  },
+  "Dwyane Wade": {
+   "wikidata": "Q31683",
+   "wiki_title": "Dwyane Wade",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 2003,
+   "career": [
+    "chicago bulls",
+    "cleveland cavaliers",
+    "miami heat"
+   ],
+   "spells": [
+    [
+     "miami heat",
+     2003,
+     2016
+    ],
+    [
+     "chicago bulls",
+     2016,
+     2017
+    ],
+    [
+     "cleveland cavaliers",
+     2017,
+     2018
+    ],
+    [
+     "miami heat",
+     2018,
+     2019
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "marquette golden eagles",
+    "marquette",
+    "golden eagles"
+   ]
+  },
+  "Gilbert Arenas": {
+   "wikidata": "Q310108",
+   "wiki_title": "Gilbert Arenas",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 2001,
+   "career": [
+    "golden state warriors",
+    "memphis grizzlies",
+    "orlando magic",
+    "washington wizards"
+   ],
+   "spells": [
+    [
+     "golden state warriors",
+     2001,
+     2003
+    ],
+    [
+     "washington wizards",
+     2003,
+     2010
+    ],
+    [
+     "orlando magic",
+     2010,
+     2011
+    ],
+    [
+     "memphis grizzlies",
+     2012,
+     2012
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "arizona wildcats",
+    "arizona",
+    "wildcats"
+   ]
+  },
+  "Isiah Thomas": {
+   "wikidata": "Q298512",
+   "wiki_title": "Isiah Thomas",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 1981,
+   "career": [
+    "detroit pistons"
+   ],
+   "spells": [
+    [
+     "detroit pistons",
+     1981,
+     1994
+    ]
+   ],
+   "coached": [
+    "indiana pacers",
+    "new york knicks"
+   ],
+   "college": [
+    "indiana hoosiers",
+    "indiana",
+    "hoosiers"
+   ]
+  },
+  "JJ Redick": {
+   "wikidata": "Q131547704",
+   "wiki_title": "JJ Redick",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 2006,
+   "career": [
+    "dallas mavericks",
+    "los angeles clippers",
+    "milwaukee bucks",
+    "new orleans pelicans",
+    "orlando magic",
+    "philadelphia 76ers"
+   ],
+   "spells": [
+    [
+     "orlando magic",
+     2006,
+     2013
+    ],
+    [
+     "milwaukee bucks",
+     2013,
+     2013
+    ],
+    [
+     "los angeles clippers",
+     2013,
+     2017
+    ],
+    [
+     "philadelphia 76ers",
+     2017,
+     2019
+    ],
+    [
+     "new orleans pelicans",
+     2019,
+     2021
+    ],
+    [
+     "dallas mavericks",
+     2021,
+     2021
+    ]
+   ],
+   "coached": [
+    "los angeles lakers"
+   ],
+   "college": [
+    "duke blue devils",
+    "duke",
+    "blue devils"
+   ]
+  },
+  "Jalen Brunson": {
+   "wikidata": "Q17305725",
+   "wiki_title": "Jalen Brunson",
+   "current": "new york knicks",
+   "former": [
+    "dallas mavericks"
+   ],
+   "since": 2022,
+   "debut": 2018,
+   "career": [
+    "dallas mavericks",
+    "new york knicks"
+   ],
+   "spells": [
+    [
+     "dallas mavericks",
+     2018,
+     2022
+    ],
+    [
+     "new york knicks",
+     2022,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "villanova wildcats",
+    "villanova",
+    "wildcats"
+   ]
+  },
+  "Jalen Green": {
+   "wikidata": "Q58009130",
+   "wiki_title": "Jalen Green",
+   "current": "phoenix suns",
+   "former": [
+    "houston rockets"
+   ],
+   "since": 2025,
+   "debut": 2020,
+   "career": [
+    "houston rockets",
+    "phoenix suns"
+   ],
+   "spells": [
+    [
+     "houston rockets",
+     2021,
+     2025
+    ],
+    [
+     "phoenix suns",
+     2025,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": []
+  },
+  "Jayson Tatum": {
+   "wikidata": "Q21623063",
+   "wiki_title": "Jayson Tatum",
+   "current": "boston celtics",
+   "former": [],
+   "since": 2017,
+   "debut": 2017,
+   "career": [
+    "boston celtics"
+   ],
+   "spells": [
+    [
+     "boston celtics",
+     2017,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "duke blue devils",
+    "duke",
+    "blue devils"
+   ]
+  },
+  "Kawhi Leonard": {
+   "wikidata": "Q926248",
+   "wiki_title": "Kawhi Leonard",
+   "current": "toronto raptors",
+   "former": [
+    "los angeles clippers",
+    "san antonio spurs"
+   ],
+   "since": 2026,
+   "debut": 2011,
+   "career": [
+    "los angeles clippers",
+    "san antonio spurs",
+    "toronto raptors"
+   ],
+   "spells": [
+    [
+     "san antonio spurs",
+     2011,
+     2018
+    ],
+    [
+     "toronto raptors",
+     2018,
+     2019
+    ],
+    [
+     "los angeles clippers",
+     2019,
+     2026
+    ],
+    [
+     "toronto raptors",
+     2026,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "san diego state aztecs",
+    "san diego state",
+    "aztecs"
+   ]
+  },
+  "Kevin Garnett": {
+   "wikidata": "Q108359746",
+   "wiki_title": "Kevin Garnett",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 1995,
+   "career": [
+    "boston celtics",
+    "brooklyn nets",
+    "minnesota timberwolves"
+   ],
+   "spells": [
+    [
+     "minnesota timberwolves",
+     1995,
+     2007
+    ],
+    [
+     "boston celtics",
+     2007,
+     2013
+    ],
+    [
+     "brooklyn nets",
+     2013,
+     2015
+    ],
+    [
+     "minnesota timberwolves",
+     2015,
+     2016
+    ]
+   ],
+   "coached": [],
+   "college": []
+  },
+  "Kobe Bryant": {
+   "wikidata": "Q25369",
+   "wiki_title": "Kobe Bryant",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 1996,
+   "career": [
+    "los angeles lakers"
+   ],
+   "spells": [
+    [
+     "los angeles lakers",
+     1996,
+     2016
+    ]
+   ],
+   "coached": [],
+   "college": []
+  },
+  "Kyle Kuzma": {
+   "wikidata": "Q30063347",
+   "wiki_title": "Kyle Kuzma",
+   "current": "milwaukee bucks",
+   "former": [
+    "los angeles lakers",
+    "washington wizards"
+   ],
+   "since": 2025,
+   "debut": 2017,
+   "career": [
+    "los angeles lakers",
+    "milwaukee bucks",
+    "washington wizards"
+   ],
+   "spells": [
+    [
+     "los angeles lakers",
+     2017,
+     2021
+    ],
+    [
+     "washington wizards",
+     2021,
+     2025
+    ],
+    [
+     "milwaukee bucks",
+     2025,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "utah utes",
+    "utah",
+    "utes"
+   ]
+  },
+  "Kyrie Irving": {
+   "wikidata": "Q348618",
+   "wiki_title": "Kyrie Irving",
+   "current": "dallas mavericks",
+   "former": [
+    "boston celtics",
+    "brooklyn nets",
+    "cleveland cavaliers"
+   ],
+   "since": 2023,
+   "debut": 2011,
+   "career": [
+    "boston celtics",
+    "brooklyn nets",
+    "cleveland cavaliers",
+    "dallas mavericks"
+   ],
+   "spells": [
+    [
+     "cleveland cavaliers",
+     2011,
+     2017
+    ],
+    [
+     "boston celtics",
+     2017,
+     2019
+    ],
+    [
+     "brooklyn nets",
+     2019,
+     2023
+    ],
+    [
+     "dallas mavericks",
+     2023,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "duke blue devils",
+    "duke",
+    "blue devils"
+   ]
+  },
+  "LeBron James": {
+   "wikidata": "Q36159",
+   "wiki_title": "LeBron James",
+   "current": "philadelphia 76ers",
+   "former": [
+    "cleveland cavaliers",
+    "los angeles lakers",
+    "miami heat"
+   ],
+   "since": 2026,
+   "debut": 2003,
+   "career": [
+    "cleveland cavaliers",
+    "los angeles lakers",
+    "miami heat",
+    "philadelphia 76ers"
+   ],
+   "spells": [
+    [
+     "cleveland cavaliers",
+     2003,
+     2010
+    ],
+    [
+     "miami heat",
+     2010,
+     2014
+    ],
+    [
+     "cleveland cavaliers",
+     2014,
+     2018
+    ],
+    [
+     "los angeles lakers",
+     2018,
+     2026
+    ],
+    [
+     "philadelphia 76ers",
+     2026,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": []
+  },
+  "Luka Doncic": {
+   "wikidata": "Q19844712",
+   "wiki_title": "Luka Doncic",
+   "current": "los angeles lakers",
+   "former": [
+    "dallas mavericks"
+   ],
+   "since": 2025,
+   "debut": 2018,
+   "career": [
+    "dallas mavericks",
+    "los angeles lakers"
+   ],
+   "spells": [
+    [
+     "dallas mavericks",
+     2018,
+     2025
+    ],
+    [
+     "los angeles lakers",
+     2025,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": []
+  },
+  "Michael Jordan": {
+   "wikidata": "Q1928047",
+   "wiki_title": "Michael Jordan",
+   "current": "",
+   "former": [],
+   "since": null,
+   "debut": 1984,
+   "career": [
+    "chicago bulls",
+    "washington wizards"
+   ],
+   "spells": [
+    [
+     "chicago bulls",
+     1984,
+     1998
+    ],
+    [
+     "washington wizards",
+     2001,
+     2003
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "north carolina tar heels",
+    "north carolina",
+    "tar heels"
+   ]
+  },
+  "Nikola Jokic": {
+   "wikidata": "Q17281073",
+   "wiki_title": "Nikola Jokic",
+   "current": "denver nuggets",
+   "former": [],
+   "since": 2015,
+   "debut": 2015,
+   "career": [
+    "denver nuggets"
+   ],
+   "spells": [
+    [
+     "denver nuggets",
+     2015,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": []
+  },
+  "Steph Curry": {
+   "wikidata": "Q352159",
+   "wiki_title": "Steph Curry",
+   "current": "golden state warriors",
+   "former": [],
+   "since": 2009,
+   "debut": 2009,
+   "career": [
+    "golden state warriors"
+   ],
+   "spells": [
+    [
+     "golden state warriors",
+     2009,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "davidson wildcats",
+    "davidson",
+    "wildcats"
+   ]
+  },
+  "Victor Wembanyama": {
+   "wikidata": "Q72941595",
+   "wiki_title": "Victor Wembanyama",
+   "current": "san antonio spurs",
+   "former": [],
+   "since": 2023,
+   "debut": 2019,
+   "career": [
+    "san antonio spurs"
+   ],
+   "spells": [
+    [
+     "san antonio spurs",
+     2023,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": []
+  },
+  "Zion Williamson": {
+   "wikidata": "Q29165842",
+   "wiki_title": "Zion Williamson",
+   "current": "new orleans pelicans",
+   "former": [],
+   "since": 2019,
+   "debut": 2019,
+   "career": [
+    "new orleans pelicans"
+   ],
+   "spells": [
+    [
+     "new orleans pelicans",
+     2019,
+     9999
+    ]
+   ],
+   "coached": [],
+   "college": [
+    "duke blue devils",
+    "duke",
+    "blue devils"
+   ]
+  }
+ }
+}

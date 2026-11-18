@@ -1,0 +1,401 @@
+[
+ {
+  "id": "P1-01",
+  "kind": "pick",
+  "source": "run 2026-11-13_43395656602 short_2 beat 1",
+  "who": [
+   "Carmelo Anthony",
+   "Kevin Garnett",
+   "Jaylen Brown",
+   "Jayson Tatum"
+  ],
+  "line": "\"I don't think it's beef,\" Carmelo Anthony said about Jaylen Brown ignoring Jayson Tatum's handshake. And he used Kevin Garnett to explain why.",
+  "on_screen": "Carmelo Anthony speaking",
+  "photo": {
+   "title": "Kevin Garnett 2008-01-13.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "stands looking aside, Celtics green jersey"
+   }
+  },
+  "expect": false,
+  "why": "Carmelo speaks: Garnett is another man (D71)"
+ },
+ {
+  "id": "P1-02",
+  "kind": "pick",
+  "source": "run 2026-11-13_43353547001 short_2 beat 1",
+  "who": [
+   "Isiah Thomas",
+   "Michael Jordan",
+   "LeBron James"
+  ],
+  "line": "The Pistons beat Jordan's Bulls in 1988, 1989 and 1990. So when Isiah told a public event that LeBron is number one, it landed.",
+  "on_screen": "Isiah Thomas speaking at a public event",
+  "photo": {
+   "title": "Steve Lipfosky -- Michael Jordan (1997)",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "holds ball in Bulls jersey, focused"
+   }
+  },
+  "expect": false,
+  "why": "Isiah speaks: Jordan is another man"
+ },
+ {
+  "id": "P1-03",
+  "kind": "pick",
+  "source": "run 2026-11-12_43317261723 short_2 beat 5",
+  "who": [
+   "Derek Fisher",
+   "Shaquille O'Neal",
+   "Kobe Bryant"
+  ],
+  "line": "So was Fisher's iron sharpening iron, or a feud that broke up the Lakers?",
+  "on_screen": "Kobe Bryant and Shaquille O'Neal side by side",
+  "photo": {
+   "title": "Derek Fisher 2010",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "shoots a jump shot near sideline"
+   }
+  },
+  "expect": false,
+  "why": "the note shows Kobe and Shaq, not Fisher"
+ },
+ {
+  "id": "P1-04",
+  "kind": "pick",
+  "source": "run 2026-11-17_44034519940 short_2 beat 2",
+  "who": [
+   "Draymond Green",
+   "Yaxel Lendeborg",
+   "Steph Curry"
+  ],
+  "line": "Draymond Green told reporters it's unfair to make a rookie step into Steph's role. Depend on him, he said, but lower expectations.",
+  "on_screen": "Draymond Green speaking to reporters",
+  "photo": {
+   "title": "Steph Curry 2022 ASG.jpg",
+   "tag": {
+    "v": "C",
+    "s": "allstar",
+    "e": "intense",
+    "t": "holds ball looking aside, All-Star jersey",
+    "who": "Steph Curry"
+   }
+  },
+  "expect": false,
+  "why": "Draymond speaks: Curry is another man"
+ },
+ {
+  "id": "P1-05",
+  "kind": "pick",
+  "source": "run 2026-11-17_44088855986 short_1 beat 4",
+  "who": [
+   "Nikola Jokic",
+   "DeMar DeRozan"
+  ],
+  "line": "My read: he had seven of the 18 turnovers, so it's a standard, not a shot.",
+  "on_screen": "Jokic with the ball",
+  "photo": {
+   "title": "DeMar DeRozan (25715231917).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "drives for a layup, Raptors",
+    "who": "DeMar DeRozan"
+   }
+  },
+  "expect": false,
+  "why": "his turnovers are Jokic's (run 44088855986)"
+ },
+ {
+  "id": "P1-06",
+  "kind": "pick",
+  "source": "run 2026-11-17_44078900140 short_1 beat 4",
+  "who": [
+   "Dwyane Wade",
+   "Victor Wembanyama"
+  ],
+  "line": "My take: rushing him means wanting a finished product. The Spurs have won 12 straight.",
+  "on_screen": "Victor Wembanyama dunking",
+  "photo": {
+   "title": "Dwyane Wade splits defense.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "dribbles past defenders, Heat jersey",
+    "who": "Dwyane Wade"
+   }
+  },
+  "expect": false,
+  "why": "the note shows Wembanyama"
+ },
+ {
+  "id": "P1-07",
+  "kind": "pick",
+  "source": "run 2026-11-12_43288011054 short_2 beat 4",
+  "who": [
+   "Kyrie Irving",
+   "LeBron James"
+  ],
+  "line": "I think it's 2017 again. He's leaving LeBron's timeline on his own terms.",
+  "on_screen": "LeBron James on the court",
+  "photo": {
+   "title": "Kyrie Irving (37769619256)",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "lunges with ball, Celtics jersey"
+   }
+  },
+  "expect": false,
+  "why": "the note shows LeBron"
+ },
+ {
+  "id": "P1-08",
+  "kind": "pick",
+  "source": "run 2026-11-11_43080115985 short_2 beat 5",
+  "who": [
+   "Draymond Green",
+   "Doc Rivers",
+   "Doug Christie",
+   "Giannis Antetokounmpo"
+  ],
+  "line": "Should players fire back like Draymond says, or were Rivers and Christie honest?",
+  "on_screen": "Draymond Green and Giannis Antetokounmpo",
+  "photo": {
+   "title": "Ray Allen et Doc Rivers.jpg",
+   "tag": {}
+  },
+  "expect": false,
+  "why": "the note shows Draymond and Giannis, not Rivers"
+ },
+ {
+  "id": "P1-09",
+  "kind": "pick",
+  "source": "run 2026-11-13_43485568700 short_2 beat 4",
+  "who": [
+   "Donovan Mitchell",
+   "Charles Barkley"
+  ],
+  "line": "It wasn't revenge. At 6 and 6, I think that's Barkley's point.",
+  "on_screen": "Donovan Mitchell with the Cavaliers",
+  "photo": {
+   "title": "Charles Barkley representing the 1992 Dream Team.jpg",
+   "tag": {
+    "v": "C",
+    "s": "other",
+    "e": "calm",
+    "t": "looks to the side in a brown blazer"
+   }
+  },
+  "expect": false,
+  "why": "the note shows Mitchell"
+ },
+ {
+  "id": "P1-10",
+  "kind": "pick",
+  "source": "run 2026-11-12_43262308476 short_1 beat 5",
+  "who": [
+   "Charles Barkley",
+   "Michael Jordan"
+  ],
+  "line": "So who should've picked up the phone first, Jordan or Barkley?",
+  "on_screen": "Michael Jordan and Charles Barkley",
+  "photo": {
+   "title": "Charles Barkley in 2026.jpg",
+   "tag": {
+    "v": "C",
+    "s": "interview",
+    "e": "smiling",
+    "t": "smiles broadly in a gray suit"
+   }
+  },
+  "expect": true,
+  "why": "the note names both"
+ },
+ {
+  "id": "P1-11",
+  "kind": "pick",
+  "source": "run 2026-11-17_44110628783 short_1 beat 3",
+  "who": [
+   "Steph Curry",
+   "Anthony Slater"
+  ],
+  "line": "Without him, the Warriors are one and three, and Kerr called it terrible.",
+  "on_screen": "Steve Kerr on the sideline, Warriors playing without Curry",
+  "photo": {
+   "title": "Steve Kerr Talks to Reporters.jpg",
+   "tag": {
+    "v": "C",
+    "s": "interview",
+    "e": "calm",
+    "t": "listens at press backdrop, serious look",
+    "who": "Steve Kerr"
+   }
+  },
+  "expect": true,
+  "why": "the note itself names Kerr (no story person)"
+ },
+ {
+  "id": "P1-12",
+  "kind": "pick",
+  "source": "run 2026-11-13_43446225184 short_2 beat 2",
+  "who": [
+   "Steph Curry",
+   "Shams Charania",
+   "Yaxel Lendeborg"
+  ],
+  "line": "But Shams Charania told ESPN that's just a checkpoint, and Golden State is bracing to miss double-digit games.",
+  "on_screen": "Shams Charania on ESPN",
+  "photo": {
+   "title": "Stephen Curry close up",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "smiling",
+    "t": "looks up smiling in white jersey"
+   }
+  },
+  "expect": true,
+  "why": "a reporter's line keeps D50: the player he reports on"
+ },
+ {
+  "id": "P1-13",
+  "kind": "pick",
+  "source": "run 2026-11-17_44078900140 short_1 beat 5",
+  "who": [
+   "Dwyane Wade",
+   "Victor Wembanyama"
+  ],
+  "line": "Was Wade right everyone rushed Wemby, or was the criticism fair?",
+  "on_screen": "Dwyane Wade and Victor Wembanyama",
+  "photo": {
+   "title": "San Antonio at Toronto - Wembanyama 2024 (cropped).jpg",
+   "tag": {
+    "v": "S",
+    "s": "game",
+    "e": "unclear",
+    "t": "dribbles in the distance, Spurs at Raptors",
+    "who": "Victor Wembanyama"
+   }
+  },
+  "expect": true,
+  "why": "the note names both"
+ },
+ {
+  "id": "P1-14",
+  "kind": "pick",
+  "source": "run 2026-11-12_43199348111 short_2 beat 5",
+  "who": [
+   "Marcus Smart",
+   "Charles Bassey"
+  ],
+  "line": "Bassey might've baited him, but nobody leaves that fast without crossing a line.",
+  "on_screen": "Marcus Smart and Charles Bassey",
+  "photo": {
+   "title": "Marcus Smart (32133149160).jpg",
+   "tag": {}
+  },
+  "expect": true,
+  "why": "the note names both"
+ },
+ {
+  "id": "P1-15",
+  "kind": "pick",
+  "source": "run 2026-11-11_43027675858 short_1 beat 2",
+  "who": [
+   "Jaylen Brown",
+   "Jayson Tatum",
+   "Paul George"
+  ],
+  "line": "He face guarded Tatum early, but took nine shots for 13 points, while Paul George scored 36.",
+  "on_screen": "Jaylen Brown guarding Jayson Tatum",
+  "photo": {
+   "title": "Celtics at Wizards 2024-12-020.jpg",
+   "tag": {}
+  },
+  "expect": true,
+  "why": "a game photo of nobody known may stand (generic)"
+ },
+ {
+  "id": "P1-16",
+  "kind": "top-up",
+  "source": "run 44078900140 short_1 beat 3",
+  "who": [
+   "Dwyane Wade",
+   "Victor Wembanyama"
+  ],
+  "line": "Still, Wade says he has to get stronger.",
+  "on_screen": "Victor Wembanyama playing",
+  "expect_person": "Victor Wembanyama",
+  "why": "the note names him; the line's \"he\" is him (D72)"
+ },
+ {
+  "id": "P1-17",
+  "kind": "top-up",
+  "source": "run 44088855986 short_1 beat 4",
+  "who": [
+   "Nikola Jokic",
+   "DeMar DeRozan"
+  ],
+  "line": "My read: he had seven of the 18 turnovers, so it's a standard, not a shot.",
+  "on_screen": "Jokic with the ball",
+  "expect_person": "Nikola Jokic",
+  "why": "the line names nobody: the note decides (D63)"
+ },
+ {
+  "id": "P1-18",
+  "kind": "top-up",
+  "source": "run 44110628783 short_1 beat 2",
+  "who": [
+   "Steph Curry",
+   "Anthony Slater"
+  ],
+  "line": "He said it's probably his last contract, but he may surprise himself. Slater noted no retirement decision is coming soon.",
+  "on_screen": "Stephen Curry's quote from the ESPN interview on screen",
+  "expect_person": "Steph Curry",
+  "why": "the note names Curry, not reporter Slater (D72)"
+ },
+ {
+  "id": "P1-19",
+  "kind": "top-up",
+  "source": "run 43353547001 short_2 beat 2",
+  "who": [
+   "Michael Jordan",
+   "Isiah Thomas",
+   "LeBron James"
+  ],
+  "line": "But in a Black Enterprise interview... his starting five was Magic, Bird, Jordan, Kareem and Duncan. No LeBron.",
+  "on_screen": "Isiah Thomas in an interview",
+  "expect_person": "Isiah Thomas",
+  "why": "the note shows Isiah, the line only lists names (D72)"
+ },
+ {
+  "id": "P1-20",
+  "kind": "top-up",
+  "source": "run 43145065648 short_1 beat 2",
+  "who": [
+   "Gary Trent",
+   "Kawhi Leonard",
+   "Brian Windhorst"
+  ],
+  "line": "ESPN's Brian Windhorst said, \"Everybody in the league expects a guilty finding.\"",
+  "on_screen": "Brian Windhorst on ESPN",
+  "expect_person": "Gary Trent",
+  "why": "a reporter with no photo: the story's player, in story order (D50)",
+  "no_photo": [
+   "Brian Windhorst"
+  ]
+ }
+]

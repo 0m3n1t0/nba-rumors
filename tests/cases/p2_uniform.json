@@ -1,0 +1,626 @@
+[
+ {
+  "id": "P2-01",
+  "source": "run 2026-11-12_43288011054 short_2 beat 2",
+  "person": "Kyrie Irving",
+  "line": "Now, he said, \"I don't see myself playing in the NBA at 42, 43.\"",
+  "photo": {
+   "title": "Kyrie Irving (51832712835).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "walks up court, Nets jersey"
+   },
+   "team": "former"
+  },
+  "expect": false,
+  "why": "\"Now\" names a time: today's team (Dallas), not a former one"
+ },
+ {
+  "id": "P2-02",
+  "source": "run 2026-11-13_43446225184 short_1 beat 1",
+  "person": "Kyrie Irving",
+  "line": "Kyrie is 34, and Dallas is 7 and 5 with him.",
+  "photo": {
+   "title": "Kyrie Irving (15846988781)",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "looks up while shooting, Cavs jersey"
+   },
+   "team": ""
+  },
+  "expect": false,
+  "why": "the line names Dallas, his team today"
+ },
+ {
+  "id": "P2-03",
+  "source": "run 2026-11-13_43446225184 short_1 beat 2",
+  "person": "Kyrie Irving",
+  "line": "The Athletic's Sam Amick reports rivals see him as a target to \"truly change the playoff landscape.\" But Mavs president Masai Ujiri shows no inclination to trade him.",
+  "photo": {
+   "title": "Kyrie Irving 2",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "stands on court, Cavs yellow jersey"
+   },
+   "team": ""
+  },
+  "expect": false,
+  "why": "the line names the Mavs, his team today"
+ },
+ {
+  "id": "P2-04",
+  "source": "run 2026-11-13_43446225184 short_1 beat 3",
+  "person": "Kyrie Irving",
+  "line": "Why listen before the February 11 deadline? Kyrie has a $42.4 million player option, and Cooper Flagg can't extend until 2028. I think that timeline says sell.",
+  "photo": {
+   "title": "Kyrie Irving (32963168585).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "dribbles against Pacers defender, Cavs black"
+   },
+   "team": "former"
+  },
+  "expect": false,
+  "why": "this season's deadline: today's team"
+ },
+ {
+  "id": "P2-05",
+  "source": "run 2026-11-13_43446225184 short_1 beat 4",
+  "person": "Kyrie Irving",
+  "line": "Does Dallas keep Kyrie, or sell?",
+  "photo": {
+   "title": "Kyrie Irving (37769619256)",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "lunges with ball, Celtics jersey"
+   },
+   "team": ""
+  },
+  "expect": false,
+  "why": "the line names Dallas"
+ },
+ {
+  "id": "P2-06",
+  "source": "run 2026-11-12_43288011054 short_2 beat 1",
+  "person": "Kyrie Irving",
+  "line": "They won the 2016 title, but Kyrie requested a 2017 trade, reportedly to escape LeBron's shadow.",
+  "photo": {
+   "title": "Kyrie Irving (15846988781)",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "looks up while shooting, Cavs jersey"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "2016-2017 was his Cleveland time (D42)"
+ },
+ {
+  "id": "P2-07",
+  "source": "run 2026-11-12_43288011054 short_2 beat 4",
+  "person": "Kyrie Irving",
+  "line": "I think it's 2017 again. He's leaving LeBron's timeline on his own terms.",
+  "photo": {
+   "title": "LeBron James vs. Kyrie Irving (23965056038)",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "defends LeBron, Celtics jersey"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "2017: he joined Boston that year"
+ },
+ {
+  "id": "P2-08",
+  "source": "run 2026-11-12_43288011054 short_2 beat 5",
+  "person": "Kyrie Irving",
+  "line": "So who's got the better plan, Kyrie stepping away or LeBron playing on?",
+  "photo": {
+   "title": "Kyrie Irving - 51831823383",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "drives with ball, Nets jersey"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "no team and no time named: a former jersey is allowed (D30)"
+ },
+ {
+  "id": "P2-09",
+  "source": "run 2026-11-13_43485568700 short_2 beat 0",
+  "person": "Donovan Mitchell",
+  "line": "Donovan Mitchell fires back at Barkley: 'Who gives a f—k?' after Cavs 'suck' remark.",
+  "photo": {
+   "title": "Donovan Mitchell shooting.jpg",
+   "tag": {
+    "v": "C",
+    "s": "warmup",
+    "e": "calm",
+    "t": "holds ball before a shot, Jazz jersey"
+   },
+   "team": "former"
+  },
+  "expect": false,
+  "why": "the line names the Cavs, his team today"
+ },
+ {
+  "id": "P2-10",
+  "source": "run 2026-11-13_43485568700 short_2 beat 0",
+  "person": "Donovan Mitchell",
+  "line": "Donovan Mitchell fires back at Barkley: 'Who gives a f—k?' after Cavs 'suck' remark.",
+  "photo": {
+   "title": "Donovan mitchell directing traffic vs Lakers 2022 (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "points upcourt holding ball, Cavaliers black"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "the Cavs, named and his"
+ },
+ {
+  "id": "P2-11",
+  "source": "run 2026-11-13_43485568700 short_2 beat 2",
+  "person": "Donovan Mitchell",
+  "line": "He said running it back is insanity, after leading New York by 22 last year.",
+  "photo": {
+   "title": "Donovan Mitchell Utah (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "lines up free throw, Jazz jersey"
+   },
+   "team": "former"
+  },
+  "expect": false,
+  "why": "\"last year\" names a time: Cleveland"
+ },
+ {
+  "id": "P2-12",
+  "source": "run 2026-11-13_43485568700 short_2 beat 3",
+  "person": "Donovan Mitchell",
+  "line": "Mitchell fired back: \"Chuck ain't doing nothing for us in this locker room.\" He heard after the game, Cleveland.com reported.",
+  "photo": {
+   "title": "Donovan Mitchell Utah 2018 (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "stands on court, Jazz jersey"
+   },
+   "team": "former"
+  },
+  "expect": false,
+  "why": "the line names Cleveland"
+ },
+ {
+  "id": "P2-13",
+  "source": "run 2026-11-13_43485568700 short_2 beat 5",
+  "person": "Donovan Mitchell",
+  "line": "Are the Cavs the same failing team, or should Mitchell tune Chuck out?",
+  "photo": {
+   "title": "Donovan Mitchell makes underhanded layup around Alex Len in 2018 (crop).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "eyes the ball past Suns defender, Jazz"
+   },
+   "team": "former"
+  },
+  "expect": false,
+  "why": "the line names the Cavs"
+ },
+ {
+  "id": "P2-14",
+  "source": "run 2026-11-13_43485568700 short_2 beat 5",
+  "person": "Donovan Mitchell",
+  "line": "Are the Cavs the same failing team, or should Mitchell tune Chuck out?",
+  "photo": {
+   "title": "Donovan Mitchell Cavs Playoffs.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "dribbles low, eyes defender, Cavaliers white"
+   },
+   "team": "current"
+  },
+  "expect": true,
+  "why": "the Cavs, named and his"
+ },
+ {
+  "id": "P2-15",
+  "source": "run 2026-11-16_43934705382 short_2 beat 3",
+  "person": "Jalen Green",
+  "line": "Phoenix reportedly has interest... but a Suns source told The Athletic there's no talk of a Jalen Green swap.",
+  "photo": {
+   "title": "Jalen Green with the Houston Rockets in 2022 (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "stands on court, Rockets jersey 0"
+   },
+   "team": "former"
+  },
+  "expect": false,
+  "why": "the line names Phoenix/the Suns, his team today (D38)"
+ },
+ {
+  "id": "P2-16",
+  "source": "run 2026-11-17_44053022347 short_1 beat 1",
+  "person": "LeBron James",
+  "line": "McMenamin reported that LeBron, now with the 76ers, asked coaches to be patient.",
+  "photo": {
+   "title": "LeBron James Wiz",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "angry",
+    "t": "grimaces and shouts, Cleveland jersey",
+    "who": "LeBron James"
+   },
+   "team": ""
+  },
+  "expect": false,
+  "why": "\"now with the 76ers\""
+ },
+ {
+  "id": "P2-17",
+  "source": "run 2026-11-17_44053022347 short_1 beat 3",
+  "person": "LeBron James",
+  "line": "He is at career lows at 41, but Philly is 12 and 3.",
+  "photo": {
+   "title": "LeBron James (15847318851)",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "smiling",
+    "t": "smiles on court, Cavs jersey",
+    "who": "LeBron James"
+   },
+   "team": ""
+  },
+  "expect": false,
+  "why": "Philly named (D59)"
+ },
+ {
+  "id": "P2-18",
+  "source": "run 2026-11-17_44053022347 short_1 beat 5",
+  "person": "LeBron James",
+  "line": "So who do you believe, LeBron or ESPN's Dave McMenamin?",
+  "photo": {
+   "title": "Dwyane Wade and LeBron James",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "looks aside next to teammate, Heat jersey",
+    "who": "LeBron James"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "no team and no time named (D30)"
+ },
+ {
+  "id": "P2-19",
+  "source": "run 2026-11-17_44053022347 short_2 beat 5",
+  "person": "Dwight Howard",
+  "line": "I think the fix was a smaller Dwight. He won the 2020 title as a rotation player.",
+  "photo": {
+   "title": "Dwight Howard (30483942420).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "dunks, Hawks jersey",
+    "who": "Dwight Howard"
+   },
+   "team": ""
+  },
+  "expect": false,
+  "why": "the 2020 title was his Lakers year (D60)"
+ },
+ {
+  "id": "P2-20",
+  "source": "run 2026-11-17_44053022347 short_2 beat 1",
+  "person": "Dwight Howard",
+  "line": "On Strong Talk, Howard left Kobe's Lakers: \"Instead of us figuring it out, I went to Houston.\"",
+  "photo": {
+   "title": "Dwight Howard",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "walks on court, Houston jersey",
+    "who": "Dwight Howard"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "Houston, named and his"
+ },
+ {
+  "id": "P2-21",
+  "source": "run 2026-11-13_43353547001 short_2 beat 3",
+  "person": "Isiah Thomas",
+  "line": "I think he'll pick Jordan but never crown him, not after the Pistons walked off without shaking hands in 1991.",
+  "photo": {
+   "title": "Isaiah Thomas (50639077836).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "dribbles in Wizards jersey"
+   },
+   "team": ""
+  },
+  "expect": false,
+  "why": "the Pistons and 1991 named; he never played for Washington"
+ },
+ {
+  "id": "P2-22",
+  "source": "run 2026-11-12_43317261723 short_2 beat 5",
+  "person": "Derek Fisher",
+  "line": "So was Fisher's iron sharpening iron, or a feud that broke up the Lakers?",
+  "photo": {
+   "title": "Derek Fisher Thunder.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "shoots free throw, Thunder jersey"
+   },
+   "team": ""
+  },
+  "expect": false,
+  "why": "the line names the Lakers"
+ },
+ {
+  "id": "P2-23",
+  "source": "run 2026-11-12_43317261723 short_2 beat 0",
+  "person": "Derek Fisher",
+  "line": "Three straight titles, one trade: Derek Fisher defends Shaq and Kobe's feud as iron sharpening iron.",
+  "photo": {
+   "title": "Derek Fisher.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "moves on defense, Lakers jersey"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "Shaq and Kobe's Lakers"
+ },
+ {
+  "id": "P2-24",
+  "source": "run 2026-11-13_43395656602 short_2 beat 2",
+  "person": "Kevin Garnett",
+  "line": "Garnett won MVP in 2003 to 04, right after Denver took Carmelo third.",
+  "photo": {
+   "title": "Kevin Garnett with the Minnesota Timberwolves dunking, 2007 (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "dunks against Wizards, Timberwolves"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "2003-04 was his Minnesota time"
+ },
+ {
+  "id": "P2-25",
+  "source": "run 2026-11-13_43395656602 short_2 beat 2",
+  "person": "Carmelo Anthony",
+  "line": "Garnett won MVP in 2003 to 04, right after Denver took Carmelo third.",
+  "photo": {
+   "title": "Carmelo Anthony Nuggets",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "looks to the side, Nuggets jersey"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "Denver took Carmelo: named and his"
+ },
+ {
+  "id": "P2-26",
+  "source": "run 2026-11-12_43262308476 short_1 beat 2",
+  "person": "Michael Jordan",
+  "line": "Close since the Dream Team, they survived Jordan's Bulls beating Barkley's Suns in 1993.",
+  "photo": {
+   "title": "Michael Jordan - 1984 (1).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "dribbles upcourt in red Bulls jersey"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "Jordan's Bulls in 1993"
+ },
+ {
+  "id": "P2-27",
+  "source": "run 2026-11-13_43395656602 short_1 beat 5",
+  "person": "Kyle Kuzma",
+  "line": "So was Kuzma's closeout dirty like Barkley says, or was it just a bad landing for Luka?",
+  "photo": {
+   "title": "Kyle Kuzma (52480104636).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "dribbles against Bulls, Wizards jersey"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "no team and no time named (D30)"
+ },
+ {
+  "id": "P2-28",
+  "source": "run 2026-11-17_44040546534 short_1 beat 0",
+  "person": "Jayson Tatum",
+  "line": "Why is Jayson Tatum still angry at Steve Kerr?",
+  "photo": {
+   "title": "Jayson Tatum (51686834897).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "intense",
+    "t": "free throw stance, Celtics jersey",
+    "who": "Jayson Tatum"
+   },
+   "team": "current"
+  },
+  "expect": true,
+  "why": "today's team"
+ },
+ {
+  "id": "P2-29",
+  "source": "run 2026-11-17_44088855986 short_1 beat 1",
+  "person": "Nikola Jokic",
+  "line": "Denver lost 117 to 105 at home to Phoenix.",
+  "photo": {
+   "title": "Nikola Jokic free throw (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "holds ball before free throw, Nuggets",
+    "who": "Nikola Jokic"
+   },
+   "team": "current"
+  },
+  "expect": true,
+  "why": "Denver named and his"
+ },
+ {
+  "id": "P2-30",
+  "source": "run 2026-11-17_44034519940 short_2 beat 1",
+  "person": "Steph Curry",
+  "line": "Without Steph Curry, the Warriors lost 115-94 to the Pelicans.",
+  "photo": {
+   "title": "Stephen Curry 030.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "sad",
+    "t": "walks head down, Warriors jersey",
+    "who": "Stephen Curry"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "the Warriors named and his"
+ },
+ {
+  "id": "P2-31",
+  "source": "run 2026-11-17_44078900140 short_2 beat 1",
+  "person": "Kawhi Leonard",
+  "line": "The reunion never happened; his knee has kept him out of 11 of 13 Raptors games.",
+  "photo": {
+   "title": "1 kawhi leonard 2019 (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "stands arms out, Raptors jersey",
+    "who": "Kawhi Leonard"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "the Raptors named and his"
+ },
+ {
+  "id": "P2-32",
+  "source": "run 2026-11-17_44078900140 short_1 beat 1",
+  "person": "Victor Wembanyama",
+  "line": "Wembanyama's Spurs lost the Finals to the Knicks. Sporting News says he got hammered.",
+  "photo": {
+   "title": "Victor Wembanyama San Antonio Spurs 2024.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "stands watching, Spurs black jersey",
+    "who": "Victor Wembanyama"
+   },
+   "team": "current"
+  },
+  "expect": true,
+  "why": "the Spurs named and his"
+ },
+ {
+  "id": "P2-33",
+  "source": "run 2026-11-17_44040546534 short_2 beat 0",
+  "person": "Luka Doncic",
+  "line": "Luka Doncic took a clipboard from Lindsey Harding while the Lakers nearly blew 31 points.",
+  "photo": {
+   "title": "Luka Doncic (55095317361) (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "stands in Lakers jersey, looking ahead",
+    "who": "Luka Doncic"
+   },
+   "team": "current"
+  },
+  "expect": true,
+  "why": "the Lakers named and his"
+ },
+ {
+  "id": "P2-34",
+  "source": "run 2026-11-17_44078900140 short_1 beat 4",
+  "person": "Dwyane Wade",
+  "line": "My take: rushing him means wanting a finished product. The Spurs have won 12 straight.",
+  "photo": {
+   "title": "Dwyane Wade (23739286398) (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "looks to the side, Cavs jersey",
+    "who": "Dwyane Wade"
+   },
+   "team": ""
+  },
+  "expect": true,
+  "why": "the Spurs are not his team, so they judge no jersey (D61): no team of his named (D30)"
+ }
+]

@@ -216,6 +216,11 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 113. D80 (his answer 2026-11-19): the final read's doubts are each checked once more (the mirror of
+     110): a plain "error": true with one of the five kinds makes it an error; in doubt it stays a
+     doubt; D65's "(evidence not found)" and 110's "(second check: not an error" are never re-checked;
+     the prompt says another story person is an error on a line about one man's act, and that a
+     doubt fitting a rule is an error.
  112. D77 (his answers 2026-11-18): a full eval keeps each story's script, sources, voice timing and
      pictures (as before the fix after the read; text only); a QUICK eval (from_stage media or
      final_read) puts them back and redoes only those stages, read against its base; no video, no
@@ -6174,3 +6179,83 @@ class QuickEval(unittest.TestCase):
         wf = (ROOT / ".github" / "workflows" / "eval.yml").read_text(encoding="utf-8")
         self.assertIn("EVAL_FROM: ${{ github.event.inputs.from_stage }}", wf)
         self.assertIn("EVAL_BASE: ${{ github.event.inputs.base }}", wf)
+
+
+class FinalReadDoubtsAreChecked(unittest.TestCase):
+    """113. D80 (his answer 2026-11-19). The classfix eval's final read listed 0 errors and 36
+    doubts, some of them errors under the agreed rules: Arenas' photos on "Luka grabbed the
+    clipboard", Luka in Real Madrid colours on a line naming the Lakers. Now each doubt is checked
+    once more, alone (the main model, the reader's rules); D65's and 110's own doubts are left as
+    they are; the prompt closes the "another person of the story" door on one man's act."""
+
+    SHORT = {"hook": {"text": "Luka took the clipboard."},
+             "beats": [{"say": "The Lakers nearly blew a 31-point lead, and Luka grabbed the clipboard."}]}
+    SRC = [{"publisher": "ESPN", "title": "t", "text": "Luka Doncic grabbed the clipboard from Lindsey Harding."}]
+    ARENAS = {"line": 1, "what": "Two of the three pictures show Gilbert Arenas while the line is about Luka "
+                                 "grabbing the clipboard. He is another person from this story, so this is only a doubt.",
+              "evidence": "Luka grabbed the clipboard"}
+    STYLE = {"line": 0, "what": "the hook could be bolder", "evidence": ""}
+    D65 = {"line": 1, "what": "(evidence not found) a number", "evidence": "x"}
+
+    def run_read(self, doubt_answer, first=None):
+        import final_read as fr
+        import script
+        calls = []
+
+        def ask(prompt, model="", where=""):
+            calls.append((where, model, prompt))
+            if where == "final_read":
+                return first or {"errors": [], "doubts": [dict(self.ARENAS), dict(self.STYLE)]}
+            if where == "final_read_confirm":
+                return {"error": False, "why": "fine"}
+            return doubt_answer(prompt)
+        with patch.object(script, "ask_claude", ask):
+            return fr.read(self.SHORT, [], self.SRC), calls
+
+    def test_the_classfix_case_becomes_an_error(self):
+        res, calls = self.run_read(lambda p: {"error": True, "kind": "WRONG PICTURE", "why": "one man's act"}
+                                   if "Gilbert Arenas" in p.split("THE SHORT")[0] else {"error": False})
+        self.assertEqual(res["verdict"], "REVIEW")
+        self.assertEqual([e["kind"] for e in res["errors"]], ["WRONG PICTURE"])
+        self.assertTrue(res["errors"][0]["what"].startswith("(doubt check: an error: one man's act)"))
+        self.assertEqual([d["what"] for d in res["doubts"]], ["the hook could be bolder"])
+        import script
+        checks = [c for c in calls if c[0] == "final_read_doubt"]
+        self.assertEqual(len(checks), 2)
+        self.assertTrue(all(c[1] == script.CLAUDE_MODEL for c in checks))
+        self.assertIn("4. WRONG PICTURE", checks[0][2])
+        self.assertNotIn("final_read_confirm", [c[0] for c in calls])     # an error the check found is not re-confirmed
+
+    def test_in_doubt_it_stays_a_doubt(self):
+        for ans in (lambda p: {"error": False}, lambda p: {"error": "true", "kind": "WRONG PICTURE"},
+                    lambda p: {"error": True, "kind": "UGLY"}, lambda p: {"error": True}, lambda p: {},
+                    lambda p: (_ for _ in ()).throw(RuntimeError("bad json"))):
+            res, _ = self.run_read(ans)
+            self.assertEqual((res["verdict"], len(res["errors"]), len(res["doubts"])), ("PASS", 0, 2))
+
+    def test_the_limit_still_stops_the_stage(self):
+        import script
+
+        def limit(p):
+            raise script.UsageLimit("limit")
+        with self.assertRaises(script.UsageLimit):
+            self.run_read(limit)
+
+    def test_d65_and_d76_doubts_are_left_alone(self):
+        first = {"errors": [{"line": 1, "kind": "NOT IN THE SOURCES", "what": "a false one",
+                             "evidence": "Luka Doncic grabbed the clipboard"}],
+                 "doubts": [dict(self.D65)]}
+        res, calls = self.run_read(lambda p: {"error": True, "kind": "NOT IN THE SOURCES", "why": "x"}, first)
+        self.assertEqual([c[0] for c in calls].count("final_read_doubt"), 0)   # neither is re-checked
+        self.assertEqual(res["verdict"], "PASS")
+        whats = [d["what"] for d in res["doubts"]]
+        self.assertIn("(evidence not found) a number", whats)
+        self.assertTrue(any(w.startswith("(second check: not an error: fine)") for w in whats))
+
+    def test_the_prompt_lines(self):
+        import final_read as fr
+        self.assertIn("on a line saying what one man said or did, a picture\n   of anyone else IS an error, "
+                      "another person of this story too.", fr.PROMPT)
+        self.assertIn("A doubt says why it is NOT an error under the rules above; something that fits one of the rules\n"
+                      "above is an error, not a doubt.", fr.PROMPT)
+        self.assertIn("another person of this story too", fr.RULES)          # the checks read the same rule

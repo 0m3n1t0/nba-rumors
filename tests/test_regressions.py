@@ -216,6 +216,10 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 121. D77 (his answers 2026-11-19): smoke.yml makes one fixed stored story (state nba/smoke/, a kept
+     Short with a VS card) again after every push that changes the code, WITHOUT Claude: voice,
+     voice check, video, gate; one fixed music track (the library's first); a technical failure or
+     a picture that cannot be downloaded ("the network") turns it red; it saves and uploads nothing.
  120. D73 (his answers 2026-11-19, class P1): a generational suffix (Jr., Sr., II, III, IV) is part of a
      story person's name; a title counts as his only with the same suffix (solo_title, his_own); his
      surname is the word before the suffix; a name the script writes bare takes the articles'
@@ -6630,3 +6634,84 @@ class NameSuffixes(unittest.TestCase):
         self.assertTrue(media.names_him("Trent hits the three", "Gary Trent Jr."))
         self.assertEqual(media.photo_owner({"title": "Trent drives (2024)"}, ["Gary Trent Jr.", "Kawhi Leonard"]),
                          "Gary Trent Jr.")
+
+
+class SmokeTest(unittest.TestCase):
+    """121. D77 (his answers 2026-11-19): a whole Short made after every code push, without Claude."""
+
+    def test_prepare_puts_the_story_back(self):
+        import tempfile, smoke
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            story = root / "state" / "nba" / "smoke"
+            story.mkdir(parents=True)
+            pic = lambda k: {"kind": "photo", "url": f"u{k}", "title": f"t{k}", "file": f"data/media/short_1/p{k}.jpg"}
+            (story / "script.json").write_text(json.dumps({"headline": "h"}))
+            (story / "media.json").write_text(json.dumps([dict(pic(0), alts=[pic(1)]), None, pic(2)]))
+            (story / "media_vs.json").write_text(json.dumps([pic(3), pic(4)]))
+            for mood, files in (("b_mood", ["a.mp3"]), ("a_mood", ["z.mp3", "c.mp3", "notes.txt"])):
+                (root / "music_library" / mood).mkdir(parents=True)
+                for f in files:
+                    (root / "music_library" / mood / f).write_text("x")
+            got = []
+            def download(url, path):
+                got.append(url)
+                if url == "u2":
+                    return False
+                Path(path).write_text("img")
+                return True
+            with patch.multiple(smoke, ROOT=root, DATA=root / "data", STORY=story, LIBRARY=root / "music_library"):
+                failed = smoke.prepare(download)
+            self.assertEqual(sorted(got), ["u0", "u1", "u2", "u3", "u4"])            # alts and the VS card too
+            self.assertEqual(failed, ["t2"])                                         # the network, reported
+            self.assertTrue((root / "data" / "scripts" / "short_1.json").exists())
+            self.assertTrue((root / "data" / "media" / "short_1_vs.json").exists())
+            music = json.loads((root / "data" / "media" / "short_1_music.json").read_text())
+            self.assertEqual(music["title"], "c")                                    # the first track, by name
+            self.assertTrue((root / music["file"]).exists())
+
+    def test_no_library_no_music(self):
+        import tempfile, smoke
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            with patch.multiple(smoke, ROOT=root, DATA=root / "data", STORY=root / "s", LIBRARY=root / "none"):
+                self.assertEqual(smoke.prepare(lambda u, p: True), [])
+            self.assertFalse((root / "data" / "media" / "short_1_music.json").exists())
+
+    def test_check_counts_only_technical(self):
+        import tempfile, smoke
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "video").mkdir()
+            (root / "gate").mkdir()
+            with patch.object(smoke, "DATA", root):
+                self.assertEqual(len(smoke.check()), 2)                              # no MP4, no gate result
+                (root / "video" / "short_1.mp4").write_text("v")
+                gate = {"verdict": "REVIEW", "checks": {
+                    "technical_quality": {"verdict": "PASS", "notes": []},
+                    "final_read": {"verdict": "REVIEW", "notes": ["no final read"]},
+                    "music_licensing": {"verdict": "REVIEW", "notes": ["x"]}}}
+                (root / "gate" / "short_1.json").write_text(json.dumps(gate))
+                self.assertEqual(smoke.check(), [])                                  # content checks do not count
+                gate["checks"]["technical_quality"] = {"verdict": "REVIEW", "notes": ["only 70% heard"]}
+                (root / "gate" / "short_1.json").write_text(json.dumps(gate))
+                self.assertEqual(smoke.check(), ["technical check: only 70% heard"])
+
+    def test_the_workflow(self):
+        wf = (ROOT / ".github" / "workflows" / "smoke.yml").read_text(encoding="utf-8")
+        on = wf[wf.index("on:"):wf.index("permissions:")]
+        self.assertIn("push:", on)
+        self.assertIn("branches: [main]", on)
+        for p in ('"src/**"', '".github/workflows/**"', '"requirements*.txt"'):
+            self.assertIn(p, on)
+        self.assertNotIn("tests/", on)                                               # a test change only: no smoke
+        for x in ("CLAUDE_CODE_OAUTH_TOKEN", "claude.ai/install", "src/script.py", "src/media.py",
+                  "src/final_read.py", "src/fix_after_read.py", "src/editor.py"):
+            self.assertNotIn(x, wf)                                                  # no Claude at all
+        self.assertNotIn("state.py save", wf)                                        # never saves back
+        for x in ("youtube", "upload-artifact", "src/upload"):
+            self.assertNotIn(x, wf.lower())                                          # never uploads
+        steps = [wf.index(x) for x in ("python src/smoke.py prepare", "python src/tts.py", "python src/audio_qc.py",
+                                       "python src/render.py", "python src/gate.py", "python src/smoke.py check")]
+        self.assertEqual(steps, sorted(steps))
+        self.assertIn("contents: read", wf)

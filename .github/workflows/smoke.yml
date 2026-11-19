@@ -1,0 +1,100 @@
+name: Smoke test (after every code push)
+
+# D77 (his answers 2026-11-19): after a push that changes the code, one fixed stored story (a kept
+# Short with a VS card) is made again WITHOUT Claude: voice, voice check, video, gate. A technical
+# failure (no MP4, the gate's technical check not PASS, a picture that cannot be downloaded) turns
+# this run red. It never saves anything back and never uploads. The writing and the picture
+# choice are checked by the unit tests and the eval, not here.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "fonts/**"
+      - "assets/**"
+      - "config/**"
+      - "requirements*.txt"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-test
+  cancel-in-progress: true      # a newer push replaces the older one's smoke test
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Private state repository (read only, the stored story)
+        uses: actions/checkout@v5
+        with:
+          repository: 0m3n1t0/nba-rumors-state
+          token: ${{ secrets.STATE_REPO_TOKEN }}
+          path: state
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Cache voice models
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/huggingface
+          key: voice-models-pipeline-v2
+          restore-keys: voice-models-chatterbox-v2
+
+      - name: Cache the voice engine's English model (so it is downloaded only once)
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/voice-wheels
+          key: voice-wheels-v1
+
+      - name: Cache the apt packages (ffmpeg, espeak-ng; renewed only by hand, by changing the key)
+        uses: actions/cache@v5
+        with:
+          path: ~/apt-debs
+          key: apt-debs-v1
+
+      - name: Install voice engine
+        run: |
+          sudo apt-get update -q
+          mkdir -p ~/apt-debs && sudo cp ~/apt-debs/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+          sudo apt-get install -y -q -o APT::Keep-Downloaded-Packages=true espeak-ng ffmpeg
+          cp /var/cache/apt/archives/*.deb ~/apt-debs/ 2>/dev/null || true
+          pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-voice.txt
+          python src/install_voice_model.py
+
+      - name: Music library (private repo; skipped if not set up)
+        continue-on-error: true
+        uses: actions/checkout@v5
+        with:
+          repository: 0m3n1t0/music-library
+          token: ${{ secrets.MUSIC_REPO_TOKEN }}
+          path: music_library
+
+      - name: The stored story, its pictures and one fixed music track
+        env:
+          WIKIMEDIA_TOKEN: ${{ secrets.WIKIMEDIA_TOKEN }}
+        run: python src/smoke.py prepare
+
+      - name: Voice, voice check, video, gate (no Claude)
+        run: |
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/stage_summary.md"   # reports stay off this public page
+          python src/tts.py
+          python src/audio_qc.py
+          python src/render.py
+          python src/gate.py
+
+      - name: Was the Short made whole?
+        run: python src/smoke.py check

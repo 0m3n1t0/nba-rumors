@@ -55,9 +55,19 @@ def licence_accepted(lic: str) -> bool:
     return bool(lic) and not REFUSED.search(lic) and bool(ACCEPTED.search(lic))
 
 
+SUFFIXES = ("jr", "sr", "ii", "iii", "iv")    # = media.SUFFIXES (D73)
+
+
 def full_name_in(title: str, person: str) -> bool:
-    t, parts = C.fold(title or ""), C.fold(person).split()
-    return bool(parts) and all(re.search(rf"\b{re.escape(w)}\b", t) for w in (parts[:1] + parts[-1:]))
+    """The same rule as media.solo_title (D73, his answers 2026-11-19): his first and last name, and
+    for a man with a suffix ("Gary Trent Jr.") the same suffix too ("Jr" or "Jr."); the surname is
+    the word before the suffix. The two stages must never disagree (D71's lesson)."""
+    t, parts = C.fold(title or "").replace("_", " "), C.fold(person).replace(",", " ").split()
+    suffix = parts[-1].rstrip(".") if len(parts) > 2 and parts[-1].rstrip(".") in SUFFIXES else ""
+    if suffix:
+        parts = parts[:-1]
+    return bool(parts) and all(re.search(rf"\b{re.escape(w)}\b", t) for w in (parts[:1] + parts[-1:])) \
+        and (not suffix or bool(re.search(rf"\b{suffix}\b", t)))
 
 
 GROUP_TITLE = re.compile(r"\b(and|with|vs|versus|family)\b|&", re.I)   # = media.GROUP_TITLE

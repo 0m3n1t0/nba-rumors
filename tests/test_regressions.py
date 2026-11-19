@@ -221,6 +221,7 @@ the "Safety tests" step before anything is installed or made.
      surname is the word before the suffix; a name the script writes bare takes the articles'
      suffix when every full mention in the articles' text carries that same suffix, else (none,
      mixed, a bare one, no text) it stays as it is. Cases: tests/cases/p1_who.json P1-21..28.
+     The gate's full_name_in gives the same answer on every title case (it re-checks those photos).
  119. D84b (his answers 2026-11-19): eval and collect keep the apt .deb files (ffmpeg, espeak-ng) in
      the official cache under one fixed key, renewed only by hand; apt still installs them itself,
      downloading only what the cache lacks; with no cache it installs exactly as before.

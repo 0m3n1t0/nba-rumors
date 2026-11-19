@@ -109,6 +109,15 @@ class P1WhoLibrary(unittest.TestCase):
                     self.assertEqual(m.solo_title({"title": c["title"]}, c["person"]), c["expect"], c["why"])
                     self.assertEqual(m.his_own(c["person"], {"title": c["title"]}), c["expect"], c["why"])
 
+    def test_gate_agrees_on_titles(self):
+        # D73: the gate re-checks an unjudged photo's title (full_name_in); it must give the
+        # media stage's answer, or a photo the media stage took would be held (D71's lesson)
+        import gate, media
+        self.assertEqual(gate.SUFFIXES, media.SUFFIXES)
+        for c in [c for c in load("p1_who.json") if c["kind"] == "title"]:
+            with self.subTest(c["id"], person=c["person"], title=c["title"]):
+                self.assertEqual(gate.full_name_in(c["title"], c["person"]), c["expect"], c["why"])
+
     def test_name_cases(self):
         with Snapshot() as m:
             for c in [c for c in load("p1_who.json") if c["kind"] == "name"]:

@@ -216,6 +216,10 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 116. D82 (his answers 2026-11-19): before the writer one call (the main model) pulls a FACT SHEET,
+     word for word, with who and status; items not word for word in their article are dropped; the
+     writer, humanize, the hook retry and the repair get it under the articles; the checks do not;
+     a failed or empty sheet leaves every prompt exactly as before; the limit still stops.
  115. D77 (his answer 2026-11-19): an eval of chosen stories (input stories, ids): only those run,
      read against the same stories of the newest eval (or the base when quick); never listed as a
      previous eval, never a base; an unknown id stops it.
@@ -6365,3 +6369,101 @@ class ChosenStoriesEval(QuickEval):
     def test_the_workflow_input(self):
         wf = (ROOT / ".github" / "workflows" / "eval.yml").read_text(encoding="utf-8")
         self.assertIn("EVAL_STORIES: ${{ github.event.inputs.stories }}", wf)
+
+
+class FactSheetFirst(Script):
+    """116. D82 (his answers 2026-11-19; D81a, "pull quotes first, then write"). The classfix eval
+    held Shorts whose report was voiced as fact (Murray's hook: Windhorst's "distressed asset"
+    report said plainly): the writer judged its own claims while writing. Now a separate call pulls
+    the fact sheet first; the writer and the three editors get it; every check stays as it was."""
+
+    SHEET = {"facts": [
+        {"text": "Atlanta drafted Doncic third in 2018 and traded his rights to Dallas", "kind": "confirmed",
+         "who": "", "source": 1},
+        {"text": "You all wish you would have had me.", "kind": "CONFIRMED", "who": "Luka Doncic", "source": 1},
+        {"text": "Luka called the Hawks a joke", "kind": "REPORTED", "who": "Yahoo", "source": 1},   # not in the article
+        {"text": "One fan replied", "kind": "MADE UP", "who": "Yahoo Sports", "source": 1},
+        {"text": "You all wish you would have had me.", "kind": "CONFIRMED", "who": "x", "source": 9}]}
+
+    def build_with(self, sheet_answer):
+        import nbadata
+        import script
+        prompts = []
+        draft = {"hooks": [{"text": LUKA_HOOK, "formula": "The Receipt"}],
+                 "strategy": {"kind": "beef", "central_question": "Who was right?", "headline_gap": "The trade."},
+                 "angles": ["a"], "angle": "a", "beats": copy.deepcopy(LUKA_BEATS),
+                 "titles": ["Luka Doncic TROLLED Hawks fans"], "thumbnail_text": "LUKA vs HAWKS FANS",
+                 "receipt": "", "sources_used": [1],
+                 "claims": [{"text": "Doncic told fans 'You all wish you would have had me.'", "status": "CONFIRMED",
+                             "source": 1}],
+                 "queries": ["q"], "description": "d\nd", "tags": ["t"]}
+
+        def fake(prompt, model=""):
+            if "pull its FACT SHEET" in prompt:
+                prompts.append(("facts", model, prompt))
+                return sheet_answer()
+            if "THE PROBLEMS TO FIX" in prompt:
+                prompts.append(("repair", model, prompt))
+                return {"beats": copy.deepcopy(self.GOOD)}
+            if "sound human" in prompt:
+                prompts.append(("humanize", model, prompt))
+                return {}
+            if "scrolling Shorts" in prompt:
+                return {"order": [1]}
+            if "You write YouTube Shorts scripts" in prompt:
+                prompts.append(("writer", model, prompt))
+            return copy.deepcopy(draft)
+        saved = (script.ask_claude, script.gather_sources, nbadata.annotate, script.SOURCES_OUT)
+        import tempfile
+        script.SOURCES_OUT = Path(tempfile.mkdtemp()) / "sources"
+        script.ask_claude = fake
+        script.gather_sources = lambda topic, editor, tid: [
+            {"publisher": "Yahoo Sports", "title": "Luka trolls Hawks fans", "link": "https://sports.yahoo.com/x",
+             "url": "https://sports.yahoo.com/x", "text": self.TEXT, "trusted": True, "tier": 1, "main": True}]
+        nbadata.annotate = lambda claims: None
+        try:
+            editor = {"topics": [{"headline": "Luka Doncic trolls Hawks fans", "search_phrases": []}],
+                      "ranked": [{"id": 0, "virality": 8}]}
+            short = script.build_short(1, 0, editor, "voice", {"hooks": [{"name": "x", "shape": "y", "example": "z"}],
+                                                               "rules": ["r"]})
+            return short, prompts
+        finally:
+            shutil.rmtree(script.SOURCES_OUT.parent, ignore_errors=True)
+            script.ask_claude, script.gather_sources, nbadata.annotate, script.SOURCES_OUT = saved
+
+    def test_the_sheet_reaches_the_writer_and_the_editors(self):
+        import script
+        short, prompts = self.build_with(lambda: copy.deepcopy(self.SHEET))
+        self.assertEqual(prompts[0][0], "facts")                               # before the writer
+        self.assertEqual(prompts[0][1], script.CLAUDE_MODEL)                   # the main model
+        self.assertEqual([f["text"] for f in short["facts"]],                   # word for word only
+                         ["Atlanta drafted Doncic third in 2018 and traded his rights to Dallas",
+                          "You all wish you would have had me.", "One fan replied"])
+        self.assertEqual([f["kind"] for f in short["facts"]], ["CONFIRMED", "CONFIRMED", "UNVERIFIED"])
+        for who in ("writer", "humanize", "repair"):
+            p = next(x[2] for x in prompts if x[0] == who)
+            self.assertIn('[F2] CONFIRMED (Luka Doncic) [source 1]: "You all wish you would have had me."', p, who)
+            self.assertIn("is said WITH its who in the same sentence", p, who)
+            self.assertNotIn("called the Hawks a joke", p, who)
+
+    def test_no_sheet_every_prompt_as_before(self):
+        for answer in (lambda: {}, lambda: {"facts": "x"}, lambda: (_ for _ in ()).throw(RuntimeError("bad json"))):
+            short, prompts = self.build_with(answer)
+            self.assertEqual(short["facts"], [])
+            for who in ("writer", "humanize", "repair"):
+                self.assertNotIn("FACT SHEET", next(x[2] for x in prompts if x[0] == who))
+
+    def test_the_limit_still_stops(self):
+        import script
+
+        def limit():
+            raise script.UsageLimit("limit")
+        with self.assertRaises(script.UsageLimit):
+            self.build_with(limit)
+
+    def test_the_four_takers_and_the_checks(self):
+        src = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
+        self.assertEqual(src.count("sources=src_text"), 4)      # writer, humanize, hook retry, repair
+        self.assertEqual(src.count('.replace("SOURCES_TEXT", format_sources(sources))'), 3)   # the checks: untouched
+        import script
+        self.assertEqual(script.facts_block([]), "")

@@ -216,6 +216,9 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 119. D84b (his answers 2026-11-19): eval and collect keep the apt .deb files (ffmpeg, espeak-ng) in
+     the official cache under one fixed key, renewed only by hand; apt still installs them itself,
+     downloading only what the cache lacks; with no cache it installs exactly as before.
  118. D85 (his yes 2026-11-19): every Claude call records which exact model ran (the CLI's
      modelUsage) in the usage file and prints it once per model, so the aliases can be pinned;
      nothing else in the row or the call changes.
@@ -6557,3 +6560,24 @@ class ModelIsRecorded(unittest.TestCase):
                 row = json.loads((Path(d) / "data" / "claude_usage.jsonl").read_text())
         self.assertEqual(row["models"], [])
         self.assertEqual(buf.getvalue(), "")
+
+
+class AptPackagesCached(unittest.TestCase):
+    """119. D84b (his answers 2026-11-19): the slow Ubuntu mirror took 20-31 minutes of an eval to
+    download ffmpeg and espeak-ng (110 MB at 62 kB/s). The .deb files now come from GitHub's own
+    cache; apt installs them itself, so the versions are what a fresh install would give."""
+
+    def test_eval_and_collect(self):
+        for name in ("eval.yml", "collect.yml"):
+            wf = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+            cache = wf.index("path: ~/apt-debs")
+            self.assertIn("key: apt-debs-v1\n", wf[cache:cache + 60], name)       # one fixed key
+            self.assertNotIn("restore-keys", wf[cache:cache + 60], name)
+            restore = wf.index("sudo cp ~/apt-debs/*.deb /var/cache/apt/archives/ 2>/dev/null || true")
+            install = wf.index("sudo apt-get install -y -q -o APT::Keep-Downloaded-Packages=true espeak-ng ffmpeg")
+            keep = wf.index("cp /var/cache/apt/archives/*.deb ~/apt-debs/ 2>/dev/null || true")
+            self.assertLess(cache, wf.index("name: Install voice engine"), name)   # restored before
+            self.assertLess(wf.index("sudo apt-get update -q\n"), restore, name)
+            self.assertLess(restore, install, name)
+            self.assertLess(install, keep, name)
+            self.assertNotIn("apt-get install -y -q espeak-ng ffmpeg", wf, name)   # no second install

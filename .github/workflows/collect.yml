@@ -130,10 +130,22 @@ jobs:
           path: ~/.cache/voice-wheels
           key: voice-wheels-v1
 
+      - name: Cache the apt packages (ffmpeg, espeak-ng; renewed only by hand, by changing the key)
+        if: hashFiles('data/skip_reason.txt') == ''
+        uses: actions/cache@v5
+        with:
+          path: ~/apt-debs
+          key: apt-debs-v1
+
       - name: Install voice engine
         if: hashFiles('data/skip_reason.txt') == ''
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q espeak-ng ffmpeg
+          # D84b (his answers 2026-11-19): the .deb files come from the cache when it has them (a slow
+          # Ubuntu mirror took 20-31 minutes); apt still installs them itself, same versions
+          sudo apt-get update -q
+          mkdir -p ~/apt-debs && sudo cp ~/apt-debs/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+          sudo apt-get install -y -q -o APT::Keep-Downloaded-Packages=true espeak-ng ffmpeg
+          cp /var/cache/apt/archives/*.deb ~/apt-debs/ 2>/dev/null || true
           pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements-voice.txt
           # English model for the voice engine: from the cache, else Hugging Face, else GitHub

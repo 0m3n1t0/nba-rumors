@@ -216,6 +216,9 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 115. D77 (his answer 2026-11-19): an eval of chosen stories (input stories, ids): only those run,
+     read against the same stories of the newest eval (or the base when quick); never listed as a
+     previous eval, never a base; an unknown id stops it.
  114. D79 (his answers 2026-11-19): a person's Commons category about to be skipped (no "sure" name,
      nothing in it says basketball) is his when its own parent categories say basketball, NBA or an
      NBA team ("Dallas Mavericks players"); "court" or "arena" never prove it.
@@ -6112,12 +6115,12 @@ class QuickEval(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def full(self, label="full1", formats=""):
-        with patch.dict("os.environ", {"EVAL_LABEL": label, "NBA_FORMATS": formats, "EVAL_FROM": "", "EVAL_BASE": ""}):
+        with patch.dict("os.environ", {"EVAL_LABEL": label, "NBA_FORMATS": formats, "EVAL_FROM": "", "EVAL_BASE": "", "EVAL_STORIES": ""}):
             self.e.main()
 
     def quick(self, start, label="q1", base="", formats=""):
         self.ran.clear()
-        with patch.dict("os.environ", {"EVAL_LABEL": label, "NBA_FORMATS": formats, "EVAL_FROM": start, "EVAL_BASE": base}):
+        with patch.dict("os.environ", {"EVAL_LABEL": label, "NBA_FORMATS": formats, "EVAL_FROM": start, "EVAL_BASE": base, "EVAL_STORIES": ""}):
             self.e.main()
 
     def test_the_full_eval_keeps_its_base_before_4e(self):
@@ -6320,3 +6323,45 @@ class CategoryParentsProveIt(MediaCase):
             del CATS["Category:Jaylen Brown"]
         self.assertEqual(got, ["File:JB.jpg"])
         self.assertEqual(self.calls, [])                    # its photos already say basketball
+
+
+class ChosenStoriesEval(QuickEval):
+    """115. D77 (his answer 2026-11-19): a fix aimed at a few cases (Luka's photos, the four
+    overstated hooks) is checked on those stories only, in 10-30 minutes instead of hours; the
+    whole set stays for big decisions."""
+
+    def run_env(self, **env):
+        base = {"EVAL_LABEL": "", "NBA_FORMATS": "", "EVAL_FROM": "", "EVAL_BASE": "", "EVAL_STORIES": ""}
+        base.update(env)
+        self.ran.clear()
+        with patch.dict("os.environ", base):
+            self.e.main()
+
+    def test_only_the_chosen_run_and_read_against_the_newest(self):
+        self.full()                                            # full1: both stories, a base
+        self.run_env(EVAL_LABEL="pick1", EVAL_STORIES="s2")
+        self.assertEqual(self.ran.count("tts.py"), 1)          # one story only
+        res = self.e.EVAL / "results"
+        self.assertEqual(sorted(p.name for p in (res / "pick1").glob("*.json")), ["s2.json"])
+        summary = (res / "pick1" / "summary.md").read_text()
+        self.assertIn("Before (full1)", summary)               # the same story of the newest eval
+        self.assertIn("of 1", summary)
+        self.assertEqual(json.loads((res / "index.json").read_text()), ["full1"])   # never a "previous"
+        self.assertFalse((self.e.EVAL / "base" / "pick1").exists())                 # never a base
+        self.assertEqual(self.e.newest_base(""), "full1")
+
+    def test_quick_on_chosen_stories(self):
+        self.full()
+        self.run_env(EVAL_LABEL="pick2", EVAL_STORIES="s1", EVAL_FROM="final_read")
+        self.assertEqual(self.ran, ["final_read.py", "fix_after_read.py"])
+        r = json.loads((self.e.EVAL / "results" / "pick2" / "s1.json").read_text())
+        self.assertEqual(r["mode"], "quick from final_read, on full1")
+
+    def test_an_unknown_story_stops(self):
+        self.full()
+        with self.assertRaises(SystemExit):
+            self.run_env(EVAL_LABEL="pick3", EVAL_STORIES="s1, nope")
+
+    def test_the_workflow_input(self):
+        wf = (ROOT / ".github" / "workflows" / "eval.yml").read_text(encoding="utf-8")
+        self.assertIn("EVAL_STORIES: ${{ github.event.inputs.stories }}", wf)

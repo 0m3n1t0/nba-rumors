@@ -23,6 +23,10 @@ on:
         description: "Quick eval: the full eval to start from. Empty = the newest one made with the same formats."
         required: false
         default: ""
+      stories:
+        description: "Only these stories (their ids, comma separated). Empty = the whole set."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -109,6 +113,7 @@ jobs:
           NBA_FORMATS: ${{ github.event.inputs.formats }}
           EVAL_FROM: ${{ github.event.inputs.from_stage }}
           EVAL_BASE: ${{ github.event.inputs.base }}
+          EVAL_STORIES: ${{ github.event.inputs.stories }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           OPENVERSE_CLIENT_ID: ${{ secrets.OPENVERSE_CLIENT_ID }}
           OPENVERSE_CLIENT_SECRET: ${{ secrets.OPENVERSE_CLIENT_SECRET }}

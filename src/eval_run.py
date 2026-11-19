@@ -17,6 +17,8 @@ video, gate), one at a time, so a change to a writing or checking rule shows in 
     A QUICK eval (input from_stage: media or final_read) puts them back and redoes only those
     stages (no video, no gate), on the newest full eval made with the same formats (or input base),
     and is read against it.
+  - D77: input stories (ids, comma separated) runs only those stories, read against the same
+    stories of the newest eval (or the base); such a run is never a "previous" eval nor a base.
   - The one number: Shorts with no problem = the script stage did not hold it AND the final read
     (after the fix) found no error. A story with no Short made counts as a problem.
 """
@@ -350,16 +352,30 @@ def main() -> None:
     stories = sorted(p for p in (EVAL / "set").iterdir() if (p / "story.json").exists()) if (EVAL / "set").exists() else []
     if not stories:
         sys.exit("[!] no eval set in the private repository")
+    # D77 (his answer 2026-11-19): an eval of CHOSEN stories only (input stories: their ids, comma
+    # separated), for a fix aimed at a few cases; it is read against the same stories of the newest
+    # eval (or of its base, when quick), never listed as a "previous" eval and never kept as a base
+    chosen = [x.strip() for x in (os.environ.get("EVAL_STORIES") or "").split(",") if x.strip()]
+    if chosen:
+        ids = {load(p / "story.json", {}).get("id") for p in stories}
+        unknown = [x for x in chosen if x not in ids]
+        if unknown:
+            sys.exit(f"[!] not in the eval set: {', '.join(unknown)}")
+        stories = [p for p in stories if load(p / "story.json", {}).get("id") in chosen]
     out = EVAL / "results" / label
     out.mkdir(parents=True, exist_ok=True)
     index = load(EVAL / "results" / "index.json", []) or []
-    if label not in index:
-        index.append(label)
-        (EVAL / "results" / "index.json").write_text(json.dumps(index, indent=1), encoding="utf-8")
-    prev_label = index[index.index(label) - 1] if index.index(label) > 0 else None
+    if chosen:
+        prev_label = index[-1] if index and index[-1] != label else None
+    else:
+        if label not in index:
+            index.append(label)
+            (EVAL / "results" / "index.json").write_text(json.dumps(index, indent=1), encoding="utf-8")
+        prev_label = index[index.index(label) - 1] if index.index(label) > 0 else None
 
     def collected(lab):
-        return [load(p, {}) for p in sorted((EVAL / "results" / lab).glob("*.json"))]
+        got = [load(p, {}) for p in sorted((EVAL / "results" / lab).glob("*.json"))]
+        return [r for r in got if r.get("id") in chosen] if chosen else got
     previous = (prev_label, collected(prev_label)) if prev_label else None
     formats = (os.environ.get("NBA_FORMATS") or "").strip()
     start = (os.environ.get("EVAL_FROM") or "").strip()
@@ -372,7 +388,7 @@ def main() -> None:
             sys.exit("[!] no full eval kept its stories for this quick eval (run a full eval first)")
         previous = (base, collected(base))           # a quick eval is read against its base
         print(f"[i] quick eval from {start}, on the full eval {base}")
-    else:
+    elif not chosen:                                  # only a full eval of the whole set is a base
         (EVAL / "base" / label).mkdir(parents=True, exist_ok=True)
         (EVAL / "base" / label / "meta.json").write_text(json.dumps({"formats": formats}), encoding="utf-8")
     for folder in stories:
@@ -392,8 +408,9 @@ def main() -> None:
             else:
                 short = make_script(story, sources)
                 (DATA / "scripts" / "short_1.json").write_text(json.dumps(short, indent=2, ensure_ascii=False), encoding="utf-8")
-                keep(story["id"], label, ("script", "sources"))
-                run_stages(story["id"], label)
+                if not chosen:
+                    keep(story["id"], label, ("script", "sources"))
+                run_stages("" if chosen else story["id"], label)
             if limit_hit():
                 raise Limit("reached during the voice, pictures or final read")
             result = result_of(story, short)

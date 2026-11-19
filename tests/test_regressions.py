@@ -216,6 +216,9 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 114. D79 (his answers 2026-11-19): a person's Commons category about to be skipped (no "sure" name,
+     nothing in it says basketball) is his when its own parent categories say basketball, NBA or an
+     NBA team ("Dallas Mavericks players"); "court" or "arena" never prove it.
  113. D80 (his answer 2026-11-19): the final read's doubts are each checked once more (the mirror of
      110): a plain "error": true with one of the five kinds makes it an error; in doubt it stays a
      doubt; D65's "(evidence not found)" and 110's "(second check: not an error" are never re-checked;
@@ -6259,3 +6262,61 @@ class FinalReadDoubtsAreChecked(unittest.TestCase):
         self.assertIn("A doubt says why it is NOT an error under the rules above; something that fits one of the rules\n"
                       "above is an error, not a doubt.", fr.PROMPT)
         self.assertIn("another person of this story too", fr.RULES)          # the checks read the same rule
+
+
+class CategoryParentsProveIt(MediaCase):
+    """114. D79 (his answers 2026-11-19). In the classfix eval Wikidata and Wikipedia were down and
+    no photo description in "Category:Luka Dončić" said basketball, so his own category was skipped
+    ("nothing in it says basketball") and his photos came untied to him. The category's own parent
+    categories prove it (checked live on Commons 2026-11-19: Luka's include "Dallas Mavericks
+    players"; Robert Williams's and Dave McMenamin's do not)."""
+
+    PARENTS = {"Category:Luka Dončić": ["Category:1999 births", "Category:Dallas Mavericks players",
+                                        "Category:Dončić (surname)"],
+               "Category:Robert Williams": [],
+               "Category:Dave McMenamin": ["Category:1982 births", "Category:Sports journalists from the United States"],
+               "Category:Robert Williams (judge)": ["Category:Justices of the Supreme Court", "Category:Courts in Ohio"]}
+
+    def setUp(self):
+        super().setUp()
+        fake, self.calls = self.m.get, []
+
+        def get(url, timeout=30):
+            q = dict(urllib.parse.parse_qsl(url.split("?", 1)[1])) if "?" in url else {}
+            if "wikidata.org" in url or "wikipedia.org" in url:
+                raise OSError("down")                               # as in the classfix eval
+            if q.get("prop") == "categories":
+                self.calls.append(q.get("titles"))
+                if q.get("titles") == "Category:Broken":
+                    raise OSError("down")
+                ps = self.PARENTS.get(q.get("titles"), [])
+                return json.dumps({"query": {"pages": {"1": {"title": q.get("titles"),
+                                                             "categories": [{"title": c} for c in ps]}}}}).encode()
+            return fake(url, timeout)
+        self.m.get = get
+
+    def test_the_parents(self):
+        p = self.m.parents_say_basketball
+        self.assertTrue(p("Category:Luka Dončić"))
+        self.assertFalse(p("Category:Robert Williams"))
+        self.assertFalse(p("Category:Dave McMenamin"))
+        self.assertFalse(p("Category:Robert Williams (judge)"))   # "court" proves nothing here
+        self.assertFalse(p("Category:Broken"))                    # a failure: no proof, as before
+
+    def test_the_classfix_case(self):
+        self.m._wiki_title.clear()
+        self.m._wikidata.clear()
+        self.m.PHOTO_STATS.clear()
+        got = sorted(f["title"] for f in self.m.category_files("Luka Dončić"))
+        self.assertEqual(got, ["File:LD 2019.jpg", "File:LD 2025.jpg", "File:LD 2026.jpg"])
+        self.assertIn("Category:Luka Dončić", self.calls)
+
+    def test_a_proven_category_costs_no_request(self):
+        CATS["Category:Jaylen Brown"] = ([_photo("File:JB.jpg", "Jaylen Brown, basketball, Celtics")], [])
+        try:
+            self.m.PHOTO_STATS.clear()
+            got = [f["title"] for f in self.m.category_files("Jaylen Brown")]
+        finally:
+            del CATS["Category:Jaylen Brown"]
+        self.assertEqual(got, ["File:JB.jpg"])
+        self.assertEqual(self.calls, [])                    # its photos already say basketball

@@ -420,6 +420,25 @@ _wikidata: dict[str, str] = {}     # his Wikidata item ("Q20031362")
 _commons_cat: dict[str, str] = {}
 
 
+def parents_say_basketball(cat: str) -> bool:
+    """D79 (classfix eval: "skipped Category:Luka Dončić" while Wikidata was down and no photo
+    description said basketball; his answers 2026-11-19): a person's category is his when its own
+    parent categories say "basketball", "NBA" or an NBA team ("Dallas Mavericks players",
+    "Basketball players from Slovenia"); a namesake's ("Robert Williams", a journalist's) do not.
+    Only these words: "court" or "arena" would let a judge's "Supreme Court" category in. One
+    Commons request, only for a category about to be skipped; on a failure: no proof (as before)."""
+    try:
+        data = json.loads(get(COMMONS + "?" + urllib.parse.urlencode(
+            {"action": "query", "format": "json", "titles": cat, "prop": "categories",
+             "cllimit": "50", "clshow": "!hidden"})))
+        pages = (data.get("query") or {}).get("pages") or {}
+        parents = [c.get("title", "") for p in pages.values() for c in (p.get("categories") or [])]
+    except Exception as exc:
+        print(f"[!] Commons parent categories failed for {cat}: {exc}")
+        return False
+    return any(re.search(r"\bbasketball\b", fold(c)) or NBA_PROOF.search(fold(c)) for c in parents)
+
+
 def commons_category(person: str) -> str:
     """The person's Commons category as Wikidata records it (property P373), e.g. Devin
     Booker's is not "Devin Booker". One small request per person, cached; "" if unknown."""
@@ -1053,6 +1072,8 @@ def category_files(person: str) -> list[dict]:
         # an NBA team name proves it too
         hoops = any(BASKETBALL.search(about(f)) or NBA_PROOF.search(fold(about(f))) for f in files) \
             or any(BASKETBALL.search(c) or NBA_PROOF.search(fold(c)) for c in subs)
+        if cat not in sure and not cat.endswith("(basketball)") and not hoops and parents_say_basketball(cat):
+            hoops = True        # D79: his category's own parents ("Dallas Mavericks players")
         if cat not in sure and not cat.endswith("(basketball)") and not hoops:
             # a namesake's category (a politician called Robert Williams): not ours. The next
             # candidate is still tried (it used to stop here and miss the right category).

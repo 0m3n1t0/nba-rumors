@@ -167,6 +167,9 @@ PLAN = ROOT / "plan" / "week.json"
 
 
 
+SEEN_MODELS: set[str] = set()
+
+
 def log_claude_usage(stdout: str, where: str) -> None:
     """Every Claude call writes its token use to data/claude_usage.jsonl (for the budget table)."""
     try:
@@ -176,6 +179,13 @@ def log_claude_usage(stdout: str, where: str) -> None:
                "in": (u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0)
                + (u.get("cache_creation_input_tokens") or 0),
                "out": u.get("output_tokens") or 0, "seconds": round((env.get("duration_ms") or 0) / 1000)}
+        # D85 (his yes 2026-11-19): which exact model the alias ("sonnet", "haiku") ran, so it can be
+        # pinned; printed once per model per process (the eval keeps no usage file)
+        row["models"] = sorted(env.get("modelUsage") or {})
+        for m in row["models"]:
+            if m not in SEEN_MODELS:
+                SEEN_MODELS.add(m)
+                print(f"[model] {where}: {m}")
         path = Path(__file__).resolve().parent.parent / "data" / "claude_usage.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as fh:

@@ -216,6 +216,9 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 118. D85 (his yes 2026-11-19): every Claude call records which exact model ran (the CLI's
+     modelUsage) in the usage file and prints it once per model, so the aliases can be pinned;
+     nothing else in the row or the call changes.
  117. D83 (his answers 2026-11-19): a Claude answer that is not one JSON object is asked for once
      more (every call); a hook whose truth check still fails steps behind as an overstated one
      (test "a failed check changes nothing" became "steps behind": a changed rule).
@@ -6513,3 +6516,44 @@ class OneJsonOrAskAgain(unittest.TestCase):
         with patch.object(script.subprocess, "run", run):
             with self.assertRaises(script.UsageLimit):
                 script.ask_claude("p")
+
+
+class ModelIsRecorded(unittest.TestCase):
+    """118. D85 (his yes 2026-11-19): the checks ran on the floating aliases "sonnet"/"haiku"; the
+    exact model each call ran is recorded and printed once, so it can be pinned on purpose."""
+
+    def test_every_copy_records_and_prints_once(self):
+        import io, contextlib, tempfile, importlib
+        import script, media, editor, skills
+        out = json.dumps({"usage": {"input_tokens": 3, "output_tokens": 2}, "total_cost_usd": 0.1,
+                          "duration_ms": 2000, "num_turns": 1,
+                          "modelUsage": {"claude-sonnet-x-1": {}, "claude-haiku-y-2": {}}})
+        for mod in (script, media, editor, skills):
+            with tempfile.TemporaryDirectory() as d:
+                fake = Path(d) / "src" / "m.py"
+                with patch.object(mod, "__file__", str(fake)), patch.object(mod, "SEEN_MODELS", set()):
+                    buf = io.StringIO()
+                    with contextlib.redirect_stdout(buf):
+                        mod.log_claude_usage(out, "w")
+                        mod.log_claude_usage(out, "w")
+                    rows = [json.loads(l) for l in (Path(d) / "data" / "claude_usage.jsonl").read_text().splitlines()]
+                self.assertEqual(len(rows), 2, mod.__name__)
+                self.assertEqual(rows[0]["models"], ["claude-haiku-y-2", "claude-sonnet-x-1"], mod.__name__)
+                self.assertEqual((rows[0]["where"], rows[0]["in"], rows[0]["out"], rows[0]["seconds"]),
+                                 ("w", 3, 2, 2), mod.__name__)
+                printed = [l for l in buf.getvalue().splitlines() if l.startswith("[model]")]
+                self.assertEqual(printed, ["[model] w: claude-haiku-y-2", "[model] w: claude-sonnet-x-1"],
+                                 mod.__name__)
+
+    def test_no_model_usage_changes_nothing_else(self):
+        import io, contextlib, tempfile
+        import script
+        with tempfile.TemporaryDirectory() as d:
+            with patch.object(script, "__file__", str(Path(d) / "src" / "m.py")), \
+                    patch.object(script, "SEEN_MODELS", set()):
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    script.log_claude_usage(json.dumps({"usage": {}}), "w")
+                row = json.loads((Path(d) / "data" / "claude_usage.jsonl").read_text())
+        self.assertEqual(row["models"], [])
+        self.assertEqual(buf.getvalue(), "")

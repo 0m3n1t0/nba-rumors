@@ -397,5 +397,88 @@
   "no_photo": [
    "Brian Windhorst"
   ]
+ },
+ {
+  "id": "P1-21",
+  "kind": "title",
+  "source": "run 2026-11-12_43145065648 short_1 (Bucks / Gary Trent Jr. case; Wikipedia's \"Gary Trent\" is his father, born 1974)",
+  "person": "Gary Trent Jr.",
+  "title": "20170329 MCDAAG Gary Trent Jr. on the court",
+  "expect": true,
+  "why": "the real top-up photo of that run: his name with his own suffix (D73)"
+ },
+ {
+  "id": "P1-22",
+  "kind": "title",
+  "source": "run 2026-11-12_43145065648 short_1 (Bucks / Gary Trent Jr. case; Wikipedia's \"Gary Trent\" is his father, born 1974)",
+  "person": "Gary Trent Jr.",
+  "title": "Gary Trent Sr. Raptors 1998.jpg",
+  "expect": false,
+  "why": "his father's photo: another suffix (D73)"
+ },
+ {
+  "id": "P1-23",
+  "kind": "title",
+  "source": "run 2026-11-12_43145065648 short_1 (Bucks / Gary Trent Jr. case; Wikipedia's \"Gary Trent\" is his father, born 1974)",
+  "person": "Gary Trent Jr.",
+  "title": "Gary Trent 1999.jpg",
+  "expect": false,
+  "why": "no suffix in the title: it may be the father (D73, his answer)"
+ },
+ {
+  "id": "P1-24",
+  "kind": "title",
+  "source": "neighbour of run 2026-11-12_43145065648 short_1 (Bucks / Gary Trent Jr. case; Wikipedia's \"Gary Trent\" is his father, born 1974): Jaren Jackson Jr. (father Jaren Jackson Sr.)",
+  "person": "Jaren Jackson Jr.",
+  "title": "Jaren Jackson Jr (2022).jpg",
+  "expect": true,
+  "why": "the suffix without its dot is the same suffix (D73)"
+ },
+ {
+  "id": "P1-25",
+  "kind": "title",
+  "source": "neighbour of run 2026-11-12_43145065648 short_1 (Bucks / Gary Trent Jr. case; Wikipedia's \"Gary Trent\" is his father, born 1974): Tim Hardaway Sr. and Jr.",
+  "person": "Tim Hardaway Sr.",
+  "title": "Tim Hardaway Jr. Knicks 2016.jpg",
+  "expect": false,
+  "why": "the son's photo for the father (D73)"
+ },
+ {
+  "id": "P1-26",
+  "kind": "title",
+  "source": "run 2026-11-13 Doc Rivers (test 46's title)",
+  "person": "Doc Rivers",
+  "title": "Doc Rivers 2.jpg",
+  "expect": true,
+  "why": "a man named without a suffix is unchanged (D73)"
+ },
+ {
+  "id": "P1-27",
+  "kind": "name",
+  "source": "run 2026-11-12_43145065648 short_1 (Bucks / Gary Trent Jr. case; Wikipedia's \"Gary Trent\" is his father, born 1974)",
+  "text": "Bucks rumors: Brian Windhorst warns of guilty verdict, stripped draft picks, suspensions in $64 million Gary Trent Jr. case",
+  "names": [
+   "Gary Trent Jr.",
+   "Brian Windhorst"
+  ],
+  "not_names": [
+   "Gary Trent",
+   "Trent Jr"
+  ],
+  "why": "the suffix stays in his name; \"Trent Jr\" is no name (D73)"
+ },
+ {
+  "id": "P1-28",
+  "kind": "name",
+  "source": "neighbour of run 2026-11-12_43145065648 short_1 (Bucks / Gary Trent Jr. case; Wikipedia's \"Gary Trent\" is his father, born 1974): both Hardaways in one text",
+  "text": "Tim Hardaway Sr. watched Tim Hardaway Jr. score 30 for the Knicks.",
+  "names": [
+   "Tim Hardaway Sr.",
+   "Tim Hardaway Jr."
+  ],
+  "not_names": [
+   "Tim Hardaway"
+  ],
+  "why": "father and son are two people (D73)"
  }
 ]

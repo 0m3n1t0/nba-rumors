@@ -216,6 +216,11 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 120. D73 (his answers 2026-11-19, class P1): a generational suffix (Jr., Sr., II, III, IV) is part of a
+     story person's name; a title counts as his only with the same suffix (solo_title, his_own); his
+     surname is the word before the suffix; a name the script writes bare takes the articles'
+     suffix when every full mention in the articles' text carries that same suffix, else (none,
+     mixed, a bare one, no text) it stays as it is. Cases: tests/cases/p1_who.json P1-21..28.
  119. D84b (his answers 2026-11-19): eval and collect keep the apt .deb files (ffmpeg, espeak-ng) in
      the official cache under one fixed key, renewed only by hand; apt still installs them itself,
      downloading only what the cache lacks; with no cache it installs exactly as before.
@@ -6581,3 +6586,46 @@ class AptPackagesCached(unittest.TestCase):
             self.assertLess(restore, install, name)
             self.assertLess(install, keep, name)
             self.assertNotIn("apt-get install -y -q espeak-ng ffmpeg", wf, name)   # no second install
+
+
+class NameSuffixes(unittest.TestCase):
+    """120. D73 (his answers 2026-11-19, class P1): run 2026-11-12_43145065648 made "Gary Trent Jr."
+    the story person "Gary Trent", and Wikipedia's "Gary Trent" is his father (1974)."""
+
+    def sources(self, d, n, texts):
+        (Path(d) / "sources").mkdir(parents=True, exist_ok=True)
+        (Path(d) / "sources" / f"short_{n}.json").write_text(
+            json.dumps([{"title": t, "summary": "", "text": ""} for t in texts]), encoding="utf-8")
+
+    def test_articles_give_the_suffix(self):
+        import tempfile, media
+        with tempfile.TemporaryDirectory() as d, patch.object(media, "DATA", Path(d)):
+            self.sources(d, 1, ["Gary Trent Jr. case", "Bucks: Gary Trent Jr. suspended"])
+            self.sources(d, 2, ["Gary Trent Jr. case", "Gary Trent was drafted in 1995"])      # a bare one
+            self.sources(d, 3, ["Gary Trent Jr. case", "Gary Trent Sr. said"])                 # mixed
+            self.sources(d, 4, ["Bucks rumors"])                                                # never named
+            self.assertEqual(media.suffix_from_sources("Gary Trent", 1), "Gary Trent Jr.")
+            self.assertEqual(media.suffix_from_sources("Gary Trent", 2), "Gary Trent")
+            self.assertEqual(media.suffix_from_sources("Gary Trent", 3), "Gary Trent")
+            self.assertEqual(media.suffix_from_sources("Gary Trent", 4), "Gary Trent")
+            self.assertEqual(media.suffix_from_sources("Gary Trent", 9), "Gary Trent")         # no text: as today
+
+    def test_people_uses_it_and_keeps_the_count(self):
+        import tempfile, media
+        short = {"n": 1, "headline": "Gary Trent suspended", "hook": "Gary Trent is out.",
+                 "beats": [{"say": "Trent and Kawhi Leonard. Kawhi Leonard again."}]}
+        with tempfile.TemporaryDirectory() as d, patch.object(media, "DATA", Path(d)), \
+                patch.object(media, "real_people", lambda ranked: None):
+            self.sources(d, 1, ["Gary Trent Jr. suspended"])
+            self.assertEqual(media.people(short), ["Gary Trent Jr.", "Kawhi Leonard"])   # 2 + 5 headline vs 2
+            self.sources(d, 1, ["Gary Trent suspended"])
+            self.assertEqual(media.people(short), ["Gary Trent", "Kawhi Leonard"])
+
+    def test_surname_is_before_the_suffix(self):
+        import media
+        self.assertEqual(media.name_parts("Gary Trent Jr."), ["gary", "trent"])
+        self.assertEqual(media.name_parts("Trey Murphy III"), ["trey", "murphy"])
+        self.assertEqual(media.name_parts("Stephen A. Smith"), ["stephen", "a.", "smith"])
+        self.assertTrue(media.names_him("Trent hits the three", "Gary Trent Jr."))
+        self.assertEqual(media.photo_owner({"title": "Trent drives (2024)"}, ["Gary Trent Jr.", "Kawhi Leonard"]),
+                         "Gary Trent Jr.")

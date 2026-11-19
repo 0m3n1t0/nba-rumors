@@ -4,7 +4,8 @@ only where the answer is clear under the agreed rules, with its source and the r
 runs offline on a one-time career snapshot (tests/cases/careers.json) and blocks main: one failing
 case = the pre-push hook refuses the push (his answer "a failing case blocks main").
 
-  P1 who is in the picture   tests/cases/p1_who.json      (the pick: D71; the top-ups: D50, D63, D72)
+  P1 who is in the picture   tests/cases/p1_who.json      (the pick: D71; the top-ups: D50, D63, D72;
+                                                         titles and names with a suffix: D73)
   P2 which uniform / era     tests/cases/p2_uniform.json  (team_fits: D30, D38, D42, D59, D60, D61)
 
 Adding a case: a real one, clear under a rule he agreed, with "source" and "why". A case that today's
@@ -98,6 +99,25 @@ class P1WhoLibrary(unittest.TestCase):
                     photo = {"kind": "photo", **c["photo"]}
                     named = m.screen_players(c["on_screen"], c["who"])
                     self.assertEqual(m.shows_only(photo, named, c["who"], c["on_screen"]), c["expect"], c["why"])
+
+    def test_title_cases(self):
+        # D73: a title counts as a suffixed man's only with the same suffix, both where an unjudged
+        # photo is taken by its title (solo_title) and where the jersey law trusts a title (his_own)
+        with Snapshot() as m:
+            for c in [c for c in load("p1_who.json") if c["kind"] == "title"]:
+                with self.subTest(c["id"], person=c["person"], title=c["title"]):
+                    self.assertEqual(m.solo_title({"title": c["title"]}, c["person"]), c["expect"], c["why"])
+                    self.assertEqual(m.his_own(c["person"], {"title": c["title"]}), c["expect"], c["why"])
+
+    def test_name_cases(self):
+        with Snapshot() as m:
+            for c in [c for c in load("p1_who.json") if c["kind"] == "name"]:
+                with self.subTest(c["id"], text=c["text"]):
+                    got = m.people_names(c["text"])
+                    for n in c["names"]:
+                        self.assertIn(n, got, c["why"])
+                    for n in c["not_names"]:
+                        self.assertNotIn(n, got, c["why"])
 
     def test_top_up_cases(self):
         folder = ROOT / "data" / "_test_case_library"

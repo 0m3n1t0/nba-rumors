@@ -325,10 +325,72 @@ def name_words_ok(name: str) -> bool:
     return name not in NOT_NAMES and not any(w.lower() in GENERIC or w.lower() in STOPWORDS for w in name.split())
 
 
+# D73 (his answers 2026-11-19, class P1): a generational suffix is part of the man's name. Without
+# it "Gary Trent Jr." became "Gary Trent", and Wikipedia's "Gary Trent" is his father (1974, a former
+# NBA player): the career, the category and the photos could be the father's. Same pairs: Hardaway,
+# Jackson, Porter, Nance, Payton.
+SUFFIXES = ("jr", "sr", "ii", "iii", "iv")
+_SUFFIX_FORM = {"jr": "Jr.", "sr": "Sr.", "ii": "II", "iii": "III", "iv": "IV"}
+SUFFIX_AFTER = r"\s*,?\s+(Jr|Sr|JR|SR|II|III|IV)\b\.?"
+
+
+def name_suffix(person: str) -> str:
+    """"jr" for "Gary Trent Jr.", "" for "Gary Trent"."""
+    words = fold(person).replace(".", " ").replace(",", " ").split()
+    return words[-1] if len(words) > 2 and words[-1] in SUFFIXES else ""
+
+
+def name_parts(person: str) -> list[str]:
+    """His folded name words without the suffix: the surname of "Gary Trent Jr." is "trent"."""
+    words = fold(person).replace(",", " ").split()
+    if len(words) > 2 and words[-1].rstrip(".") in SUFFIXES:
+        words = words[:-1]
+    return words
+
+
+def suffix_in_title(title: str, person: str) -> bool:
+    """D73 (his answer): a title counts as a suffixed man's only with the same suffix ("Jr" or
+    "Jr."); a man named without a suffix is unchanged."""
+    suffix = name_suffix(person)
+    return not suffix or bool(re.search(rf"\b{suffix}\b", fold(title).replace("_", " ")))
+
+
+def with_suffix(name: str, text: str) -> list[str]:
+    """The suffixed forms the text gives this name ("Gary Trent" -> ["Gary Trent Jr."]); [] when
+    the text never writes it with a suffix."""
+    found = re.findall(rf"(?<![\w.']){re.escape(name)}{SUFFIX_AFTER}", text or "")
+    return sorted({f"{name} {_SUFFIX_FORM[x.lower()]}" for x in found})
+
+
 def people_names(text: str) -> set[str]:
-    """The collector's names plus the D37 forms (pictures only; the collector is unchanged)."""
-    return (names(text) | {n for a, b in WIDE_NAME.findall(text or "") if name_words_ok(n := f"{a} {b}")}
+    """The collector's names plus the D37 forms (pictures only; the collector is unchanged).
+    D73: a name the text writes with a suffix keeps it ("Gary Trent Jr."); "Trent Jr" is no name."""
+    base = (names(text) | {n for a, b in WIDE_NAME.findall(text or "") if name_words_ok(n := f"{a} {b}")}
             | {n for a, i, b in INITIAL_NAME.findall(text or "") if name_words_ok(n := f"{a} {i} {b}")})
+    out = set()
+    for n in base:
+        if fold(n).split()[-1].rstrip(".") in SUFFIXES:
+            continue
+        out.update(with_suffix(n, text) or [n])
+    return out
+
+
+def suffix_from_sources(name: str, n) -> str:
+    """D73 (his answers): the script says "Gary Trent", the articles only "Gary Trent Jr.": the
+    articles' full name. The articles' full text (data/sources/, what the script was written from);
+    every full mention must carry the same suffix, else (none, mixed, a bare one, or no text) the
+    name stays as it is."""
+    try:
+        kept = json.loads((DATA / "sources" / f"short_{n}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return name
+    text = "\n".join(f"{s.get('title') or ''}\n{s.get('summary') or ''}\n{s.get('text') or ''}"
+                     for s in kept if isinstance(s, dict))
+    mentions = re.findall(rf"(?<![\w.']){re.escape(name)}(?:{SUFFIX_AFTER})?(?![\w'])", text)
+    forms = {x.lower() for x in mentions}
+    if mentions and "" not in forms and len(forms) == 1:
+        return f"{name} {_SUFFIX_FORM[forms.pop()]}"
+    return name
 
 
 def hook_text(short: dict) -> str:
@@ -340,12 +402,19 @@ def people(short: dict) -> list[str]:
     # D48 (run 44034519940; his answer 2026-11-17): the hook is read too, like a beat ("Jayson Tatum"
     # was named in full only in the hook, so he was no person in his own Short)
     text = short.get("headline", "") + ". " + ". ".join([hook_text(short)] + [b.get("say", "") for b in short.get("beats", [])])
-    counts = {n: text.count(n) + (5 if n in short.get("headline", "") else 0) for n in people_names(text)
-              if not not_a_person(n)}
+    found = people_names(text)
+    # D73: a name the script never suffixes takes the articles' suffix when they always give one
+    found = {suffix_from_sources(n, short.get("n")) if not name_suffix(n) else n for n in found}
+    core = lambda n: " ".join(n.split()[:-1]) if name_suffix(n) else n    # noqa: E731
+    one_form = lambda n: sum(core(m) == core(n) for m in found) == 1       # noqa: E731
+    # a name's bare mentions count for it when it is the only form of that name (as before)
+    counts = {n: text.count(core(n) if one_form(n) else n)
+              + (5 if (core(n) if one_form(n) else n) in short.get("headline", "") else 0)
+              for n in found if not not_a_person(n)}
     # D40 (his answer 2026-11-16): a tie goes to the one named first in the headline (the text
     # starts with it), so the story's main person no longer changes from run to run (run 43934705382:
     # JJ Redick and Luka Doncic, 6 each)
-    ranked = sorted(counts, key=lambda n: (-counts[n], text.find(n)))
+    ranked = sorted(counts, key=lambda n: (-counts[n], text.find(core(n) if one_form(n) else n)))
     # Only REAL sports people: a Title Case headline makes fake "names" ("Only Has", "World
     # Reacts", "York Times"), and a fake name finds random photos (a doll, a beach, an arch).
     # Wikipedia decides; if Wikipedia cannot be reached, the old list is used as before.
@@ -360,7 +429,7 @@ def people(short: dict) -> list[str]:
     # name can make another a fragment, so the rule runs after Wikipedia, among the real names.
     # Run 43513168042: the fake "Question Joel" ("Fans Question Joel Embiid") had dropped the real
     # Joel Embiid, and the Short had nobody (11 of 35 kept Shorts lost a real person this way).
-    surnames = {fold(n).split()[-1] for n in pool}
+    surnames = {name_parts(n)[-1] for n in pool}
     return [n for n in pool if fold(n).split()[0] not in surnames][:4]
 
 
@@ -769,8 +838,9 @@ def his_own(person: str, c: dict) -> bool:
     if c.get("own_category"):
         return True
     title = (c.get("title") or "").replace("_", " ")
-    parts = fold(person).split()
-    return len(parts) >= 2 and all(re.search(rf"\b{re.escape(w)}\b", fold(title)) for w in (parts[0], parts[-1]))
+    parts = name_parts(person)
+    return len(parts) >= 2 and all(re.search(rf"\b{re.escape(w)}\b", fold(title)) for w in (parts[0], parts[-1])) \
+        and suffix_in_title(title, person)      # D73 (his answer): the same suffix
 
 
 def team_words(team: str) -> list[str]:
@@ -1044,7 +1114,7 @@ def category_files(person: str) -> list[dict]:
         data = json.loads(get(COMMONS + "?" + urllib.parse.urlencode(params)))
         return [m["title"] for m in data.get("query", {}).get("categorymembers", [])]
 
-    last = fold(person).split()[-1] if person.strip() else ""
+    last = name_parts(person)[-1] if person.strip() else ""
     base = [f"Category:{person} (basketball)", f"Category:{person}"]
     # The person's Wikipedia page title ("Luka Dončić"; the Wikipedia check found it). Commons
     # names a person's category exactly like his Wikipedia page, and a namesake gets an extra
@@ -1254,7 +1324,7 @@ def look_alike_name(person: str, title: str) -> bool:
     are brothers. Only a first name with the same first letter counts (Isaiah/Isiah, Seth/Stephen,
     David/Derek Fisher): "Harden Durant 2013 playoffs" or "James, Durant, Chandler" name two
     players, not a second Durant. Kept: any title that also names the person himself."""
-    p = fold(person).split()
+    p = name_parts(person)
     if len(p) < 2:
         return False
     first, sur = p[0], p[-1]
@@ -2345,9 +2415,9 @@ def solo_title(c: dict, person: str) -> bool:
     """A photo Claude did not look at is used only when its file title names this person in full
     (first AND last name: "Green" alone also matches a green field) and nobody else."""
     title = fold(re.sub(r"\.[a-z0-9]{3,4}$", "", c.get("title", ""), flags=re.I))
-    parts = fold(person).split() if person.strip() else []
+    parts = name_parts(person) if person.strip() else []
     return bool(parts) and all(re.search(rf"\b{re.escape(w)}\b", title) for w in (parts[:1] + parts[-1:])) \
-        and not GROUP_TITLE.search(title)
+        and suffix_in_title(title, person) and not GROUP_TITLE.search(title)      # D73: the same suffix
 
 
 def his_by_title(c: dict, person: str) -> bool:
@@ -2384,7 +2454,7 @@ def names_him(line: str, person: str) -> bool:
     """Does the line name him? His last name (as before) or, D51 (his answer 2026-11-17), his first
     name as a word ("Kyrie has a $42.4 million...", "Is Draymond right..."): 24 of 241 kept lines
     name a story person by first name only. Two men with one first name (two Jalens) both count."""
-    words = fold(person).split()
+    words = name_parts(person)
     text = fold(line or "")
     return bool(words) and (words[-1] in text or bool(re.search(rf"\b{re.escape(words[0])}\b", text)))
 
@@ -2582,7 +2652,7 @@ def photo_owner(c: dict, who: list[str]) -> str:
     if tagged:
         return tagged
     title = fold(c.get("title", ""))
-    hit = [p for p in who if re.search(rf"\b{re.escape(fold(p).split()[-1])}\b", title)]
+    hit = [p for p in who if re.search(rf"\b{re.escape(name_parts(p)[-1])}\b", title)]
     return hit[0] if len(hit) == 1 else ""
 
 
@@ -2777,7 +2847,7 @@ def vs_sides(thumb: str, who: list[str]) -> list[str]:
     out = []
     for side in m.groups():
         words = fold(side).split()
-        hit = [p for p in who if words and fold(p).split()[-1] in words]
+        hit = [p for p in who if words and name_parts(p)[-1] in words]
         if len(hit) != 1:
             return []
         out.append(hit[0])
@@ -2824,7 +2894,7 @@ def tag_people(items: list, who: list[str]) -> None:
     for it in items:
         for x in ([it] + (it.get("alts") or []) if it else []):
             title = fold(x.get("title", ""))
-            hit = [p for p in who if re.search(rf"\b{re.escape(fold(p).split()[-1])}\b", title)]
+            hit = [p for p in who if re.search(rf"\b{re.escape(name_parts(p)[-1])}\b", title)]
             if len(hit) == 1 and not x.get("person"):
                 x["person"] = hit[0]
 

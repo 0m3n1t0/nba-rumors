@@ -785,6 +785,22 @@ def claude_error(result) -> str:
 
 
 def ask_claude(prompt: str, model: str = "", where: str = "script") -> dict:
+    """D83 (classfix eval: the hook truth check "skipped" 14 times - "Extra data", "broken JSON" - so
+    unread hooks could lead; his answer 2026-11-19): an answer that is not ONE JSON object is asked
+    for once more, the same call; a second such answer fails as before (each caller's own rule)."""
+    for again in (1, 2):
+        text = _ask_once(prompt, model, where)
+        start, end = text.find("{"), text.rfind("}")
+        try:
+            return json.loads(text[start:end + 1])        # no object: "" fails here too
+        except ValueError as exc:
+            if again == 2:
+                raise
+            print(f"[!] Claude's answer was not one JSON object ({str(exc)[:60]}): asked once more")
+    raise RuntimeError("unreachable")
+
+
+def _ask_once(prompt: str, model: str = "", where: str = "script") -> str:
     prompt = safe_text(prompt)
     for attempt in (1, 2):
         with tempfile.TemporaryDirectory() as empty:
@@ -801,9 +817,7 @@ def ask_claude(prompt: str, model: str = "", where: str = "script") -> dict:
             raise RuntimeError(f"Claude failed: {claude_error(result)}")
         time.sleep(10)
     log_claude_usage(result.stdout, where)
-    text = json.loads(result.stdout).get("result", "")
-    start, end = text.find("{"), text.rfind("}")
-    return json.loads(text[start:end + 1])
+    return json.loads(result.stdout).get("result", "")
 
 
 # "one", "first" and "second" are left out: in speech they are rarely numbers
@@ -1527,8 +1541,7 @@ def check_hook_truth(hook: dict, sources: list[dict], lead: str = "") -> str:
     """D17 (owner, 2026-11-13: every hook bold, at the edge of the truth, never past it). One light
     call reads the chosen hook against the sources. "ok": kept. "overstated": its bold true
     rewrite replaces it if that passes every hook check again; else the hook steps behind the
-    others ("overstated" is set). Any failure of the call keeps the hook as it was (the other
-    checks - numbers, details, rumor wording, quotes - still run as before)."""
+    others ("overstated" is set). D83: a failed call (after one more ask) sets "overstated" too."""
     try:
         # the main model: telling a bold true line from a false one is judgement, not wording
         ans = ask_claude(HOOK_TRUTH.replace("HOOK_TEXT", hook["text"])
@@ -1536,8 +1549,11 @@ def check_hook_truth(hook: dict, sources: list[dict], lead: str = "") -> str:
     except UsageLimit:
         raise
     except Exception as exc:
-        print(f"[!] hook truth check skipped: {exc}")
-        return "skipped"
+        # D83 (his answer 2026-11-19): a hook that could not be read is treated as overstated: it
+        # steps behind and the next one is read (D75); all of them: the gate holds the Short
+        print(f"[!] hook truth check failed ({exc}): the hook steps behind, as an overstated one")
+        hook["overstated"] = "the truth check could not read it"
+        return "overstated"
     if str((ans or {}).get("verdict", "ok")).lower() != "overstated":
         return "ok"
     why = str(ans.get("why", ""))[:120]

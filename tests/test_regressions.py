@@ -216,6 +216,9 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 117. D83 (his answers 2026-11-19): a Claude answer that is not one JSON object is asked for once
+     more (every call); a hook whose truth check still fails steps behind as an overstated one
+     (test "a failed check changes nothing" became "steps behind": a changed rule).
  116. D82 (his answers 2026-11-19): before the writer one call (the main model) pulls a FACT SHEET,
      word for word, with who and status; items not word for word in their article are dropped; the
      writer, humanize, the hook retry and the repair get it under the articles; the checks do not;
@@ -2626,10 +2629,12 @@ class BoldButTrue(unittest.TestCase):
         hooks.sort(key=lambda h: (bool(h["unsupported_details"]), bool(h.get("recycled")), bool(h.get("overstated"))))
         self.assertEqual(hooks[0]["text"], "b")
 
-    def test_a_failed_check_changes_nothing(self):
+    def test_a_failed_check_steps_behind(self):
+        # changed by D83 (his answer 2026-11-19): it was "skipped" and the hook kept its place, so an
+        # unread hook could lead (classfix eval: 14 such); now it steps behind like an overstated one
         res, hook, _ = self.run_check(ValueError("broken JSON"))
-        self.assertEqual((res, hook["text"]), ("skipped", self.HOOK))
-        self.assertFalse(hook.get("overstated"))
+        self.assertEqual((res, hook["text"]), ("overstated", self.HOOK))
+        self.assertEqual(hook.get("overstated"), "the truth check could not read it")
 
     def test_rule_in_the_prompt_and_wired(self):
         import inspect
@@ -6467,3 +6472,44 @@ class FactSheetFirst(Script):
         self.assertEqual(src.count('.replace("SOURCES_TEXT", format_sources(sources))'), 3)   # the checks: untouched
         import script
         self.assertEqual(script.facts_block([]), "")
+
+
+class OneJsonOrAskAgain(unittest.TestCase):
+    """117. D83 (his answers 2026-11-19). The classfix eval: "hook truth check skipped: Extra data"
+    (two JSON objects) or "broken JSON" 14 times, so the hook kept its place unread. Now every call
+    asks once more when its answer is not one JSON object; a second such answer fails as before."""
+
+    def ask(self, answers):
+        import script
+        calls = []
+
+        def run(cmd, input="", capture_output=True, text=True, cwd=None, timeout=None):
+            calls.append(cmd)
+            return types.SimpleNamespace(returncode=0, stderr="",
+                                         stdout=json.dumps({"result": answers[len(calls) - 1]}))
+        with patch.object(script.subprocess, "run", run), patch.object(script, "log_claude_usage", lambda *a: None):
+            try:
+                return script.ask_claude("p"), len(calls)
+            except ValueError as exc:
+                return exc, len(calls)
+
+    def test_one_object_one_call(self):
+        self.assertEqual(self.ask(['Sure: {"verdict": "ok"} done']), ({"verdict": "ok"}, 1))
+
+    def test_two_objects_ask_again(self):
+        got, n = self.ask(['{"verdict": "ok"}\n\n{"verdict": "overstated"}', '{"verdict": "overstated", "why": "x"}'])
+        self.assertEqual((got, n), ({"verdict": "overstated", "why": "x"}, 2))
+
+    def test_no_object_ask_again_then_fail(self):
+        got, n = self.ask(["I cannot judge this.", "still no json"])
+        self.assertIsInstance(got, ValueError)
+        self.assertEqual(n, 2)
+
+    def test_the_limit_is_not_retried(self):
+        import script
+
+        def run(*a, **k):
+            return types.SimpleNamespace(returncode=1, stdout="", stderr="You've hit your usage limit")
+        with patch.object(script.subprocess, "run", run):
+            with self.assertRaises(script.UsageLimit):
+                script.ask_claude("p")

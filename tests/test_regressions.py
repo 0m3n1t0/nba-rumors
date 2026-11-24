@@ -216,6 +216,11 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 122. D86 (his answer 2026-11-24, class E1): a Google trend counts for a story only when the search
+     itself names one of its real people: by full name, or by surname with basketball in the search
+     or its headlines; a headline merely naming him no longer counts. The 6 real trend hits of 31
+     runs: 4 right kept (Bronny James x2, Caleb Wilson x2), 2 wrong dropped (tacko fall -> a
+     Tatum-Brown story, philip rivers -> a Doc Rivers story). test_compliance 28 changed with it.
  121. D77 (his answers 2026-11-19): smoke.yml makes one fixed stored story (state nba/smoke/, a kept
      Short with a VS card) again after every push that changes the code, WITHOUT Claude: voice,
      voice check, video, gate; one fixed music track (the library's first); a technical failure or
@@ -6715,3 +6720,34 @@ class SmokeTest(unittest.TestCase):
                                        "python src/render.py", "python src/gate.py", "python src/smoke.py check")]
         self.assertEqual(steps, sorted(steps))
         self.assertIn("contents: read", wf)
+
+
+class TrendsAboutHim(unittest.TestCase):
+    """122. D86 (his answer 2026-11-24, class E1): every trend hit of the 31 kept runs."""
+
+    def test_real_hits(self):
+        import signals
+        real = [  # (run, star_names, trending search, right?)
+            ("2026-11-11_43080115985", ["Bronny James 3.6"], "los angeles lakers bronny james", True),
+            ("2026-11-11_43088629255", ["Bronny James 3.6"], "los angeles lakers bronny james", True),
+            ("2026-11-12_43145065648", ["Caleb Wilson 0.3"], "caleb wilson", True),
+            ("2026-11-12_43317261723", ["Stephen Curry 5.4", "Caleb Wilson 0.6"], "caleb wilson", True),
+            ("2026-11-13_43353547001", ["Jaylen Brown 3.4", "Jayson Tatum 2.7"], "tacko fall", False),
+            ("2026-11-13_43485568700", ["Jaylen Brown 3.7", "Jayson Tatum 3.1", "Doc Rivers 2.5"], "philip rivers", False),
+        ]
+        for run, stars, query, right in real:
+            with self.subTest(run, query=query):
+                # the headlines were not kept: Tacko Fall's may well name Tatum and the Celtics (a
+                # headline alone no longer counts); Philip Rivers's are about the NFL
+                news = {"tacko fall": ["Tacko Fall, Jayson Tatum and the Celtics react"],
+                        "philip rivers": ["Philip Rivers back with the Colts"]}.get(query, [])
+                self.assertEqual(signals.trend_matches({"star_names": stars}, {"query": query, "news": news}), right)
+
+    def test_surname_needs_basketball(self):
+        import signals
+        doc = {"star_names": ["Doc Rivers 2.5"]}
+        self.assertTrue(signals.trend_matches(doc, {"query": "doc rivers", "news": []}))           # full name
+        self.assertTrue(signals.trend_matches(doc, {"query": "rivers bucks", "news": []}))         # + basketball
+        self.assertTrue(signals.trend_matches(doc, {"query": "rivers", "news": ["Rivers on the Bucks"]}))
+        self.assertFalse(signals.trend_matches(doc, {"query": "philip rivers", "news": ["Colts QB returns"]}))
+        self.assertFalse(signals.trend_matches(doc, {"query": "bucks news", "news": ["Doc Rivers fired"]}))  # headline only

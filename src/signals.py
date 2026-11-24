@@ -302,14 +302,18 @@ def star_keys(topic: dict) -> set[str]:
 
 
 def trend_matches(topic: dict, trend: dict) -> bool:
-    """The trending search itself names one of the topic's real people, or one of its news
-    headlines names them AND is about basketball."""
-    keys = star_keys(topic)
-    if not keys:
-        return False
-    if mentions(keys, trend.get("query", "")):
+    """D86 (his answer 2026-11-24, class E1): the trend must be ABOUT one of the topic's real
+    people: the trending search itself names him. A key that is only a surname ("rivers" for Doc
+    Rivers) also needs basketball in the search or in its headlines ("philip rivers", an NFL
+    quarterback, lifted a Doc Rivers story to 6.6). A headline merely mentioning him no longer
+    counts ("tacko fall" lifted a Tatum-Brown story to 6.0)."""
+    query = trend.get("query", "")
+    full = {re.sub(r"\s+[\d.]+$", "", e).strip().lower() for e in topic.get("star_names") or []} - {""}
+    if mentions(full, query):                       # his full name: it is about him
         return True
-    return any(mentions(keys, n) and NBA_WORDS.search(n) for n in trend.get("news", []))
+    surname_only = {k for k in star_keys(topic) if " " not in k}
+    return mentions(surname_only, query) and bool(
+        NBA_WORDS.search(" ".join([query] + list(trend.get("news", [])))))
 
 
 def mentions(keys: set[str], text: str) -> bool:

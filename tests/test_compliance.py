@@ -504,7 +504,8 @@ class Stage3(unittest.TestCase):
         self.assertFalse(signals.trend_matches(topic, {"query": "sarah jukaku", "news": ["Sarah Jukaku stuns fans"]}))
         self.assertFalse(signals.trend_matches(topic, {"query": "snowfall forecast", "news": ["Snow in Boston"]}))
         self.assertTrue(signals.trend_matches(topic, {"query": "jayson tatum", "news": []}))
-        self.assertTrue(signals.trend_matches(topic, {"query": "celtics 76ers", "news": ["Tatum and the Celtics fall"]}))
+        # D86 (his answer 2026-11-24): a headline merely naming him no longer counts; the search must
+        self.assertFalse(signals.trend_matches(topic, {"query": "celtics 76ers", "news": ["Tatum and the Celtics fall"]}))
         self.assertFalse(signals.trend_matches({"star_names": []}, {"query": "lineup", "news": []}))
         self.assertGreaterEqual(editor.MIN_SCORE, 60)
 

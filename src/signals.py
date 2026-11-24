@@ -93,18 +93,53 @@ def suggestions(seed: str) -> list[str]:
 
 # ---------- Matching topics to signals ----------
 
+# D87 (his answers 2026-11-24, class E1): ONE rule for all four audience signals (YouTube heat,
+# search phrases, Reddit, Google Trends): a surname alone stands for a man only when no OTHER
+# sports person with that surname is in today's top stories, as Wikipedia confirms them (the same
+# page = the same man: "Steph Curry" = "Stephen Curry"); else his full name is needed ("cunningham"
+# was Cade, NBA, and Sophie, WNBA). The common-surname list stays (smith, james...). When Wikipedia
+# cannot be reached, OWNERS stays empty and the surname rule is as before (his answer).
+OWNERS: dict[str, set[str]] = {}
+
+
+def _fold(text: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)).lower()
+
+
+def surname_of(title: str) -> str:
+    """"jalen green" for "Jalen Green (basketball)", "trent" for "Gary Trent Jr."."""
+    words = _fold(re.sub(r"\s*\(.*?\)", "", title)).replace(",", " ").split()
+    if len(words) > 2 and words[-1].rstrip(".") in ("jr", "sr", "ii", "iii", "iv"):
+        words = words[:-1]
+    return words[-1] if words else ""
+
+
+def surname_owners(resolved: dict[str, str]) -> dict[str, set[str]]:
+    """Surname -> the Wikipedia pages (sports people) of today's stories that carry it."""
+    owners: dict[str, set[str]] = {}
+    for title in set(resolved.values()):
+        if surname_of(title):
+            owners.setdefault(surname_of(title), set()).add(title)
+    return owners
+
+
+def key_for(name: str) -> str:
+    """The search key for one person: the surname alone, or the full name when the surname is
+    common, short, or shared today by another sports person (D87)."""
+    last = name.split()[-1].lower()                      # as before D87 (no folding, suffix kept)
+    shared = len(OWNERS.get(surname_of(name), set())) > 1
+    return name.lower() if last in COMMON_SURNAMES or len(last) < 5 or shared else last
+
+
 def topic_keys(topic: dict) -> set[str]:
     """Surnames of the people in a topic. Team names are NOT used: every full-game
     highlight video has two team names, so teams would make every topic look hot."""
     found = set()
     for title in [topic["headline"]] + [it["title"] for it in topic["items"][:6]]:
         found |= names(title)  # per title, so two titles never glue into a fake name
-    keys = set()
-    for n in found:
-        last = n.split()[-1].lower()
-        # A rare surname alone is enough ("embiid"); a common one needs the full name ("jalen smith").
-        keys.add(n.lower() if last in COMMON_SURNAMES or len(last) < 5 else last)
-    return keys
+    # A rare surname alone is enough ("embiid"); a common or shared one needs the full name (D87).
+    return {key_for(n) for n in found}
 
 
 COMMON_SURNAMES = set("""smith johnson williams brown jones james green davis miller wilson moore
@@ -160,7 +195,7 @@ WIKI_UA = {"User-Agent": "nba-rumors-pipeline/1.0 (https://github.com/0m3n1t0/nb
 SPORTS_DESC = re.compile(r"basketball|\bnba\b|coach|executive|sports|athlete|broadcaster|analyst", re.I)
 
 
-def wiki_fame(all_names: set[str]) -> dict[str, float]:
+def wiki_fame(all_names: set[str], resolved_out: dict | None = None) -> dict[str, float]:
     """How famous each person is RIGHT NOW: English Wikipedia views of their page in the last
     7 days (free, no key), 0-10 on a log scale (7K views a week ~ 0, 70K ~ 5, 700K+ = 10).
     Names are resolved through Wikipedia's redirects first ("Nikola Jokic" -> "Nikola Jokić",
@@ -185,6 +220,8 @@ def wiki_fame(all_names: set[str]) -> dict[str, float]:
             t = alias.get(alias.get(n, n), alias.get(n, n))
             if t in sports:
                 resolved[n] = t
+    if resolved_out is not None:
+        resolved_out.update(resolved)
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=6)
     views: dict[str, int] = {}
@@ -295,9 +332,8 @@ def star_keys(topic: dict) -> set[str]:
     keys = set()
     for entry in topic.get("star_names") or []:
         name = re.sub(r"\s+[\d.]+$", "", entry).strip()      # "Jayson Tatum 6.1" -> "Jayson Tatum"
-        last = name.split()[-1].lower() if name else ""
-        if last:
-            keys.add(name.lower() if last in COMMON_SURNAMES or len(last) < 5 else last)
+        if name:
+            keys.add(key_for(name))                           # the same rule as topic_keys (D87)
     return keys
 
 
@@ -339,6 +375,25 @@ def main() -> None:
         signals["errors"].append(f"google trends: {exc}")
         print(f"[!] Google Trends signal skipped: {exc}")
 
+    # Star power: how famous the people in each story are right now (Wikipedia views). First
+    # (D87): the signals below need to know which surnames today's people share.
+    OWNERS.clear()                     # nothing known (Wikipedia unreachable): the rule as before
+    try:
+        people = {t_i: set().union(*[names(x) for x in [t["headline"]] + [it["title"] for it in t["items"][:6]]])
+                  for t_i, t in enumerate(topics[:TOP_TOPICS])}
+        resolved: dict[str, str] = {}
+        fame = wiki_fame(set().union(*people.values()) if people else set(), resolved)
+        # D87: before the signals are matched, which surnames today's sports people share
+        OWNERS.update(surname_owners(resolved))
+        for t_i, t in enumerate(topics[:TOP_TOPICS]):
+            ranked = sorted(((fame.get(n, 0), n) for n in people[t_i]), reverse=True)
+            t["star_fame"] = ranked[0][0] if ranked else 0
+            t["star_names"] = [f"{n} {f}" for f, n in ranked[:3] if f]
+        print(f"[+] Star power: {sum(1 for f in fame.values() if f)} people found on Wikipedia")
+    except Exception as exc:
+        signals["errors"].append(f"star power: {exc}")
+        print(f"[!] star power skipped: {exc}")
+
     # Seeds: general NBA ones plus today's top names (what people type about them).
     top_names = []
     for t in topics[:15]:
@@ -370,20 +425,6 @@ def main() -> None:
         # 0-10 relative to today's hottest topic (square root: differences stay visible,
         # one monster video still does not flatten everything else)
         t["youtube_heat"] = round(10 * math.sqrt(raw[i] / top), 1) if raw[i] else 0
-
-    # Star power: how famous the people in each story are right now (Wikipedia views)
-    try:
-        people = {t_i: set().union(*[names(x) for x in [t["headline"]] + [it["title"] for it in t["items"][:6]]])
-                  for t_i, t in enumerate(topics[:TOP_TOPICS])}
-        fame = wiki_fame(set().union(*people.values()) if people else set())
-        for t_i, t in enumerate(topics[:TOP_TOPICS]):
-            ranked = sorted(((fame.get(n, 0), n) for n in people[t_i]), reverse=True)
-            t["star_fame"] = ranked[0][0] if ranked else 0
-            t["star_names"] = [f"{n} {f}" for f, n in ranked[:3] if f]
-        print(f"[+] Star power: {sum(1 for f in fame.values() if f)} people found on Wikipedia")
-    except Exception as exc:
-        signals["errors"].append(f"star power: {exc}")
-        print(f"[!] star power skipped: {exc}")
 
     # Google Trends: a trending US search about this topic's people (0-10, log of the traffic:
     # 200+ searches ~ 4.6, 20K+ ~ 8.6, 100K+ = 10). Only through REAL sports people (the names

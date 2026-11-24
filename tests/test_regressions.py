@@ -216,6 +216,12 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 123. D87 (his answers 2026-11-24, class E1): one rule for all four audience signals (YouTube heat,
+     search phrases, Reddit, Google Trends): a surname alone stands for a man only when no other
+     sports person with that surname is in today's top stories, as Wikipedia confirms them (one
+     page = one man); else his full name. Star power runs first so the signals know. Wikipedia
+     unreachable: as before. Real data: 2 of 1200 topics changed, both the Cunningham pair
+     (run 2026-11-13_43407418420: Cade, NBA, and Sophie, WNBA).
  122. D86 (his answer 2026-11-24, class E1): a Google trend counts for a story only when the search
      itself names one of its real people: by full name, or by surname with basketball in the search
      or its headlines; a headline merely naming him no longer counts. The 6 real trend hits of 31
@@ -6751,3 +6757,54 @@ class TrendsAboutHim(unittest.TestCase):
         self.assertTrue(signals.trend_matches(doc, {"query": "rivers", "news": ["Rivers on the Bucks"]}))
         self.assertFalse(signals.trend_matches(doc, {"query": "philip rivers", "news": ["Colts QB returns"]}))
         self.assertFalse(signals.trend_matches(doc, {"query": "bucks news", "news": ["Doc Rivers fired"]}))  # headline only
+
+
+class OneSurnameRule(unittest.TestCase):
+    """123. D87 (his answers 2026-11-24, class E1): run 2026-11-13_43407418420 had a Cade Cunningham
+    story and a Sophie Cunningham story; "cunningham" credited each with the other's signals."""
+
+    def setUp(self):
+        import signals
+        self.s = signals
+        self.addCleanup(signals.OWNERS.clear)
+        signals.OWNERS.clear()
+
+    def owners(self, resolved):
+        self.s.OWNERS.clear()
+        self.s.OWNERS.update(self.s.surname_owners(resolved))
+
+    def test_shared_surname_needs_the_full_name_everywhere(self):
+        sophie = {"star_names": ["Sophie Cunningham 3.0"], "headline": "Sophie Cunningham says the fan was ejected",
+                  "items": [{"title": "Sophie Cunningham on the ejected fan"}]}
+        cade = {"star_names": ["Cade Cunningham 5.0"], "headline": "Cade Cunningham scores 52", "items": []}
+        self.assertEqual(self.s.star_keys(sophie), {"cunningham"})                 # nothing known: as before
+        self.owners({"Sophie Cunningham": "Sophie Cunningham", "Cade Cunningham": "Cade Cunningham"})
+        self.assertEqual(self.s.star_keys(sophie), {"sophie cunningham"})          # Reddit, Trends
+        self.assertEqual(self.s.star_keys(cade), {"cade cunningham"})
+        self.assertIn("sophie cunningham", self.s.topic_keys(sophie))               # YouTube, search
+        self.assertNotIn("cunningham", self.s.topic_keys(sophie))
+        self.assertEqual(self.s.reddit_heat(sophie, ["Cade Cunningham drops 52 on the Lakers"]), 0.0)
+        self.assertFalse(self.s.trend_matches(sophie, {"query": "cunningham pistons", "news": []}))
+        self.assertTrue(self.s.trend_matches(cade, {"query": "cade cunningham", "news": []}))
+
+    def test_one_page_is_one_man(self):
+        self.owners({"Steph Curry": "Stephen Curry", "Stephen Curry": "Stephen Curry",
+                     "Jalen Green": "Jalen Green (basketball)", "Gary Trent Jr.": "Gary Trent Jr."})
+        self.assertEqual(self.s.star_keys({"star_names": ["Stephen Curry 9"]}), {"curry"})   # not shared
+        self.assertEqual(self.s.surname_of("Jalen Green (basketball)"), "green")
+        self.assertEqual(self.s.surname_of("Gary Trent Jr."), "trent")
+        self.assertEqual(self.s.surname_of("Luka Dončić"), "doncic")
+        self.assertEqual(self.s.star_keys({"star_names": ["Luka Dončić 9"]}), {"dončić"})    # key as before
+
+    def test_unique_surname_and_the_old_list_unchanged(self):
+        self.owners({"Joel Embiid": "Joel Embiid", "LeBron James": "LeBron James"})
+        self.assertEqual(self.s.star_keys({"star_names": ["Joel Embiid 8"]}), {"embiid"})
+        self.assertEqual(self.s.star_keys({"star_names": ["LeBron James 9"]}), {"lebron james"})   # common list
+
+    def test_star_power_runs_before_the_signals(self):
+        src = (ROOT / "src" / "signals.py").read_text(encoding="utf-8")
+        main = src[src.index("def main()"):]
+        star = main.index("OWNERS.update(surname_owners(resolved))")
+        self.assertLess(main.index("OWNERS.clear()"), star)
+        for later in ("raw[i] = sum(", "t[\"search_hits\"] =", "trend_matches(t, g)", "reddit_heat(t, "):
+            self.assertLess(star, main.index(later), later)

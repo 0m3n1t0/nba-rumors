@@ -621,6 +621,7 @@ _nba_debut_day: dict[str, str] = {}               # Wikidata item -> "YYYY-MM-DD
 _career: dict[str, set[str]] = {}                 # Wikidata item -> every NBA team he played for
 _spells: dict[str, list[tuple[str, int, int]]] = {}   # Wikidata item -> (NBA team, first year, last year), infobox
 _coached: dict[str, set[str]] = {}                # Wikidata item -> NBA teams he coached (infobox coach_teamN)
+_coach_since: dict[str, int] = {}                 # D90b: Wikidata item -> year his coaching spell "present" began
 _college: dict[str, list[str]] = {}               # Wikidata item -> his college's names (infobox "college =")
 
 
@@ -709,6 +710,8 @@ def add_wiki_career(person: str, q: str) -> None:
     teams, current, since, start = wiki_career(text)
     _spells[q] = wiki_spells(text)
     _coached[q] = wiki_coached(text)
+    if wiki_coach_since(text):
+        _coach_since[q] = wiki_coach_since(text)     # D90b (his answer 2026-11-26: coaches too)
     _college[q] = wiki_college(text)
     if not teams:
         return                         # no NBA spell on the page: nothing to add
@@ -824,6 +827,24 @@ def wiki_coached(text: str) -> set[str]:
         if name in NBA_TEAMS:
             out.add(name)
     return out
+
+
+def wiki_coach_since(text: str) -> int:
+    """D90b (his answer 2026-11-26: coaches too): the year his NBA coaching spell ending "present" began
+    (infobox coach_teamN with its coach_yearsN), else 0 (unknown: nothing changes, his answer)."""
+    fields = {m.group(1).lower(): m.group(2).strip()
+              for m in re.finditer(r"^[ \t]*\|[ \t]*(coach_(?:team|years)\d+)[ \t]*=[ \t]*(.*?)[ \t]*$", text or "", re.M | re.I)}
+    for key, value in fields.items():
+        m = re.fullmatch(r"coach_team(\d+)", key)
+        if not m:
+            continue
+        link = re.search(r"\[\[([^\]|]+)", value)
+        name = fold((link.group(1) if link else re.sub(r"<[^>]*>|\{\{[^}]*\}\}", "", value)).strip())
+        years = fields.get(f"coach_years{m.group(1)}", "")
+        start = re.search(r"((?:19|20)\d\d)", years)
+        if name in NBA_TEAMS and start and re.search(r"present", years, re.I):
+            return int(start.group(1))
+    return 0
 
 
 def wiki_career(text: str) -> tuple[set[str], str, int, int]:
@@ -2820,9 +2841,11 @@ def photo_era_of(c: dict, person: str) -> dict:
     t = c.get("tag") or {}
     if person and college_photo(c, person):
         c["team"] = "pre-nba"                # D62: his college in the tag note (or the title, untagged)
+    year = (c.get("date") or "")[:4]
     return {"jersey": jersey_team(t), "pre_nba": c.get("team") == "pre-nba",
             "former": c.get("team") == "former", "national": national_photo(c),
-            "national_only": bool(c.get("national_only"))}
+            "national_only": bool(c.get("national_only")),
+            "year": int(year) if year.isdigit() else 0}      # D90b: the year it was taken, 0 = unknown
 
 
 def line_scope(line: str, person: str, names: list[str] | tuple = ()) -> dict:
@@ -2840,7 +2863,10 @@ def line_scope(line: str, person: str, names: list[str] | tuple = ()) -> dict:
             "timed": names_a_time(line, person), "national_line": bool(NATIONAL_LINE.search(fold(line or ""))),
             "current": current,
             "past_years": [int(y) for y in LINE_YEAR.findall(line or "") if not current or (since and int(y) < since)],
-            "spells": _spells.get(_wikidata.get(person, ""), []) if person else []}
+            "spells": _spells.get(_wikidata.get(person, ""), []) if person else [],
+            # D90b: when today's spell began (playing; else coaching, his answer), and the line's years
+            "since": (since or _coach_since.get(_wikidata.get(person, ""), 0)) if person else 0,
+            "line_years": [int(y) for y in LINE_YEAR.findall(line or "")]}
 
 
 def era_allowed(era: dict, scope: dict) -> bool:
@@ -2865,6 +2891,12 @@ def era_allowed(era: dict, scope: dict) -> bool:
         return True
     # a time ("now", "this season", a year of today's spell): today's team (D42)
     if era["former"]:
+        return False
+    # D90b (his answers 2026-11-26): a time means the team and role he had then; a photo taken before
+    # today's spell began is from another team or role (Kerr 2013, before the Warriors). Unknown photo
+    # year or spell start: as before. A line whose year is before that start is about his past: as before.
+    if era.get("year") and scope.get("since") and era["year"] < scope["since"] \
+            and all(y >= scope["since"] for y in scope.get("line_years", [])):
         return False
     return not (era["jersey"] and scope["current"] and era["jersey"] != scope["current"])
 

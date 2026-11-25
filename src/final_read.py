@@ -54,7 +54,10 @@ it, against the SOURCE TEXTS it was written from. Report only CLEAR errors of th
 4. WRONG PICTURE: the viewer would take the wrong man for the one the line is about: another
    man with the same name; someone else shown while the line says what HE said or did ("He
    wrote...", "Murray deleted it" over a teammate's photo); or, when the line names a team or a
-   time ("as a Laker", "in 2004"), a picture from another team or time. NOT an error (at most a
+   time ("as a Laker", "in 2004"), a picture from another team or time. A time means the team and
+   role he had then (D90b): a picture of him in that same team and role is right even when taken in
+   another year ("In 2024, Kerr said..." over Kerr as the Warriors' coach in 2017 is fine; Kerr in
+   2013, before he coached the Warriors, IS an error). NOT an error (at most a
    doubt): another person from this story on a line about the team or the story as a whole, or
    the right man in a former team's jersey when the line names no team or time (the channel's
    picture rules allow both when better photos are missing). That exception is only for a line

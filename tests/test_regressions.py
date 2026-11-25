@@ -216,6 +216,14 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 141. D90b/c (his answers 2026-11-26; class P2/Q1, two stages disagreed): a time named on a line
+     ("In 2024, Kerr said...") means the team and role he had then. The final read no longer calls a
+     photo of him in that same team and role from another year an error (Kerr as the Warriors'
+     coach in 2017); the picker now refuses, on a line about today's spell, a photo taken before
+     that spell began (Kerr 2013, before the Warriors), using the playing spell or, for a coach,
+     the infobox coaching spell ending "present" (coach_teamN / coach_yearsN). Unknown photo year
+     or spell start, or a line whose year is before the start (his past): as before. D90c: the
+     eval report's on_screen list starts with the hook, so its index is the final read's line.
  140. D91 Q1 (his answer 2026-11-25: then the gate's copies): gate.py kept COPIES of the media
      stage's rules (BROADCAST, BROADCAST_AMBIG, GROUP_TITLE, SUFFIXES, the full-name test, the
      group test), matched by hand at D44, D73 and D96; now it uses media's own definitions
@@ -5786,7 +5794,7 @@ class QualityEval(unittest.TestCase):
         self.assertEqual(r["final_read_full"]["doubts"], [{"line": 2, "what": "x"}])
         self.assertEqual(r["fixes"][0]["stopped"], "no progress")
         self.assertEqual(r["picture_choice"][0][0]["person"], "Draymond Green")
-        self.assertEqual(r["on_screen"], ["Steph Curry"])
+        self.assertEqual(r["on_screen"], ["HOOK", "Steph Curry"])   # D90c (his answer): line 0 is the hook
 
     def test_not_made_is_a_problem(self):
         r = self.e.result_of({"id": "a", "headline": "h"}, None, "no article")
@@ -8120,3 +8128,48 @@ class GateUsesMediaRules(unittest.TestCase):
                            ("Jaylen_Brown_2022.jpg", "Jaylen Brown", True), ("Green field.jpg", "Draymond Green", False)):
             self.assertEqual(gate.full_name_in(t, p), want, t)
             self.assertEqual(media.full_name_in_title(t, p), want, t)
+
+
+class TimeMeansTeamAndRole(unittest.TestCase):
+    """141. D90b/c: a named time = his team and role then; photos before today's spell refused."""
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.scope = {"nba_named": False, "named": set(), "timed": True, "national_line": False, "current": "",
+                      "past_years": [], "spells": [], "since": 2014, "line_years": [2024]}
+        self.era = {"jersey": "", "pre_nba": False, "former": False, "national": False, "national_only": False}
+
+    def test_photo_before_spell_refused(self):
+        m = self.m
+        self.assertFalse(m.era_allowed({**self.era, "year": 2013}, self.scope))      # Kerr 2013: before the Warriors
+        self.assertTrue(m.era_allowed({**self.era, "year": 2017}, self.scope))       # same team and role, another year
+        self.assertTrue(m.era_allowed({**self.era, "year": 0}, self.scope))          # unknown photo year: as before
+        self.assertTrue(m.era_allowed({**self.era, "year": 2013}, {**self.scope, "since": 0}))   # unknown start
+        self.assertTrue(m.era_allowed({**self.era, "year": 1997}, {**self.scope, "line_years": [1997]}))  # his past
+        self.assertFalse(m.era_allowed({**self.era, "year": 2013}, {**self.scope, "line_years": []}))      # "now"
+        self.assertTrue(m.era_allowed({**self.era, "year": 2013}, {**self.scope, "timed": False}))         # no time
+
+    def test_photo_year_and_coach_spell(self):
+        m = self.m
+        from unittest.mock import patch
+        self.assertEqual(m.photo_era_of({"date": "2013-05-02", "tag": {}}, "")["year"], 2013)
+        self.assertEqual(m.photo_era_of({"tag": {}}, "")["year"], 0)
+        box = "| coach_team1 = [[Golden State Warriors]]\n| coach_years1 = {{nbay|2014|start}}\u2013present\n"
+        self.assertEqual(m.wiki_coach_since(box), 2014)
+        self.assertEqual(m.wiki_coach_since(box.replace("present", "2018")), 0)      # an ended spell
+        with patch.object(m, "teams_of", lambda p: ("", set())), patch.object(m, "career_teams", lambda p: set()), \
+                patch.dict(m._wikidata, {"Steve Kerr": "Qkerr"}), patch.dict(m._coach_since, {"Qkerr": 2014}):
+            sc = m.line_scope("In 2024, Kerr said he felt like an idiot.", "Steve Kerr")
+            self.assertEqual((sc["since"], sc["line_years"], sc["timed"]), (2014, [2024], True))
+            kerr_2013 = {"kind": "photo", "title": "Steve Kerr 2013.jpg", "date": "2013-01-01", "tag": {"v": "C"}}
+            kerr_2017 = {**kerr_2013, "title": "Steve Kerr Talks to Reporters.jpg", "date": "2017-03-01"}
+            line = "In 2024, Kerr said he felt like an idiot."
+            self.assertFalse(m.team_fits(kerr_2013, line, "Steve Kerr"))
+            self.assertTrue(m.team_fits(kerr_2017, line, "Steve Kerr"))
+
+    def test_final_read_and_report(self):
+        fr = (ROOT / "src" / "final_read.py").read_text(encoding="utf-8")
+        self.assertIn("A time means the team and\n   role he had then (D90b)", fr)
+        ev = (ROOT / "src" / "eval_run.py").read_text(encoding="utf-8")
+        self.assertIn('"on_screen": ["HOOK"] + [b.get("on_screen", "") for b in short.get("beats") or []]', ev)

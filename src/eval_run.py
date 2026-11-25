@@ -218,7 +218,8 @@ def result_of(story: dict, short: dict | None, why_not: str = "") -> dict:
                              "match": x.get("match"), "his_own": x.get("his_own"), "team": x.get("team"),
                              "jersey": x.get("jersey"), "tag": (x.get("tag") or {}).get("t"), "kind": x.get("kind")}
                             for x in [it] + (it.get("alts") or []) if x] if it else [] for it in media],
-        "on_screen": [b.get("on_screen", "") for b in short.get("beats") or []],
+        # D90c: line 0 is the hook (as media.spoken and the final read number them), then the beats
+        "on_screen": ["HOOK"] + [b.get("on_screen", "") for b in short.get("beats") or []],
         "format": short.get("format") or "breakdown", "sides": short.get("sides") or [],
         "script": {"hook": (short.get("hook") or {}).get("text", ""), "beats": [b.get("say", "") for b in short.get("beats") or []],
                    "pictures": [[(x or {}).get("title", "") for x in [it] + (it.get("alts") or [])] if it else []

@@ -57,20 +57,22 @@ jobs:
           python src/collect.py
           python src/signals.py
 
-      - name: Competitor scan (benchmark + yt-viral), for the daily editor and script
-        continue-on-error: true
-        env:
-          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
-          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-        run: |
-          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/private_summary.md"   # the competitor scan stays private
-          python src/benchmark.py
-
+      # D96 module 6 part 4: before the competitor scan (its ambiguous title words are judged by Claude)
       - name: Install Claude Code
         run: |
           curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/claude" --version
+
+      - name: Competitor scan (benchmark + yt-viral), for the daily editor and script
+        continue-on-error: true
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/private_summary.md"   # the competitor scan stays private
+          python src/benchmark.py
 
       - name: "yt-plan, yt-audit, yt-retention"
         env:

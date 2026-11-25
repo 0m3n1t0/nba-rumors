@@ -801,7 +801,10 @@ def college_photo(c: dict, person: str) -> bool:
     names = _college.get(_wikidata.get(person, ""), [])
     if not names:
         return False
-    text = fold((c.get("title") or "").replace("_", " ") + " " + ((c.get("tag") or {}).get("t") or ""))
+    # D96 module 6 part 4: a tagged photo by what the tagger saw (its note: "San Diego State");
+    # the title only for a photo nobody looked at ("Barkley at East Carolina University" is an interview)
+    tag = c.get("tag") or {}
+    text = fold(tag.get("t") or "") if tag.get("s") else fold((c.get("title") or "").replace("_", " "))
     for name in names:
         if not re.search(rf"\b{re.escape(name)}\b", text):
             continue
@@ -918,14 +921,26 @@ PRE_NBA_TEXT = re.compile(
     r"(?<!national )men'?s basketball (?:players|team))\b", re.I)   # no words with an NBA/NHL meaning
 
 
-def photo_team(person: str, text: str, year: int | None = None) -> str:
+def team_marks(person: str, text: str, year: int | None = None) -> dict:
+    """D96 module 6 part 4 (his answer 2026-11-25: the tagger decides, its scene OR its note): the
+    photo's team mark at collection; when only the title's pre-NBA words made it "pre-nba", the
+    mark without them is kept too, so the tag can undo it (photo_tags._apply)."""
+    team = photo_team(person, text, year)
+    if team == "pre-nba":
+        plain = photo_team(person, text, year, use_text=False)
+        if plain != "pre-nba":
+            return {"team": team, "pre_nba_text": True, "team_without_text": plain}
+    return {"team": team}
+
+
+def photo_team(person: str, text: str, year: int | None = None, use_text: bool = True) -> str:
     """"current": the photo names his current team; "former": it names only a former team of his
     ("Celtics at Wizards" for Jaylen Brown, now a 76er); "" when it says nothing about his team
     (then nothing changes for it). A photo taken BEFORE his current spell began cannot show
     today's uniform ("Celtics at 76ers 2023" names the 76ers, but Brown was a Celtic then).
     "pre-nba": taken before his first NBA season (run 43066151290 showed Brown at a 2015 high
     school all-star game in a Short about his NBA feud)."""
-    if PRE_NBA_TEXT.search(text or "") and not re.search(r"\bnba\b|summer league", text or "", re.I):
+    if use_text and PRE_NBA_TEXT.search(text or "") and not re.search(r"\bnba\b|summer league", text or "", re.I):
         return "pre-nba"
     current, former = teams_of(person)
     if not current and not former:
@@ -1413,7 +1428,7 @@ def commons_photos(person: str) -> list[dict]:
             "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4) + (1000 if hoops else 0),
             "hoops": hoops,
             "own_category": title in in_category,   # filed under this very player on Commons
-            "team": photo_team(person, text + " " + clean(meta.get("Categories", "")), year if year > 2000 else None),
+            **team_marks(person, text + " " + clean(meta.get("Categories", "")), year if year > 2000 else None),   # D96
         })
     # D96 module 3 (his answer 2026-11-25): the title words ("slam", "court", "arena") only ORDER the
     # photos (hoops first, by the score); the tagger decides what a photo is (a namesake is "O")
@@ -1574,7 +1589,7 @@ def openverse_photos(person: str) -> list[dict]:
             "source": f"{(r.get('source') or 'Openverse').title()} via Openverse",
             "score": (5 if h >= w else 0) + min(w * h / 4e6, 4),
             "hoops": bool(TITLE_HOOPS.search(text)),                       # D96: ordering only
-            "team": photo_team(person, text),
+            **team_marks(person, text),                                           # D96
         })
     PHOTO_STATS.setdefault(person, {})["openverse"] = len(out)
     out = sorted(out, key=lambda f: -f["score"])
@@ -1627,7 +1642,7 @@ def flickr_photos(person: str) -> list[dict]:
             "license_url": "", "source": "Flickr", "license_verified": True,
             "score": year * 10 + (5 if h >= w else 0) + min(w * h / 4e6, 4) + (1000 if hoops else 0),
             "hoops": hoops,
-            "team": photo_team(person, text, year if year > 2000 else None),
+            **team_marks(person, text, year if year > 2000 else None),            # D96
         })
     # D96 module 3: the title words only order (hoops first, by the score); the tagger decides
     PHOTO_STATS.setdefault(person, {})["flickr"] = len(out)

@@ -62,5 +62,35 @@
   "line": "Will the Bucks get the same hammer the Clippers got, now that Gary Trent Jr. is under investigation?",
   "expect": true,
   "why": "a Short never judged: as before, \"now\" counts"
+ },
+ {
+  "id": "P2-C1",
+  "kind": "pre_nba",
+  "source": "photo tag cache (state nba/history/photo_tags.json)",
+  "person": "Charles Barkley",
+  "title": "File:Charles Barkley at East Carolina University.jpg",
+  "tag": {
+   "v": "C",
+   "s": "interview",
+   "e": "calm",
+   "t": "speaks at a press table"
+  },
+  "expect": false,
+  "why": "the title's \"University\" is a place he spoke at; the tagger saw an interview, not a college game (D96 module 6 part 4)"
+ },
+ {
+  "id": "P2-C2",
+  "kind": "pre_nba",
+  "source": "photo tag cache (state nba/history/photo_tags.json), D62",
+  "person": "Kawhi Leonard",
+  "title": "File:Kawhi Leonard San Diego State Dunk.jpg",
+  "tag": {
+   "v": "C",
+   "s": "game",
+   "e": "intense",
+   "t": "dunks looking up, San Diego State"
+  },
+  "expect": true,
+  "why": "the tagger's note names his college: pre-NBA though the scene is \"game\" (D62 kept)"
  }
 ]

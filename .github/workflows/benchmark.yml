@@ -6,6 +6,11 @@ on:
 permissions:
   contents: read
 
+env:
+  CLAUDE_CODE_VERSION: "2.1.322"   # = collect.yml / weekly.yml (pinned)
+  DISABLE_AUTOUPDATER: "1"
+  CLAUDE_MODEL: claude-sonnet-5-5
+
 jobs:
   benchmark:
     runs-on: ubuntu-24.04
@@ -21,8 +26,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # D96 module 6 part 4: the ambiguous title words are judged by Claude (one call)
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/claude" --version
+
       - name: Find what works in the niche
         env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: |

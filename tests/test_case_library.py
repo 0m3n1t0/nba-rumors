@@ -212,6 +212,13 @@ class D96MeaningLibrary(unittest.TestCase):
                     got = editor.major_turn(c["title"], j)
                 elif k == "opinion":
                     got = bool(editor.OPINION.search(c["title"]))
+                elif k == "benchmark_drama":
+                    import benchmark
+                    benchmark._judged.clear()
+                    if j is not None:
+                        benchmark._judged[("DRAMA", c["title"])] = j
+                    got = benchmark.drama(c["title"])
+                    benchmark._judged.clear()
                 else:
                     signals._judged.clear()
                     key = "nba" if k == "trend" else "story"
@@ -243,9 +250,17 @@ class D96MeaningLibrary(unittest.TestCase):
 
     def test_p_words(self):
         import media
+        import photo_tags
         saved = media._TIME_LINES[0]
         try:
-            for c in load("d96_p_words.json"):
+            for c in [c for c in load("d96_p_words.json") if c["kind"] == "pre_nba"]:
+                with self.subTest(c["id"], title=c["title"]), Snapshot() as m:
+                    photo = {"kind": "photo", "title": c["title"], "page": c["title"],
+                             **m.team_marks(c["person"], c["title"])}
+                    photo_tags._apply(photo, c["tag"])
+                    got = photo.get("team") == "pre-nba" or m.college_photo(photo, c["person"])
+                    self.assertEqual(got, c["expect"], c["why"])
+            for c in [c for c in load("d96_p_words.json") if c["kind"] != "pre_nba"]:
                 with self.subTest(c["id"], line=c["line"]):
                     if c["kind"] == "speech":
                         got = media.is_speech_line(c["line"], [c["line"]] if c.get("judged") else [])

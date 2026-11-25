@@ -3026,7 +3026,8 @@ def fill_with_evergreen(shorts: list[dict], editor: dict, voice: str, formulas: 
     import evergreen
     from sources import TIER1_PUBLISHERS
     try:
-        found = evergreen.candidates(tuple(TIER1_PUBLISHERS))
+        found = evergreen.candidates(tuple(TIER1_PUBLISHERS),
+                                     ask=lambda p: ask_claude(p, CLAUDE_MODEL, where="evergreen"))   # D96
     except Exception as exc:          # the bank must never cost the day's real Shorts
         print(f"[!] evergreen search failed: {exc}")
         return False

@@ -144,5 +144,23 @@
   "title": "luka doncic trade reaction",
   "expect": true,
   "why": "\"trade\" is a clear story word"
+ },
+ {
+  "id": "E1-18",
+  "kind": "benchmark_drama",
+  "source": "state nba/plan/niche.json (benchmark outliers)",
+  "title": "Ja Morant & Devin Booker exchange words 🍿",
+  "judged": true,
+  "expect": true,
+  "why": "two players exchanging words is NBA drama (D96 module 6 part 4)"
+ },
+ {
+  "id": "E1-19",
+  "kind": "benchmark_drama",
+  "source": "state nba/plan/niche.json (benchmark outliers)",
+  "title": "BREAKING NEWS: SHOCKING REVEAL OF THE WORLD'S RICHEST ATHLETE EVER WITH MIND-BLOWING BILLION FORTUNE",
+  "judged": false,
+  "expect": false,
+  "why": "clickbait about a fortune, no NBA conflict, when judged so"
  }
 ]

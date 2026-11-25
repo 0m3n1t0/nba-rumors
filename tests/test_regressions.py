@@ -216,6 +216,18 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 136. D96 module 6 part 4 (his answers 2026-11-25, classes P2, E1): the last lists. Pre-NBA: a
+     tagged photo is pre-NBA by the tagger's scene OR its note naming his college
+     (media.college_photo reads the note; team_marks keeps the mark without the title's words and
+     photo_tags._apply undoes a title-only "pre-nba" when the tagger saw no school scene: "Charles
+     Barkley at East Carolina University" is an interview); the title decides only for an
+     untagged photo (D62 kept: Kawhi's notes say "San Diego State"). Evergreen ABOUT_THEM split
+     (feud, beef, rivalry, rift, fallout, tension, clash, reunion, fires back, calls out,
+     apologized, regret clear; says, recalls, reveals, history, story, truth... ambiguous), ONE
+     small call for the pairs found (evergreen.judge_about, through the script stage's
+     ask_claude). Benchmark OFF_NICHE / DRAMA split, ONE call per run (benchmark.judge_titles;
+     benchmark.yml and weekly.yml install Claude before it). No answer: as before. PERSON_DESC
+     stays a list (every sense is a person). D91 is a separate task after D96 (his answer).
  135. D96 module 6 part 3 (his answers 2026-11-25, class S1): the script's style words by meaning,
      ONE small "style" call per Short before the hooks are scored (script.judge_style; the
      rewritten hooks of the retry loop in a further small call): CLASH_WORDS keeps vs, versus,
@@ -5051,12 +5063,19 @@ class HisCollegeIsPreNBA(unittest.TestCase):
         m = self.m
         ph = lambda title, t="": {"kind": "photo", "title": title, "team": "", "tag": {"v": "C", "s": "game", "t": t}}
         with patch.object(m, "teams_of", lambda p: ("", set())):
-            self.assertTrue(m.college_photo(ph("Kawhi Leonard SDSU Aztecs"), "Kawhi Leonard"))
+            # D96 module 6 part 4 (a changed rule, his answer: the tagger decides): a TAGGED photo by
+            # its note; the title only when nobody looked at it (the real D62 photos' notes say
+            # "San Diego State": 14 of 16 kept, the 2 others show no player)
+            self.assertFalse(m.college_photo(ph("Kawhi Leonard SDSU Aztecs"), "Kawhi Leonard"))
+            self.assertTrue(m.college_photo({"kind": "photo", "title": "Kawhi Leonard SDSU Aztecs", "team": ""},
+                                            "Kawhi Leonard"))
             self.assertTrue(m.college_photo(ph("Kawhi Leonard", "reaches for rebound, San Diego State"), "Kawhi Leonard"))
             self.assertFalse(m.college_photo(ph("Kawhi Leonard 2019", "shoots, Raptors jersey"), "Kawhi Leonard"))
             self.assertTrue(m.college_photo(ph("Isiah Thomas and Bobby Knight 1981", "talks with coach in Indiana huddle"), "Isiah Thomas"))
-            self.assertFalse(m.college_photo(ph("Isiah Thomas Indiana Pacers coach"), "Isiah Thomas"))
-            self.assertTrue(m.college_photo(ph("Isiah Thomas Indiana Hoosiers"), "Isiah Thomas"))
+            untagged = lambda title: {"kind": "photo", "title": title, "team": ""}      # noqa: E731 (D96: title rules)
+            self.assertFalse(m.college_photo(untagged("Isiah Thomas Indiana Pacers coach"), "Isiah Thomas"))
+            self.assertTrue(m.college_photo(untagged("Isiah Thomas Indiana Hoosiers"), "Isiah Thomas"))
+            self.assertFalse(m.college_photo(ph("Isiah Thomas Indiana Hoosiers"), "Isiah Thomas"))   # tagged: its note
             line = "His last Spurs team, with Ginobili and Parker, got swept by Golden State."
             photo = ph("Kawhi Leonard SDSU Aztecs", "dribbles past defender, San Diego State")
             self.assertFalse(m.team_fits(photo, line, "Kawhi Leonard"))
@@ -7922,3 +7941,90 @@ class StyleWordsByMeaning(unittest.TestCase):
         self.assertLess(src.index("    judge_style([h.get(\"text\", \"\") for h in draft.get(\"hooks\", [])[:5]],"),
                         src.index("        parts, verdict, formula = nba_hook_score(h[\"text\"])\n        hooks.append"))
         self.assertIn("        judge_style([h.get(\"text\", \"\") for h in more.get(\"hooks\", [])[:5]])", src)
+
+
+class LastListsByMeaning(unittest.TestCase):
+    """136. D96 module 6 part 4 (his rule 2026-11-25: an ambiguous word by meaning in context, never a list)."""
+
+    def test_pre_nba_by_the_tagger(self):
+        import photo_tags
+        c = {"title": "File:Charles Barkley at East Carolina University.jpg", "team": "pre-nba",
+             "pre_nba_text": True, "team_without_text": ""}
+        photo_tags._apply(c, {"v": "C", "s": "interview", "e": "calm", "t": "speaks at a press table"})
+        self.assertEqual(c["team"], "")
+        c = {"title": "File:Jalen Brunson IHSA Class 4A championship game.jpg", "team": "pre-nba",
+             "pre_nba_text": True, "team_without_text": ""}
+        photo_tags._apply(c, {"v": "C", "s": "pre_nba", "e": "calm", "t": "drives, high school jersey"})
+        self.assertEqual(c["team"], "pre-nba")                      # the tagger saw school: stays
+        c = {"title": "x", "team": "pre-nba"}                       # pre-NBA by its date, not its title
+        photo_tags._apply(c, {"v": "C", "s": "game", "e": "calm", "t": "dunks"})
+        self.assertEqual(c["team"], "pre-nba")
+
+    def test_team_marks(self):
+        import media
+        from unittest.mock import patch
+        with patch.object(media, "teams_of", lambda p: ("", set())):
+            got = media.team_marks("Charles Barkley", "Charles Barkley at East Carolina University")
+        self.assertEqual(got, {"team": "pre-nba", "pre_nba_text": True, "team_without_text": ""})
+
+    def test_evergreen_about(self):
+        import evergreen as E
+        E._about_seen.clear()
+        try:
+            t1, t2 = "Shai says he wants Durant and Westbrook's record", "Durant recalls Westbrook fallout"
+            calls = []
+            E.judge_about([(t1, "Kevin Durant", "Russell Westbrook"), (t2, "Kevin Durant", "Russell Westbrook")],
+                          lambda p: calls.append(p) or {"yes": []})
+            self.assertEqual(len(calls), 1)
+            self.assertIn(t1, calls[0])
+            self.assertNotIn(t2, calls[0])                          # "fallout" is a clear word
+            self.assertFalse(E.about_them(t1))
+            self.assertTrue(E.about_them(t2))
+            E._about_seen.clear()
+            E.judge_about([(t1, "a", "b")], lambda p: {"answer": "x"})   # broken answer: as before
+            self.assertTrue(E.about_them(t1))
+        finally:
+            E._about_seen.clear()
+
+    def test_evergreen_drops_a_pair_judged_not_about(self):
+        import evergreen as E
+        from unittest.mock import patch
+        E._about_seen.clear()
+        news = [{"title": "Shai says he wants Durant and Westbrook's record", "tier": 1},
+                {"title": "Durant and Westbrook both named All-NBA", "tier": 1}]
+        for n in news:
+            n["about"] = E.about_them(n["title"])
+        try:
+            with patch.object(E, "BANK", [("Kevin Durant", "Russell Westbrook", "KD and Russ")]), \
+                    patch.object(E, "fresh_news", lambda a, b, t=(): [dict(x) for x in news]), \
+                    patch.object(E, "recently_used", lambda k, now=None: False), \
+                    patch.object(E, "used", lambda: {}), patch.object(E, "wikipedia_item", lambda a, b: None):
+                self.assertEqual(E.candidates(ask=lambda p: {"yes": []}), [])          # judged: only named
+                E._about_seen.clear()
+                self.assertEqual(len(E.candidates(ask=lambda p: {"yes": [1]})), 1)
+        finally:
+            E._about_seen.clear()
+
+    def test_benchmark(self):
+        import benchmark as B
+        B._judged.clear()
+        try:
+            calls = []
+            B.judge_titles(["Ja Morant & Devin Booker exchange words", "Kyrie handles mixtape",
+                            "LeBron highlights vs Celtics"], ask=lambda p: calls.append(p) or {"yes": [1]})
+            self.assertEqual(len(calls), 1)
+            self.assertNotIn("mixtape", calls[0])                   # a clear off-niche word: no question
+            self.assertTrue(B.drama("Ja Morant & Devin Booker exchange words"))
+            self.assertFalse(B.off_niche("LeBron highlights vs Celtics"))     # judged: not off the niche
+            self.assertTrue(B.off_niche("Kyrie handles mixtape"))
+        finally:
+            B._judged.clear()
+
+    def test_the_callers_pass_it(self):
+        sc = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
+        self.assertIn('ask=lambda p: ask_claude(p, CLAUDE_MODEL, where="evergreen"))', sc)
+        bm = (ROOT / "src" / "benchmark.py").read_text(encoding="utf-8")
+        self.assertIn("    judge_titles([r[\"title\"] for r in viral.get(\"outliers\", [])])", bm)
+        for wf in ("benchmark.yml", "weekly.yml"):
+            y = (ROOT / ".github" / "workflows" / wf).read_text(encoding="utf-8")
+            self.assertLess(y.index("Install Claude Code"), y.index("python src/benchmark.py"), wf)

@@ -48,11 +48,64 @@ def pct(n: int, items: list) -> int:
 
 
 NICHE = ROOT / "plan" / "niche.json"
-OFF_NICHE = re.compile(r"high school|streetball|hooper|handles|wnba|caitlin|highlights|full game|mixtape|"
-                       r"\bkids?\b|college|ncaa|nfl|soccer|glitch|laws of physics", re.I)
-DRAMA = re.compile(r"beef|fight|exposed|banned|called? out|confront|feud|trade|rumou?r|drama|heated|ejected|"
-                   r"fined|suspend|trash|exchange|turn(ed)? against|speak out|media training|cheat|shocking|"
-                   r"ended|refused|ruined|slammed|clap|disrespect|fired|benched|demand|leak|snub", re.I)
+# D96 module 6 part 4 (his answers 2026-11-25): clear words decide alone; the ambiguous ones count
+# only through ONE call per run (judge_titles); no answer: they count, as before
+OFF_NICHE = re.compile(r"high school|streetball|wnba|caitlin|full game|mixtape|"
+                       r"\bkids?\b|ncaa|nfl|soccer|glitch|laws of physics", re.I)
+OFF_AMBIG = re.compile(r"hooper|handles|highlights|college", re.I)
+DRAMA = re.compile(r"beef|fight|exposed|banned|called? out|confront|feud|rumou?r|drama|heated|ejected|"
+                   r"fined|suspend|trash|cheat|disrespect|fired|benched|leak|snub", re.I)
+DRAMA_AMBIG = re.compile(r"trade|exchange|turn(ed)? against|speak out|media training|shocking|"
+                         r"ended|refused|ruined|slammed|clap|demand", re.I)
+_judged: dict[tuple[str, str], bool] = {}
+
+TITLES_ASK = """Sort NBA Shorts titles of other channels, by MEANING, never by one word. Each numbered item
+has ONE question:
+  OFF: is this off our niche (streetball, high school or college ball, a highlight reel, a
+       handles / hooper skills clip), rather than NBA news, drama or a feud?
+  DRAMA: is this NBA drama or conflict (a feud, a callout, a trade demand, a heated exchange),
+         not a plain word ("trade deadline recap")?
+
+ITEMS:
+ITEMS_TEXT
+
+Return ONLY JSON: {"yes": [the numbers whose answer is YES]}"""
+
+
+def judge_titles(titles: list[str], ask=None) -> None:
+    todo = []
+    for t in dict.fromkeys(titles):
+        if OFF_AMBIG.search(t) and not OFF_NICHE.search(t):
+            todo.append(("OFF", t))
+        if DRAMA_AMBIG.search(t) and not DRAMA.search(t):
+            todo.append(("DRAMA", t))
+    todo = [q for q in todo if q not in _judged]
+    if not todo:
+        return
+    try:
+        if ask is None:
+            import editor
+            ask = lambda p: editor.ask_claude(p, where="benchmark")       # noqa: E731
+        raw = ask(TITLES_ASK.replace("ITEMS_TEXT", "\n".join(f"{n}. {k}: {t}" for n, (k, t) in enumerate(todo, 1))))
+        raw = raw if isinstance(raw, dict) else json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
+        if not isinstance(raw.get("yes"), list):
+            raise ValueError("no \"yes\" list in the answer")
+        yes = {int(x) for x in raw["yes"] if str(x).isdigit()}
+    except BaseException as exc:          # noqa: BLE001 - no CLI, the limit, a broken answer: as before
+        if isinstance(exc, KeyboardInterrupt):
+            raise
+        print(f"[!] benchmark title judgement failed ({str(exc)[:80]}): the words count, as before")
+        return
+    for n, q in enumerate(todo, 1):
+        _judged[q] = n in yes
+
+
+def off_niche(t: str) -> bool:
+    return bool(OFF_NICHE.search(t)) or (bool(OFF_AMBIG.search(t)) and _judged.get(("OFF", t), True))
+
+
+def drama(t: str) -> bool:
+    return bool(DRAMA.search(t)) or (bool(DRAMA_AMBIG.search(t)) and _judged.get(("DRAMA", t), True))
 MIN_MEDIAN = 3000     # a channel whose normal Short gets fewer views says nothing about the audience
 MAX_MULTIPLE = 500    # beyond this it is a fluke, not a pattern
 
@@ -62,10 +115,11 @@ def save_niche(videos: list[dict], viral: dict) -> None:
     Titles are other channels' text: kept short and used only as patterns, never copied."""
     # Keep only real NBA drama/news Shorts from channels with a real audience: the raw list also
     # holds streetball, high school fights, highlight reels and flukes from tiny channels.
+    judge_titles([r["title"] for r in viral.get("outliers", [])])      # D96 module 6 part 4: one call
     keep = [r for r in viral.get("outliers", [])
-            if not OFF_NICHE.search(r["title"]) and (r.get("median") or 0) >= MIN_MEDIAN
+            if not off_niche(r["title"]) and (r.get("median") or 0) >= MIN_MEDIAN
             and r.get("multiple", 0) <= MAX_MULTIPLE]
-    keep.sort(key=lambda r: (not DRAMA.search(r["title"]), -r["multiple"]))
+    keep.sort(key=lambda r: (not drama(r["title"]), -r["multiple"]))
     outliers = keep[:15]
     lens = [v["seconds"] for v in videos[:50]]
     data = {

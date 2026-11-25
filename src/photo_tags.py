@@ -350,6 +350,10 @@ def _apply(c: dict, tag: dict) -> None:
     c["tag"] = {k: tag[k] for k in ("v", "s", "e", "t", "g", "who") if k in tag}
     if tag.get("m"):
         c["moment"] = tag["m"]
+    # D96 module 6 part 4: "pre-nba" only from the title's words is undone when the tagger saw no
+    # school or college scene (the note's college name is read by media.college_photo)
+    if c.get("pre_nba_text") and c.get("team") == "pre-nba" and c["tag"].get("s") and c["tag"].get("s") != "pre_nba":
+        c["team"] = c.get("team_without_text", "")
     # D15 (run 43317261723: Lendeborg in Michigan colours as "Warriors rookie", with no PRE-NBA
     # mark - Wikidata had no NBA debut for a rookie): a photo the tagger saw as school or college
     # is marked PRE-NBA for the editor too, unless the team data already says more

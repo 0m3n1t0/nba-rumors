@@ -216,6 +216,16 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 130. D96 module 4 (his answers 2026-11-25, class E1): the story choice by meaning. Collect:
+     SPECULATION's picks, odds, betting, mock, preview, prediction, predicted, proposal and
+     OTHER_LEAGUE's college, football, liberty, g league decide only through ONE Sonnet call per run
+     (collect.judge_titles: LEAGUE / SPECULATION questions; "stripped draft picks", "Betting
+     Scandal", "Fans Mock Draymond", "Jimmy Butler G League rehab" are real NBA events); a failed
+     call: as before (dropped, speculation). Editor: a headline starting with why / how / what /
+     should / could / would is filler only by the editor's own kind; MAJOR_TURN's ambiguous words
+     (traded, signs, released, punish, punch, brawl, charged, sue, statement, apology, reconcile,
+     hug, benched, banned, investigation, deleted, fired) count only when the editor judged a NEW
+     turn ("turn" in the same call); no answer: as before. Clear words decide alone; ROUTINE stays.
  129. D96 module 3 (his answers 2026-11-25, classes P1, P2, Q1): the picture words by meaning.
      Clear words still decide alone; ambiguous ones (the clip words "slam", "court", "arena",
      "warm-up", "college", "junior", "family", the broadcast words "ESPN", "TNT", the provenance
@@ -3986,7 +3996,9 @@ class HisAnswersOnTheOlderRules(unittest.TestCase):
 
     def test_major_turn(self):
         import editor
-        t = editor.MAJOR_TURN.search
+        # D96 module 4 (a changed rule): the list is split; an ambiguous word ("Apologize",
+        # "fired") is a candidate the editor judges in context ("turn"), so a turn word is either
+        t = lambda h: editor.MAJOR_TURN.search(h) or editor.MAJOR_TURN_AMBIG.search(h)     # noqa: E731
         for h in ("Kyrie Irving Trade Rumors Updated by NBA Insider", "Lakers sign center to two-way contract",
                   "Celtics in a fight for the East", "Luka is fine with ankle tweak"):
             self.assertIsNone(t(h), h)
@@ -7454,3 +7466,102 @@ class PictureWordsByMeaning(unittest.TestCase):
         self.assertTrue(m.national_photo({"tag": {"s": "national", "t": "anthem"}}))
         self.assertTrue(m.national_photo({"tag": {"s": "game", "t": "stares at camera, Canada jersey"}}))
         self.assertFalse(m.national_photo({"tag": {"s": "game", "t": "drives in Knicks jersey"}}))
+
+
+class StoryWordsByMeaning(unittest.TestCase):
+    """130. D96 module 4 (his rule 2026-11-25: an ambiguous word by meaning in context, never a list)."""
+
+    def item(self, title, league=False):
+        return {"title": title, "tier": 1, "publisher": "ESPN", "published": None,
+                **({"_ask_league": True} if league else {})}
+
+    def test_one_call_judges_the_ambiguous_titles(self):
+        import collect
+        calls = []
+
+        def ask(prompt):
+            calls.append(prompt)
+            # 1 LEAGUE Butler: NBA (yes); 2 LEAGUE college football: no; 3 SPECULATION betting scandal: no;
+            # 4 SPECULATION picks preview: yes
+            return '{"yes": [1, 4]}'
+        items = [self.item("Jimmy Butler plans G League rehab stint", True),
+                 self.item("Texas climbs in college football rankings", True),
+                 self.item("Jontay Porter says threats drove NBA betting scandal"),
+                 self.item("Celtics vs. 76ers NBA picks: Tatum could have a big night"),
+                 self.item("Smart ejected for punching Bassey")]
+        kept = collect.judge_titles(items, ask=ask)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("LEAGUE: Jimmy Butler", calls[0])
+        self.assertNotIn("Smart ejected", calls[0])                    # nothing ambiguous: no question
+        self.assertEqual([i["title"][:12] for i in kept], ["Jimmy Butler", "Jontay Porte", "Celtics vs. ", "Smart ejecte"])
+        self.assertFalse(collect.spec_title(kept[1]))                  # a real scandal: not speculation
+        self.assertTrue(collect.spec_title(kept[2]))
+        self.assertTrue(all("_ask_league" not in i and "league" not in i for i in kept))
+
+    def test_failed_call_is_as_before(self):
+        import collect
+
+        def down(prompt):
+            raise SystemExit("claude failed")
+        kept = collect.judge_titles([self.item("Jimmy Butler plans G League rehab stint", True),
+                                     self.item("NBA betting scandal grows")], ask=down)
+        self.assertEqual([i["title"] for i in kept], ["NBA betting scandal grows"])   # the league one dropped
+        self.assertTrue(collect.spec_title(kept[0]))                                  # the word counts
+
+    def test_clear_words_decide_alone(self):
+        import collect
+        self.assertTrue(collect.SPECULATION.search("NBA player props and best bets"))
+        self.assertTrue(collect.OTHER_LEAGUE.search("WNBA finals tonight"))
+        self.assertIsNone(collect.OTHER_LEAGUE.search("Jimmy Butler G League stint"))
+        self.assertIsNone(collect.SPECULATION.search("Bucks stripped of draft picks"))
+        calls = []
+        kept = collect.judge_titles([self.item("NBA player props, odds, picks for Friday")],
+                                    ask=lambda p: calls.append(p) or '{"yes": []}')
+        self.assertEqual(calls, [])                         # a clear word needs no question
+        self.assertTrue(collect.spec_title(kept[0]))
+
+    def test_the_feed_filter_asks_instead_of_dropping(self):
+        import collect
+        feed = {"name": "GN: NBA", "tier": 2}
+        entry = {"title": "Jimmy Butler plans G League rehab stint - ESPN", "link": "https://x",
+                 "source": {"title": "ESPN"}, "summary": "The Warriors forward ..."}
+        it = collect.normalize(entry, feed)
+        self.assertTrue(it and it.get("_ask_league"))
+        self.assertIsNone(collect.normalize({**entry, "title": "Liberty win WNBA title - ESPN"}, feed))   # a clear word
+        plain = collect.normalize({**entry, "title": "Warriors beat the Rockets - ESPN"}, feed)
+        self.assertNotIn("_ask_league", plain)
+
+    def test_opinion_start_words_go_to_the_editor(self):
+        import editor
+        self.assertIsNone(editor.OPINION.search("What Draymond said about Rivers"))
+        self.assertIsNone(editor.OPINION.search("Why Kyrie wants out of Dallas"))
+        self.assertTrue(editor.OPINION.search("10 takeaways from the Celtics win"))
+        self.assertTrue(editor.OPINION.search("NBA power rankings week 5"))
+
+    def test_turn_by_meaning(self):
+        import datetime as dt
+        import editor as e
+        made = [{"time": "2026-11-11T13:20+00:00", "headline": "Jayson Tatum won't give air to Jaylen Brown drama",
+                 "hook": "Did Jaylen Brown ignore Jayson Tatum?"}]
+        now = dt.datetime(2026, 11, 11, 19, 40, tzinfo=dt.timezone.utc)
+        t = {"headline": "Jayson Tatum could be traded as Jaylen Brown feud grows",
+             "star_names": ["Jaylen Brown 2.0", "Jayson Tatum 2.0"]}
+        self.assertEqual(e.same_feud_recent(t, made, now), "")                    # no answer: as before
+        self.assertEqual(e.same_feud_recent(t, made, now, turn=True), "")
+        self.assertTrue(e.same_feud_recent(t, made, now, turn=False))            # judged no new turn: a repeat
+        t2 = {**t, "headline": "Jayson Tatum fined after Jaylen Brown altercation"}
+        self.assertEqual(e.same_feud_recent(t2, made, now, turn=False), "")      # a clear word decides alone
+        self.assertIn('"turn": true if the headline reports a NEW decisive event', e.PROMPT)
+        import json as _j
+        raw = _j.dumps({"ranked": [{"id": 0, "nba": True, "kind": "player_vs_player", "virality": 9, "drama": 9,
+                                    "star_power": 9, "debate": 9, "repeat": False, "why": "", "same_as": [],
+                                    "turn": False}], "shorts": [0], "long": {}})
+        topics = [{**t, "items": [{"title": t["headline"], "tier": 1, "link": "https://x", "publisher": "ESPN"}]}]
+        old = e.made_recently
+        fresh = [{**made[0], "time": (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat()}]
+        e.made_recently = lambda: fresh
+        try:
+            data = e.parse(raw, 1, topics)
+        finally:
+            e.made_recently = old
+        self.assertTrue(data["ranked"][0].get("repeat"))

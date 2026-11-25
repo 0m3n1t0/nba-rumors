@@ -151,6 +151,11 @@ Judge every topic:
 - "debate": 1-10. How hard fans will ARGUE in the comments: two defensible sides ("who's
   right?"), a take people love to disagree with, a loyalty question. 10 = the fan base splits
   in half, 1 = nothing to argue about (a plain injury update).
+- "turn": true if the headline reports a NEW decisive event that has just happened (a trade, a
+  signing, a release, a punishment, a fight, charges, a lawsuit, a public statement or apology, a
+  reconciliation, a benching, a ban, a new investigation, deleted posts, a firing); false for a
+  possibility ("could be traded", "if he were fired"), a memory of an old event, or a routine
+  roster move. Judge by meaning, not by the word.
 - "same_as": list of other ids that are the same story (so we never make two videos about it)
 - "why": one short sentence, the reason fans will care (or not)
 - "two_versions": TWO VERSIONS is the strongest fuel of intrigue: where two accounts clash.
@@ -182,7 +187,7 @@ Then pick:
   8-10 minute video this week, with "long_ids" listing the ids it uses.
 
 Return ONLY valid JSON, no markdown, in exactly this shape:
-{"ranked": [{"id": 0, "nba": true, "kind": "...", "conflict": true, "virality": 7, "drama": 8, "star_power": 8, "debate": 7, "same_as": [], "repeat": false, "why": "...", "two_versions": "", "hook": "..."}],
+{"ranked": [{"id": 0, "nba": true, "kind": "...", "conflict": true, "virality": 7, "drama": 8, "star_power": 8, "debate": 7, "turn": false, "same_as": [], "repeat": false, "why": "...", "two_versions": "", "hook": "..."}],
  "shorts": [0, 1, 2],
  "long": {"title_idea": "...", "long_ids": [0, 3]}}
 
@@ -314,7 +319,7 @@ def build_input(topics: list[dict]) -> str:
         + json.dumps(rows, indent=1)
 
 
-def ask_claude(prompt: str) -> str:
+def ask_claude(prompt: str, where: str = "editor") -> str:
     # Empty working folder + no tools: a malicious headline cannot make Claude act.
     # web headlines can carry control characters or broken unicode, which fail the request
     prompt = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff]", " ",
@@ -336,7 +341,7 @@ def ask_claude(prompt: str) -> str:
     check_model(result.stdout, result.stderr, CLAUDE_MODEL)
     if result.returncode != 0:
         sys.exit(f"[!] Claude failed ({result.returncode}): {(result.stdout or '')[-800:]} {result.stderr[-1200:]}")
-    log_claude_usage(result.stdout, "editor")
+    log_claude_usage(result.stdout, where)
     envelope = json.loads(result.stdout)
     return envelope.get("result", "")
 
@@ -366,8 +371,11 @@ def niche_match(headline: str) -> list[str]:
     return sorted(n for n in names - TEAM_WORDS if re.search(rf"\b{re.escape(n)}\b", titles))
 
 
-OPINION = re.compile(r"^(why|how|what|should|could|would|ranking|grading|grades|\d+ (takeaways|things|reasons|teams|players))\b"
+OPINION = re.compile(r"^(ranking|grading|grades|\d+ (takeaways|things|reasons|teams|players))\b"
                      r"|takeaways|power rankings|predictions|\bgrades\b", re.I)
+# D96 module 4 (his answers 2026-11-25): a headline starting with why / how / what / should /
+# could / would ("What Draymond said about...") is no longer filler by the word: the editor's own
+# "kind" (it judges opinion pieces as filler in the same call) decides
 
 
 # ---------- THE VIRAL SCORE: which story becomes a Short ----------
@@ -462,11 +470,16 @@ def score_line(r: dict) -> str:
 FEUD_HOURS = 48
 # his answer (2026-11-14), checked on 287 real headlines: "trade" alone matched 62 ordinary trade
 # rumors (every rumor about the same pair counted as a turn), so only a real move counts now
-MAJOR_TURN = re.compile(r"\b(traded|trade request|requests? (?:a )?trade|demands? (?:a )?trade|signs|signed|"
-                        r"waive[sd]?|released|suspend\w*|fine[sd]|punish\w*|eject\w*|ejections?|punch\w*|"
+# D96 module 4 (his answers 2026-11-25): clear words decide alone; the ambiguous ones ("Could Be
+# Traded", "If Keefe were fired", "re-signs", an old brawl recalled) count only when the editor
+# judged in the same call that the headline reports a NEW turn ("turn"); no answer: as before
+MAJOR_TURN = re.compile(r"\b(trade request|requests? (?:a )?trade|demands? (?:a )?trade|"
+                        r"waive[sd]?|suspend\w*|fine[sd]|eject\w*|ejections?|punched|punching|"
                         r"fistfight|fight broke out|got into (?:a|an) (?:fight|altercation)|altercation|scuffle|"
-                        r"brawl|arrest\w*|charged|lawsuit|sue[sd]?|statement|apolog\w*|reconcil\w*|hug(?:s|ged)?|"
-                        r"benched|banned|investigation|deleted|unfollow\w*|fired(?! (?:up|back|off|shots?|at)))\b", re.I)
+                        r"arrest\w*|lawsuit|sued|unfollow\w*)\b", re.I)
+MAJOR_TURN_AMBIG = re.compile(r"\b(traded|signs|signed|released|punish\w*|punch(?:es)?|brawl|charged|sues?|"
+                              r"statement|apolog\w*|reconcil\w*|hug(?:s|ged)?|benched|banned|investigation|"
+                              r"deleted|fired(?! (?:up|back|off|shots?|at)))\b", re.I)
 def headline_people(topic: dict) -> list[str]:
     """The story's people who are named IN ITS HEADLINE (surnames, in headline order). Only the
     editor's star names are used: headlines are in Title Case, so capitalised words alone would
@@ -481,16 +494,19 @@ def headline_people(topic: dict) -> list[str]:
     return [w for _, w in sorted(found)]
 
 
-def same_feud_recent(topic: dict, made: list[dict], now=None) -> str:
+def same_feud_recent(topic: dict, made: list[dict], now=None, turn=None) -> str:
     """Run 43088629255: three Shorts in one day on Brown and Tatum ("explains", "wasn't paying
     attention", "Tatum responds"), each with one small new detail. A story whose headline names
     two people who were both in a Short of the last FEUD_HOURS is a repeat, unless its headline
     brings a major turn (MAJOR_TURN) or a NEW voice leads it (its first-named person was not in
     that Short: Draymond calling out Rivers is a new story, not a repeat of Rivers vs Giannis).
-    Returns the earlier Short's headline, or ""."""
+    Returns the earlier Short's headline, or "".
+    D96 module 4: an ambiguous turn word counts only when the editor judged a new turn ("turn":
+    true); its answer missing (None): as before."""
     from datetime import datetime, timezone
     who = headline_people(topic)
-    if len(who) < 2 or MAJOR_TURN.search(topic.get("headline", "")):
+    head = topic.get("headline", "")
+    if len(who) < 2 or MAJOR_TURN.search(head) or (MAJOR_TURN_AMBIG.search(head) and turn is not False):
         return ""
     now = now or datetime.now(timezone.utc)
     for m in made:
@@ -596,7 +612,8 @@ def parse(text: str, n_topics: int, topics: list[dict] | None = None) -> dict:
             r["why"] = f"the same headline was already made in the last {SAME_HEADLINE_DAYS} days. " + r.get("why", "")
     for r in data["ranked"]:
         if topics and 0 <= r["id"] < len(topics) and r["id"] not in repeats:
-            earlier = same_feud_recent(topics[r["id"]], made)
+            turn = r.get("turn") if isinstance(r.get("turn"), bool) else None
+            earlier = same_feud_recent(topics[r["id"]], made, turn=turn)      # D96 module 4
             if earlier:
                 repeats.add(r["id"])
                 r["repeat"] = True

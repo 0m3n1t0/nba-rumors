@@ -71,7 +71,16 @@ jobs:
       - name: Restore the channel's history (private repository wins over the cache)
         run: python src/state.py restore
 
+      # D96 module 4: before Stage 1 (its ambiguous title words are judged by Claude)
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/claude" --version
+
       - name: "Stage 1: collect and rank headlines"
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/stage_summary.md"; : > "$GITHUB_STEP_SUMMARY"   # full report: private only
           python src/collect.py || status=$?
@@ -88,12 +97,6 @@ jobs:
           python src/signals.py || status=$?
           mkdir -p data && cat "$GITHUB_STEP_SUMMARY" >> data/summary.md 2>/dev/null || true
           exit ${status:-0}
-
-      - name: Install Claude Code
-        run: |
-          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/claude" --version
 
       - name: "Stage 2: AI editor picks today's stories"
         env:

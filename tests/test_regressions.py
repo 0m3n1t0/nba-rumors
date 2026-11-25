@@ -216,6 +216,11 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 126. D85 (his answers 2026-11-25): the Claude models are pinned to exact ids, claude-sonnet-5-5
+     (CLAUDE_MODEL) and claude-haiku-5-5 (CLAUDE_MODEL_LIGHT), in collect, eval and media-preview
+     and as the code defaults (script, media, editor, skills); when Anthropic retires a pinned
+     model the run stops with a clear message (data/model_gone.txt; the eval stops too) and never
+     moves to another model by itself. The four modules' checks are identical.
  125. D94 (his answers 2026-11-25, class P1): a line telling what X said about Y shows ONLY the
      speaker X: X is a story man named right before one of D68's speech verbs (said, says, told,
      wrote, added, responded, replied, posted, explained, asked) who locks a line (a player or a
@@ -7026,4 +7031,51 @@ class OnlyTheSpeaker(unittest.TestCase):
         self.assertIn("On a line telling what X said\n   ABOUT Y", final_read.RULES)
         self.assertIn("the man the\n   line is about is the speaker X", final_read.PROMPT)
         self.assertIn("a reporter's, TV host's or\n   commentator's words about a player may show that player", final_read.RULES)
+
+
+class PinnedModels(unittest.TestCase):
+    """126. D85 (his answers 2026-11-25). The floating aliases "sonnet"/"haiku" would silently
+    change every writer and judge at a new release, and every eval comparison with them. The
+    factsheet eval's log showed the exact ids; they are pinned, and a retired one stops the run."""
+
+    MODULES = ("script", "media", "editor", "skills")
+
+    def test_pinned_everywhere(self):
+        for wf in ("collect", "eval", "media-preview"):
+            text = (ROOT / ".github" / "workflows" / f"{wf}.yml").read_text(encoding="utf-8")
+            self.assertIn("  CLAUDE_MODEL: claude-sonnet-5-5", text, wf)
+            self.assertIn("  CLAUDE_MODEL_LIGHT: claude-haiku-5-5", text, wf)
+        for name in self.MODULES:
+            src = (ROOT / "src" / f"{name}.py").read_text(encoding="utf-8")
+            self.assertNotRegex(src, r'get\("CLAUDE_MODEL(?:_LIGHT)?", "(?:sonnet|haiku|opus)"\)', name)
+            self.assertIn('"claude-sonnet-5-5"', src, name)
+
+    def test_the_four_checks_are_one(self):
+        import importlib
+        mods = [importlib.import_module(n) for n in self.MODULES]
+        self.assertEqual({m.MODEL_GONE.pattern for m in mods}, {mods[0].MODEL_GONE.pattern})
+        for n in self.MODULES:
+            src = (ROOT / "src" / f"{n}.py").read_text(encoding="utf-8")
+            self.assertEqual(src.count("check_model("), 2, n)     # defined once, called at its one Claude call
+
+    def test_a_retired_model_stops_the_run(self):
+        import script
+        gone = ['{"type":"result","is_error":true,"result":"API Error: 404 {\\"type\\":\\"error\\",\\"error\\":'
+                '{\\"type\\":\\"not_found_error\\",\\"message\\":\\"model: claude-sonnet-5-5\\"}}"}',
+                "There's an issue with the selected model (claude-sonnet-5-5). It may not exist or you may not have access to it.",
+                "Error: model claude-haiku-5-5 has been retired"]
+        with tempfile.TemporaryDirectory() as d, patch.object(script, "DATA", Path(d)):
+            for text in gone:
+                with self.assertRaises(SystemExit) as cm:
+                    script.check_model(text, "", "claude-sonnet-5-5")
+                self.assertIn("no longer available", str(cm.exception.code))
+                self.assertTrue((Path(d) / "model_gone.txt").exists())
+            for fine in ('{"type":"result","result":"{\\"ok\\": true}"}', "You've hit your 5-hour limit",
+                         'The player was not found in the lineup; the model of the offense changed.',
+                         '{"type":"result","is_error":false,"result":"the model is not available in stores"}'):
+                script.check_model(fine, "", "claude-sonnet-5-5")       # no exit
+
+    def test_the_eval_stops_on_it(self):
+        src = (ROOT / "src" / "eval_run.py").read_text(encoding="utf-8")
+        self.assertIn('if (DATA / "model_gone.txt").exists():', src)
 

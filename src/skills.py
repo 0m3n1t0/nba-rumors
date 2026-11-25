@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -18,12 +19,41 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "vendor" / "youtube-agent-skill" / "skills"
+DATA = ROOT / "data"
 VOICE = (ROOT / "voice.md").read_text(encoding="utf-8")
 NO_TOOLS = "Bash,Edit,Write,Read,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task"
 
 
 
 SEEN_MODELS: set[str] = set()
+
+
+# D85 (his answers 2026-11-25): the models are pinned to exact ids (CLAUDE_MODEL / CLAUDE_MODEL_LIGHT);
+# when Anthropic retires a pinned model the run STOPS and says so, never moving to another model
+# by itself (a new model is pinned only with his yes, after an eval). The same check is in
+# script.py, media.py, editor.py and skills.py (a library test keeps the four alike).
+MODEL_GONE = re.compile(r"not_found_error|issue with the selected model|"
+                        r"model\W[^\n]{0,60}(?:does not exist|not found|not available|deprecated|retired)", re.I)
+
+
+def check_model(stdout: str, stderr: str, model: str) -> None:
+    try:
+        env = json.loads(stdout or "")
+    except ValueError:
+        env = None
+    if isinstance(env, dict) and not env.get("is_error"):
+        return                       # a real answer: its own words (an article's "not found") never count
+    text = f"{(stdout or '')[-3000:]} {(stderr or '')[-3000:]}"
+    if MODEL_GONE.search(text):
+        msg = (f"[!] D85: the pinned Claude model {model} is no longer available. The run stops here: a new "
+               f"model is pinned only with the owner's yes, after an eval. ({text.strip()[:200]})")
+        try:
+            (DATA / "model_gone.txt").parent.mkdir(parents=True, exist_ok=True)
+            (DATA / "model_gone.txt").write_text(msg, encoding="utf-8")
+        except OSError:
+            pass
+        sys.exit(msg)
+
 
 
 def log_claude_usage(stdout: str, where: str) -> None:
@@ -80,9 +110,11 @@ def claude(skill: str, task: str, data: str, timeout: int = 300) -> dict:
         f"{data}\n\nReturn ONLY valid JSON."
     )
     with tempfile.TemporaryDirectory() as empty:
-        res = subprocess.run(["claude", "-p", "--model", os.environ.get("CLAUDE_MODEL", "sonnet"),
+        model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")       # D85: pinned
+        res = subprocess.run(["claude", "-p", "--model", model,
                               "--output-format", "json", "--disallowedTools", NO_TOOLS],
                              input=prompt, capture_output=True, text=True, cwd=empty, timeout=timeout)
+    check_model(res.stdout, res.stderr, model)
     if res.returncode != 0:
         raise RuntimeError(f"Claude failed: {res.stderr[-800:]}")
     log_claude_usage(res.stdout, skill)

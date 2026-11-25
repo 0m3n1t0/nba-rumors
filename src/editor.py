@@ -30,14 +30,41 @@ TOP_N = 40          # how many collector topics the editor reads
 TIMEOUT = 1200      # seconds: the editor's judgement is never cut while it is still writing (was 300)
 
 # ---- Claude Pro budget: model choice + clean stop when the plan's usage limit is reached ----
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")             # writing, judging, looking at pictures
-CLAUDE_MODEL_LIGHT = os.environ.get("CLAUDE_MODEL_LIGHT", "haiku")  # simple, mechanical steps
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")             # writing, judging, looking at pictures (D85: pinned)
+CLAUDE_MODEL_LIGHT = os.environ.get("CLAUDE_MODEL_LIGHT", "claude-haiku-5-5")  # simple, mechanical steps (D85: pinned)
 LIMIT_TEXT = re.compile(r"usage.?limit|rate.?limit|limit reached|limit will reset|resets at|"
                         r"hit your .{0,20}limit|out of extra usage", re.I)   # e.g. "You've hit your 5-hour limit"
 
 
 class UsageLimit(RuntimeError):
     """The Claude Pro plan's 5-hour or weekly limit is used up: stop cleanly, try next run."""
+
+
+# D85 (his answers 2026-11-25): the models are pinned to exact ids (CLAUDE_MODEL / CLAUDE_MODEL_LIGHT);
+# when Anthropic retires a pinned model the run STOPS and says so, never moving to another model
+# by itself (a new model is pinned only with his yes, after an eval). The same check is in
+# script.py, media.py, editor.py and skills.py (a library test keeps the four alike).
+MODEL_GONE = re.compile(r"not_found_error|issue with the selected model|"
+                        r"model\W[^\n]{0,60}(?:does not exist|not found|not available|deprecated|retired)", re.I)
+
+
+def check_model(stdout: str, stderr: str, model: str) -> None:
+    try:
+        env = json.loads(stdout or "")
+    except ValueError:
+        env = None
+    if isinstance(env, dict) and not env.get("is_error"):
+        return                       # a real answer: its own words (an article's "not found") never count
+    text = f"{(stdout or '')[-3000:]} {(stderr or '')[-3000:]}"
+    if MODEL_GONE.search(text):
+        msg = (f"[!] D85: the pinned Claude model {model} is no longer available. The run stops here: a new "
+               f"model is pinned only with the owner's yes, after an eval. ({text.strip()[:200]})")
+        try:
+            (DATA / "model_gone.txt").parent.mkdir(parents=True, exist_ok=True)
+            (DATA / "model_gone.txt").write_text(msg, encoding="utf-8")
+        except OSError:
+            pass
+        sys.exit(msg)
 
 
 def check_limit(stdout: str, stderr: str) -> None:
@@ -306,6 +333,7 @@ def ask_claude(prompt: str) -> str:
             timeout=TIMEOUT,
         )
     check_limit(result.stdout, result.stderr)
+    check_model(result.stdout, result.stderr, CLAUDE_MODEL)
     if result.returncode != 0:
         sys.exit(f"[!] Claude failed ({result.returncode}): {(result.stdout or '')[-800:]} {result.stderr[-1200:]}")
     log_claude_usage(result.stdout, "editor")

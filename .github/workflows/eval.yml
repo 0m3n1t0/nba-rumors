@@ -38,8 +38,8 @@ concurrency:
 env:
   CHANNEL: nba
   SHORTS_PER_RUN: "2"
-  CLAUDE_MODEL: sonnet
-  CLAUDE_MODEL_LIGHT: haiku
+  CLAUDE_MODEL: claude-sonnet-5-5
+  CLAUDE_MODEL_LIGHT: claude-haiku-5-5
   MUSIC_UNDER_DB: "14"
   CLAUDE_CODE_VERSION: "2.1.322"
   DISABLE_AUTOUPDATER: "1"

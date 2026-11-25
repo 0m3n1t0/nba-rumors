@@ -415,6 +415,8 @@ def main() -> None:
                 if not chosen:
                     keep(story["id"], label, ("script", "sources"))
                 run_stages("" if chosen else story["id"], label)
+            if (DATA / "model_gone.txt").exists():   # D85: a stage found the pinned model retired: stop
+                sys.exit((DATA / "model_gone.txt").read_text(encoding="utf-8"))
             if limit_hit():
                 raise Limit("reached during the voice, pictures or final read")
             result = result_of(story, short)

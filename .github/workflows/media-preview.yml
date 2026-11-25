@@ -20,8 +20,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CLAUDE_MODEL: sonnet
-  CLAUDE_MODEL_LIGHT: haiku
+  CLAUDE_MODEL: claude-sonnet-5-5
+  CLAUDE_MODEL_LIGHT: claude-haiku-5-5
   CLAUDE_CODE_VERSION: "2.1.322"
 
 jobs:

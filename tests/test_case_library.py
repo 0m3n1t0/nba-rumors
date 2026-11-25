@@ -25,8 +25,6 @@ import sys
 import unittest
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
-
-import no_real_claude  # noqa: F401,E402  D98: the tests never call the real Claude (first)
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]

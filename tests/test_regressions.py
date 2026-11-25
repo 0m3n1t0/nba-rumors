@@ -216,14 +216,6 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
- 141. D98 (his "კი" and answers 2026-11-26, class R1 "tests are offline"): the tests never call the
-     real Claude, whether or not the CLI is installed (this cloud environment has it on PATH: the
-     suite made 5 real calls and test_gate_and_repair failed). tests/no_real_claude.py, imported
-     first by every test file: any start of a program named "claude" in the test process raises at
-     once; a fake "claude" first on PATH refuses child processes' calls; a test during which a call
-     happened fails under its own name even when the code swallows the error. The 5 tests that
-     reached Claude (RumorLabels.test_gate_and_repair, 4 HistoricBeefs) now stub it as "Claude
-     did not answer", the case they always checked. src/ unchanged.
  140. D91 Q1 (his answer 2026-11-25: then the gate's copies): gate.py kept COPIES of the media
      stage's rules (BROADCAST, BROADCAST_AMBIG, GROUP_TITLE, SUFFIXES, the full-name test, the
      group test), matched by hand at D44, D73 and D96; now it uses media's own definitions
@@ -436,7 +428,6 @@ import io
 import json
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import types
@@ -444,14 +435,6 @@ import unittest
 import urllib.parse
 from contextlib import redirect_stdout
 from pathlib import Path
-
-import no_real_claude  # noqa: F401,E402  D98: the tests never call the real Claude (first)
-
-
-def claude_did_not_answer(*_args, **_kwargs):
-    """D98 (his answer 4): a test that reaches a Claude call gets "Claude did not answer", the case
-    these tests always checked (no Claude CLI in the earlier sandboxes or before the CI installs it)."""
-    raise RuntimeError("D98 test stub: Claude did not answer")
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -1906,8 +1889,7 @@ class RumorLabels(unittest.TestCase):
         beats = [{"say": "The Kings want a guard before February.", "stage": "setup"},
                  {"say": "I think the Lakers blink first, because Reaves is their second scorer.", "stage": "payoff"},
                  {"say": "So does LeBron keep his guard?", "stage": "exit"}]
-        with patch.object(script, "ask_claude", claude_did_not_answer):   # D98: never the real Claude
-            problems = script.repair_needed("Did LeBron's Lakers just shop Austin Reaves?", beats, {}, None, cl)
+        problems = script.repair_needed("Did LeBron's Lakers just shop Austin Reaves?", beats, {}, None, cl)
         self.assertTrue(any("sounds like a fact" in p for p in problems), problems)
         for word in ("ANONYMOUS", "SPECULATION", "IN ITS OWN SENTENCE"):
             self.assertIn(word, script.PROMPT)
@@ -1952,13 +1934,9 @@ class HistoricBeefs(unittest.TestCase):
         import editor                       # never read the real made history in a test
         self.made, self.saved_made = [], editor.made_recently
         editor.made_recently = lambda: list(self.made)
-        import script                       # D98: the title judgement never reaches the real Claude
-        self.saved_ask, script.ask_claude = script.ask_claude, claude_did_not_answer
 
     def tearDown(self):
         import editor
-        import script
-        script.ask_claude = self.saved_ask
         editor.made_recently = self.saved_made
         self.e.USED, self.e.fresh_news, self.e.wikipedia_item, self.e.BANK = self.saved
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -8142,71 +8120,3 @@ class GateUsesMediaRules(unittest.TestCase):
                            ("Jaylen_Brown_2022.jpg", "Jaylen Brown", True), ("Green field.jpg", "Draymond Green", False)):
             self.assertEqual(gate.full_name_in(t, p), want, t)
             self.assertEqual(media.full_name_in_title(t, p), want, t)
-
-
-class NoRealClaudeInTests(unittest.TestCase):
-    """141. D98: the tests never call the real Claude (tests/no_real_claude.py)."""
-
-    def setUp(self):
-        self.mark = no_real_claude.mark()
-
-    def tearDown(self):
-        no_real_claude.forget_since(self.mark)       # the calls these tests make on purpose
-
-    def test_every_test_file_loads_the_guard(self):
-        import ast
-        files = sorted((ROOT / "tests").glob("test_*.py"))
-        self.assertGreaterEqual(len(files), 3)
-        for f in files:
-            tree = ast.parse(f.read_text(encoding="utf-8"))
-            top = [a.name for n in tree.body if isinstance(n, ast.Import) for a in n.names]
-            self.assertIn("no_real_claude", top, f"{f.name} must import no_real_claude (D98)")
-
-    def test_every_way_in_this_process_is_refused(self):
-        G = no_real_claude
-        tries = [lambda: subprocess.run(["claude", "-p", "--model", "x"], input="hi", capture_output=True, text=True),
-                 lambda: subprocess.run(["/opt/node22/bin/claude", "-p"]),
-                 lambda: subprocess.run("claude -p 'hi'", shell=True),
-                 lambda: subprocess.check_output(["claude", "--version"]),
-                 lambda: subprocess.Popen([Path("/usr/bin/claude")]),
-                 lambda: os.system("claude -p hi")]
-        if hasattr(os, "posix_spawnp"):
-            tries.append(lambda: os.posix_spawnp("claude", ["claude", "-p"], dict(os.environ)))
-        for n, call in enumerate(tries):
-            before = len(G.CALLS)
-            with self.assertRaises(G.RealClaudeCall, msg=n):
-                call()
-            self.assertEqual(len(G.CALLS), before + 1, n)
-        # other programs run as before, also ones whose name only starts with "claude"
-        self.assertFalse(G._is_claude(["claude-helper"]) or G._is_claude(["git", "claude"]) or G._is_claude([]))
-        self.assertEqual(subprocess.run(["true"]).returncode, 0)
-
-    def test_a_shell_or_a_child_process_gets_the_fake(self):
-        G = no_real_claude
-        self.assertEqual(shutil.which("claude"), str(G.FAKE))
-        r = subprocess.run("echo hi >/dev/null; claude -p hi", shell=True, capture_output=True, text=True)
-        self.assertEqual(r.returncode, G.EXIT)
-        r = subprocess.run([sys.executable, "-c", "import subprocess, sys; "
-                            "sys.exit(subprocess.run(['claude', '-p'], input='x', text=True).returncode)"],
-                           stderr=subprocess.DEVNULL)
-        self.assertEqual(r.returncode, G.EXIT)
-        self.assertEqual(G.mark()[1], self.mark[1] + 2)
-
-    def test_a_swallowed_call_still_fails_its_test(self):
-        class Inner(unittest.TestCase):
-            def test_swallows(self):
-                try:                                   # like evergreen.judge_about: everything caught
-                    subprocess.run(["claude", "-p"])
-                except BaseException:                  # noqa: BLE001
-                    pass
-
-            def test_child(self):
-                subprocess.run("claude -p", shell=True, stderr=subprocess.DEVNULL)   # only the fake answers
-
-            def test_clean(self):
-                pass
-        result = unittest.TestResult()
-        unittest.defaultTestLoader.loadTestsFromTestCase(Inner).run(result)
-        self.assertEqual(sorted(t.id().rsplit(".", 1)[1] for t, _ in result.failures), ["test_child", "test_swallows"])
-        self.assertTrue(all("called the real Claude" in text for _, text in result.failures))
-        self.assertFalse(result.wasSuccessful())

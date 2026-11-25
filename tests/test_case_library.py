@@ -27,6 +27,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 
 import no_real_claude  # noqa: F401,E402  D98: the tests never call the real Claude (first)
+import no_network  # noqa: F401,E402  D99: the tests never reach the network (right after D98)
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]

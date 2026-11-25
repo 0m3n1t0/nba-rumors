@@ -773,5 +773,53 @@
   ],
   "expect_person": null,
   "why": "Draymond told it: Steph never stands in, even when the note names him (D94)"
+ },
+ {
+  "id": "P1-46",
+  "kind": "pick",
+  "source": "run 2026-11-13_43395656602 short_1 beat 2",
+  "who": [
+   "Luka Doncic",
+   "Charles Barkley",
+   "Kyle Kuzma"
+  ],
+  "line": "But Redick called Luka fine, and the officials kept it a regular foul.",
+  "on_screen": "JJ Redick on the Lakers sideline",
+  "photo": {
+   "title": "1 charles barkley 2019 (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "interview",
+    "e": "calm",
+    "t": "speaks into an NBA TV microphone",
+    "who": "Charles Barkley"
+   }
+  },
+  "expect": false,
+  "why": "the line names Luka (the note locks nobody of the story): another story man, Barkley, is refused (D91 P1: D50 for the pick)"
+ },
+ {
+  "id": "P1-47",
+  "kind": "pick",
+  "source": "run 2026-11-13_43395656602 short_1 beat 2 + a real Luka photo (tag cache)",
+  "who": [
+   "Luka Doncic",
+   "Charles Barkley",
+   "Kyle Kuzma"
+  ],
+  "line": "But Redick called Luka fine, and the officials kept it a regular foul.",
+  "on_screen": "JJ Redick on the Lakers sideline",
+  "photo": {
+   "title": "File:Luka Doncic (55095317361) (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "stands in Lakers jersey, looking ahead",
+    "who": "Luka Doncic"
+   }
+  },
+  "expect": true,
+  "why": "the man the line names is allowed (D91 P1)"
  }
 ]

@@ -216,6 +216,13 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 138. D91 P1 (his answer 2026-11-25: one rule for the pick and the top-ups): D50 ("a line naming
+     a man with an NBA career shows only the men it names") held only for the top-ups; Claude's
+     pick obeyed it only when the on_screen note named a man (D71). media.line_lock now returns
+     "line" with those men when the note locks nobody, and lock_allows treats it like "speaker":
+     the named men or a generic / team picture, never another story man. The top-ups are
+     unchanged (their chain already did this). Kept runs: 40 of 107 picked photos on such lines
+     showed another story man (Doc Rivers on Draymond's line, Paul George on Tatum's); P1-46/47.
  137. D91 P2 (stage 5 of the class-fix plan; his answer 2026-11-25: P2 first): team_fits' ten
      layered rules (D30, D38, D41, D43, D45, D49/D67, D59, D60, D61, D62) are ONE rule: the
      photo's era (media.photo_era_of) against the line's scope (media.line_scope) in
@@ -6018,7 +6025,7 @@ class ScreenNamesOnlyHim(unittest.TestCase):
         # D94 (his answers 2026-11-25): the pick asks line_lock, whose "note" mode is D71's shows_only
         self.assertIn('mode, onscreen = line_lock(line, screen, who_all, short.get("speech_lines") or ())', src)   # D96
         self.assertIn("team_ok = (lambda j, ok=team_ok: ok(j) and lock_allows(cands[j], mode, onscreen, who_all, screen))", src)
-        self.assertIn('    return "note", screen_players(screen, who)', src)
+        self.assertIn('    note = screen_players(screen, who)', src)          # D91 P1: the note first, then the line
         self.assertIn('    if mode == "note":\n        return shows_only(c, men, who, screen)', src)
         self.assertIn("order = [j for j in order if team_ok(j)]", src)
 
@@ -7114,7 +7121,9 @@ class OnlyTheSpeaker(unittest.TestCase):
                              ("speaker", ["Dwyane Wade"]))
             self.assertEqual(m.line_lock("He said it over an anthem video.", "Donald Trump at a rally", self.WHO),
                              ("outside", []))
-            self.assertEqual(m.line_lock("LeBron skipped the visit.", "Donald Trump at a rally", self.WHO), ("note", []))
+            # D91 P1 (a changed rule, his answer 2026-11-25): the line names a player and the note locks
+            # nobody: only him (D50 for the pick too), no longer "no limit"
+            self.assertEqual(m.line_lock("LeBron skipped the visit.", "Donald Trump at a rally", self.WHO), ("line", ["LeBron James"]))
             # a TV host speaking keeps D50: the note decides, as before
             self.assertEqual(m.line_lock("Smith says LeBron wouldn't visit.", "LeBron James speaking", self.WHO),
                              ("note", ["LeBron James"]))
@@ -8058,3 +8067,24 @@ class OneEraRule(unittest.TestCase):
         past = {**scope, "past_years": [2020], "spells": [("los angeles lakers", 2018, 2025)]}
         self.assertFalse(media.era_allowed({**era, "former": False, "jersey": "atlanta hawks"}, past))   # D60
         self.assertTrue(media.era_allowed({**era, "former": False, "jersey": "los angeles lakers"}, past))
+
+
+class OneWhoRule(unittest.TestCase):
+    """138. D91 P1: the pick follows D50 too, through line_lock's "line" mode."""
+
+    def test_line_mode(self):
+        import media
+        from unittest.mock import patch
+        who = ["Luka Doncic", "Charles Barkley", "Kyle Kuzma"]
+        with patch.object(media, "locks_line", lambda p: p != "Charles Barkley"), \
+                patch.object(media, "outside_person", lambda n: False):
+            mode, men = media.line_lock("But Redick called Luka fine.", "JJ Redick on the sideline", who)
+            self.assertEqual((mode, men), ("line", ["Luka Doncic"]))
+            barkley = {"kind": "photo", "title": "Charles Barkley 2019.jpg", "tag": {"who": "Charles Barkley", "v": "C"}}
+            generic = {"kind": "photo", "title": "Crypto.com Arena.jpg", "tag": {"v": "A"}}
+            self.assertFalse(media.lock_allows(barkley, mode, men, who, "JJ Redick on the sideline"))
+            self.assertTrue(media.lock_allows(generic, mode, men, who, "JJ Redick on the sideline"))
+            # a line naming only a man who locks nothing (a TV analyst): no limit, as before (D50)
+            self.assertEqual(media.line_lock("Barkley laughed it off.", "", who), ("note", []))
+            # the note first (D71 / D72): it names Kuzma, so Kuzma, not the line's Luka
+            self.assertEqual(media.line_lock("Luka was fine.", "Kyle Kuzma on the floor", who), ("note", ["Kyle Kuzma"]))

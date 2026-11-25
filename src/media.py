@@ -2972,18 +2972,26 @@ def line_lock(say: str, screen: str, who: list[str], speech: tuple | list | set 
       a reporter or executive speaking keeps D50 (his answer): the note decides, as before;
     "outside": a speech line whose note names a real person outside sport (Trump): no story
       man at all, only a generic or team picture, else the previous picture stays;
-    "note": as before (D71: the note's men when one locks; none: no limit)."""
+    "note": as before (D71: the note's men when one locks);
+    "line": D91 P1 (his answer 2026-11-25: one rule for the pick and the top-ups): the note locks
+      nobody and the line names men who lock a line (D50, D92): only they (a generic or team
+      picture still may stand), as the top-ups already did; none: no limit."""
     sp = [p for p in speakers(say, who, speech) if locks_line(p)]
     if sp:
         return "speaker", sp
     if is_speech_line(say, speech) and outside_speaker(screen, who):
         return "outside", []
-    return "note", screen_players(screen, who)
+    note = screen_players(screen, who)
+    if note:
+        return "note", note
+    named = [p for p in who if names_him(say, p) and locks_line(p)]
+    return ("line", named) if named else ("note", [])
 
 
 def lock_allows(c: dict, mode: str, men: list[str], who: list[str], screen: str) -> bool:
     """D94: may this picture stand on a line locked by line_lock? "note" mode is D71's shows_only,
-    unchanged; "speaker": only the speakers or nobody known (the note's other men never);
+    unchanged; "speaker" and "line" (D91 P1): only those men or nobody known (another story man
+    never);
     "outside": nobody known, or the outside man himself."""
     if mode == "note":
         return shows_only(c, men, who, screen)

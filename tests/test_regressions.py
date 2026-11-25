@@ -216,6 +216,12 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 131. D96 module 5 (his answers 2026-11-25, class E1): the audience signals by meaning. NBA_WORDS
+     keeps nba, basketball, lakers, celtics, knicks, mavericks, 76ers, sixers, timberwolves; the
+     other team names ("islanders vs kings", "las vegas weather"), STORY_WORDS' news / reaction /
+     history ("history career will") and NOISE's picks / odds / live / meme decide only through ONE
+     Sonnet call per run (signals.judge_signals: NBA / STORY / NOISE questions); no judgement: as
+     before. The trend match (D86), the search hits and the summary's basketball trends agree.
  130. D96 module 4 (his answers 2026-11-25, class E1): the story choice by meaning. Collect:
      SPECULATION's picks, odds, betting, mock, preview, prediction, predicted, proposal and
      OTHER_LEAGUE's college, football, liberty, g league decide only through ONE Sonnet call per run
@@ -7565,3 +7571,73 @@ class StoryWordsByMeaning(unittest.TestCase):
         finally:
             e.made_recently = old
         self.assertTrue(data["ranked"][0].get("repeat"))
+
+
+class SignalWordsByMeaning(unittest.TestCase):
+    """131. D96 module 5 (his rule 2026-11-25: an ambiguous word by meaning in context, never a list)."""
+
+    def setUp(self):
+        import signals
+        self.s = signals
+        self.saved = dict(signals._judged)
+        signals._judged.clear()
+
+    def tearDown(self):
+        self.s._judged.clear()
+        self.s._judged.update(self.saved)
+
+    def test_one_call_and_its_answers(self):
+        s = self.s
+        calls = []
+
+        def ask(prompt):
+            calls.append(prompt)
+            # 1 NBA "islanders vs kings": no; 2 NBA "heat vs bulls" with NBA-free headlines: yes;
+            # 3 NOISE "jaylen brown draft picks trade": no; 4 STORY "history career will": no;
+            # 5 STORY "luka doncic trade reaction" has a clear word: never asked
+            return '{"yes": [2]}'
+        trends = [{"query": "islanders vs kings", "news": ["Islanders top Kings in overtime"]},
+                  {"query": "heat vs bulls", "news": ["Butler returns to Miami"]},
+                  {"query": "lakers score", "news": []}]
+        found = ["jaylen brown draft picks trade", "history career will", "luka doncic trade reaction",
+                 "lebron 2k26 rating"]
+        s.judge_signals(found, trends, ask=ask)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("NBA: islanders vs kings", calls[0])
+        self.assertNotIn("lakers score", calls[0])                  # a clear word: no question
+        self.assertNotIn("STORY: luka doncic trade reaction", calls[0])
+        self.assertNotIn("2k26", calls[0])
+        self.assertFalse(s.nba_text(s.trend_text(trends[0])))
+        self.assertTrue(s.nba_text(s.trend_text(trends[1])))
+        self.assertTrue(s.nba_text(s.trend_text(trends[2])))
+        self.assertFalse(s.noise("jaylen brown draft picks trade"))
+        self.assertTrue(s.noise("lebron 2k26 rating"))
+        self.assertFalse(s.story_phrase("history career will"))
+        self.assertTrue(s.story_phrase("luka doncic trade reaction"))
+
+    def test_failed_call_is_as_before(self):
+        s = self.s
+
+        def down(prompt):
+            raise SystemExit("claude failed")
+        s.judge_signals(["jaylen brown draft picks trade", "get bad news game"],
+                        [{"query": "islanders vs kings", "news": []}], ask=down)
+        self.assertTrue(s.nba_text("islanders vs kings"))
+        self.assertTrue(s.noise("jaylen brown draft picks trade"))
+        self.assertTrue(s.story_phrase("get bad news game"))
+
+    def test_the_trend_match_uses_it(self):
+        s = self.s
+        topic = {"headline": "Doc Rivers fires back", "star_names": ["Doc Rivers 5.0"]}
+        trend = {"query": "rivers kings", "news": ["Kings win in Los Angeles"]}
+        s._judged[("nba", s.trend_text(trend))] = False
+        self.assertFalse(s.trend_matches(topic, trend))
+        s._judged[("nba", s.trend_text(trend))] = True
+        self.assertTrue(s.trend_matches(topic, trend))
+
+    def test_main_uses_it(self):
+        src = (ROOT / "src" / "signals.py").read_text(encoding="utf-8")
+        call = src.index('    judge_signals(found, signals.get("google_trends", []))')
+        self.assertLess(call, src.index('    signals["suggestions"] = [x for x in dict.fromkeys(found) if not noise(x)]'))
+        self.assertIn("(story_phrase(x) or len(keys & set(x.split())) > 1)", src)
+        self.assertIn("if nba_text(trend_text(g))", src)

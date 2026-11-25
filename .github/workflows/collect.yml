@@ -89,6 +89,7 @@ jobs:
 
       - name: "Stage 1b: audience signals (YouTube views + search)"
         env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}   # D96 module 5: ambiguous signal words
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           WIKIMEDIA_TOKEN: ${{ secrets.WIKIMEDIA_TOKEN }}   # optional: Wikimedia limits per account, not per shared IP

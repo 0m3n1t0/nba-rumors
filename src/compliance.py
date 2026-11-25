@@ -296,25 +296,36 @@ def dropped_meaning(claims: list[dict], spoken: str) -> list[str]:
 # on a reunion", but its source said Vince Coleman got them talking and Barkley planned golf with
 # Jordan. Where a feud stands NOW is part of the story: a Short that says "silence" while a source
 # tells of contact since leaves out the latest turn.
-SILENT = re.compile(r"\b(no update|still (?:no|not|silent|hasn't|haven't|feuding)|never (?:spoke|spoken|talked|"
-                    r"made up)(?: again)?|stopped (?:talking|speaking)|(?:haven't|hasn't|have not|has not) "
-                    r"(?:spoken|talked)|the silence|no reunion|went silent|cut (?:him|each other) off)\b", re.I)
-TURN = re.compile(r"\b(reunit\w*|reconcil\w*|made up|patched (?:it|things) up|buried the hatchet|"
-                  r"apologi[sz]\w*|time to talk|talking again|spoke again|spoken again|reached out|"
-                  r"squashed|hugged|back on good terms)\b", re.I)
+# D96 module 6 part 2 (his answers 2026-11-25): clear phrases decide alone; the ambiguous ones
+# ("he never stopped talking" is no silence, "narrative squashed" no reconciliation) count by
+# meaning: in the Short, through the D95 call's PART D (short["short_judged"]); in the articles,
+# through the fact sheet's "reconciled" sign; no answer: the stricter side (silence counts, a turn
+# in the Short does not, a turn in the articles does)
+SILENT = re.compile(r"\b(still (?:silent|feuding)|(?:haven't|hasn't|have not|has not) "
+                    r"(?:spoken|talked)|no reunion|went silent|cut (?:him|each other) off)\b", re.I)
+SILENT_AMBIG = re.compile(r"\b(no update|still (?:no|not|hasn't|haven't)|never (?:spoke|spoken|talked|made up)"
+                          r"(?: again)?|stopped (?:talking|speaking)|the silence)\b", re.I)
+TURN = re.compile(r"\b(reunit\w*|reconcil\w*|patched (?:it|things) up|buried the hatchet|"
+                  r"talking again|spoke again|spoken again|back on good terms)\b", re.I)
+TURN_AMBIG = re.compile(r"\b(made up|apologi[sz]\w*|time to talk|reached out|squashed|hugged)\b", re.I)
 NAME = re.compile(r"\b[A-Z][a-z]{2,}\b")
 
 
-def missed_turn(spoken: str, sources: list[dict]) -> str:
+def missed_turn(spoken: str, sources: list[dict], judged: dict | None = None, signs: dict | None = None) -> str:
     """A source sentence telling of contact since the falling-out (with a name the Short says
-    within two sentences of it), when the Short speaks of silence and never of that turn. ""=fine."""
-    if not SILENT.search(spoken) or TURN.search(spoken):
+    within two sentences of it), when the Short speaks of silence and never of that turn. ""=fine.
+    D96 module 6 part 2: the ambiguous phrases by meaning (see SILENT / TURN above)."""
+    judged = judged or {}
+    silence = bool(SILENT.search(spoken)) or (bool(SILENT_AMBIG.search(spoken)) and judged.get("silence") is not False)
+    turn_told = bool(TURN.search(spoken)) or (bool(TURN_AMBIG.search(spoken)) and judged.get("turn") is True)
+    if not silence or turn_told:
         return ""
+    ambiguous_ok = not (signs and signs.get("reconciled") is False)     # the articles' turn: stricter side
     said = {w.lower() for w in NAME.findall(spoken)}
     for s in sources:
         sentences = split_sentences(f"{s.get('summary', '')} {s.get('text', '')}")
         for k, x in enumerate(sentences):
-            if TURN.search(x):
+            if TURN.search(x) or (TURN_AMBIG.search(x) and ambiguous_ok):
                 near = " ".join(sentences[max(0, k - 2):k + 3])
                 if said & {w.lower() for w in NAME.findall(near)}:
                     return x.strip()[:160]
@@ -322,7 +333,7 @@ def missed_turn(spoken: str, sources: list[dict]) -> str:
 
 
 def check_claims(claims: list[dict], sources: list[dict], spoken: str, attributed=(),
-                 signs: dict | None = None) -> tuple[str, list[str], list[dict]]:
+                 signs: dict | None = None, judged: dict | None = None) -> tuple[str, list[str], list[dict]]:
     """Every important claim carries CONFIRMED / REPORTED / RUMOR / UNVERIFIED, written by the
     script writer and CHECKED here against the sources. A status is downgraded when the evidence
     does not carry it (never upgraded because several sites repeat it). Rumors and reports must
@@ -368,7 +379,7 @@ def check_claims(claims: list[dict], sources: list[dict], spoken: str, attribute
     for text in bare_claims(out, spoken, attributed):
         verdict = worst(verdict, REVIEW)
         notes.append(f"a rumor / anonymous report / opinion sounds like a fact: {text[:80]}")
-    turn = missed_turn(spoken, sources)
+    turn = missed_turn(spoken, sources, judged, signs)
     if turn:
         verdict = worst(verdict, REVIEW)
         notes.append(f"the Short speaks of silence, but a source tells of contact since: \"{turn[:100]}\"")
@@ -535,8 +546,10 @@ EVENTS = {
     "fight": r"\bfight\b|\bbrawl\b|\bpunch(ed)?\b|\bshov(e|ed)\b",
     "dead": r"\bdied\b|\bdead\b|\bpassed away\b",
 }
-TITLE_HEDGE = re.compile(r"\?|\b(rumou?rs?|reportedly|could|might|wants?|eyeing|interested|"
-                         r"considering|in talks|linked|report|trade talks?)\b", re.I)
+TITLE_HEDGE = re.compile(r"\?|\b(rumou?rs?|reportedly|eyeing|in talks|trade talks?)\b", re.I)
+# D96 module 6 part 2: "Curry could play 20 seasons" is no hedge; these count only when the D95 call
+# (PART A) judged the title a report or something uncertain; no answer: they do not count
+TITLE_HEDGE_AMBIG = re.compile(r"\b(could|might|wants?|interested|considering|report|linked)\b", re.I)
 STOP_NAMES = {"nba", "the", "is", "was", "vs", "and", "why", "how", "who", "what", "did", "does",
               "can", "will", "just", "real", "big", "new", "not", "now", "his", "her", "this", "that",
               "trade", "beef", "drama", "insane", "shot", "gone", "over", "fan", "fans", "team", "rumor"}
@@ -591,7 +604,7 @@ def known_names(headlines: list[str]) -> set[str]:
 
 
 def check_headline(text: str, claims: list[dict], sources: list[dict], kind: str,
-                   known: set[str] | None = None) -> tuple[str, list[str]]:
+                   known: set[str] | None = None, attributed=()) -> tuple[str, list[str]]:
     """kind = "title" or "thumbnail". Names must be in the story; an event word (traded,
     fired, ejected...) must happen in the sources; a report or rumor may not be stated as done.
     Curiosity and drama are fine: questions and hedges pass."""
@@ -610,7 +623,8 @@ def check_headline(text: str, claims: list[dict], sources: list[dict], kind: str
             if not re.search(pat, mat):
                 verdict = REJECT
                 notes.append(f"{kind} says \"{event}\" but no source reports it")
-            elif "CONFIRMED" not in statuses and not TITLE_HEDGE.search(text):
+            elif "CONFIRMED" not in statuses and not TITLE_HEDGE.search(text) \
+                    and not (TITLE_HEDGE_AMBIG.search(text) and _norm(text) in {_norm(x) for x in attributed or ()}):
                 verdict = worst(verdict, REVIEW)
                 notes.append(f"{kind} states \"{event}\" as done, but the story is only reported")
     return verdict, notes
@@ -644,7 +658,7 @@ RESPONSE_AMBIG = re.compile(r"\b(responded|response|statement)\b", re.I)
 
 def check_suitability(spoken: str, title: str, thumb: str, hook: str, sources: list[dict],
                       claims: list[dict], origin: dict, attributed=(),
-                      signs: dict | None = None) -> tuple[str, list[str], list[str]]:
+                      signs: dict | None = None, judged: dict | None = None) -> tuple[str, list[str], list[str]]:
     """Legitimate sports drama passes (beef, trash talk, fines, trade demands, ejections).
     Profanity never goes in the title, the first frame or the hook; elsewhere it holds the
     Short. Serious allegations need a trusted outlet or named insider, attribution in the
@@ -670,8 +684,13 @@ def check_suitability(spoken: str, title: str, thumb: str, hook: str, sources: l
     if found:
         strong = any(s.get("tier") == 1 and s.get("text") for s in sources) or bool(origin.get("insiders"))
         attributed = attributed_anywhere(spoken, attributed)     # D95: an ambiguous word judged in context
-        response_known = bool(RESPONSE.search(mat)) or (bool(RESPONSE_AMBIG.search(mat)) and sign(signs, "response"))
-        response_told = bool(RESPONSE.search(spoken) or RESPONSE_AMBIG.search(spoken))
+        # D96 module 6 (his answer 2026-11-25: the safe side is always the STRICTER check): an
+        # ambiguous word in the articles counts unless the fact sheet said "no response"; in the
+        # Short only when the D95 call said the Short tells the response
+        response_known = bool(RESPONSE.search(mat)) or (bool(RESPONSE_AMBIG.search(mat))
+                                                        and not (signs and signs.get("response") is False))
+        response_told = bool(RESPONSE.search(spoken)) or (bool(RESPONSE_AMBIG.search(spoken))
+                                                          and (judged or {}).get("response") is True)
         if "private" in found:
             verdict = REJECT
             notes.append("private personal information")
@@ -701,9 +720,11 @@ def evaluate_script(short: dict, sources: list[dict], known: set[str] | None = N
     hook = (short.get("hook") or {}).get("text", "")
     checks = {}
     signs = short.get("source_signs")                  # D96 module 6: the fact sheet's reading of the articles
+    judged = short.get("short_judged")                 # D96 module 6 part 2: the D95 call's PART D
+    attributed = short.get("attributed") or ()
     v, n, origin = check_sources(sources, signs)
     checks["source_verification"] = {"verdict": v, "notes": n, "origin": origin}
-    v, n, claims = check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or (), signs)   # D95
+    v, n, claims = check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or (), signs, judged)   # D95
     checks["claim_classification"] = {"verdict": v, "notes": n}
     v, n = check_fabrication(spoken, sources, short.get("unsupported_quotes", []),
                              short.get("unsupported_numbers", []), bool(short.get("audience_hot")), signs)
@@ -712,20 +733,20 @@ def evaluate_script(short: dict, sources: list[dict], known: set[str] | None = N
     checks["original_storytelling"] = {"verdict": v, "notes": n, **stats}
     checks["repetition"] = ({"verdict": REVIEW, "notes": [f"too similar to: {short['too_similar_to']}"]}
                             if short.get("too_similar_to") else {"verdict": PASS, "notes": []})
-    v, n = check_headline(title, claims, sources, "title", known)
+    v, n = check_headline(title, claims, sources, "title", known, attributed)
     checks["title_accuracy"] = {"verdict": v, "notes": n}
-    v, n = check_headline(thumb, claims, sources, "thumbnail", known)
+    v, n = check_headline(thumb, claims, sources, "thumbnail", known, attributed)
     checks["thumbnail_accuracy"] = {"verdict": v, "notes": n}
-    v, n, cats = check_suitability(spoken, title, thumb, hook, sources, claims, origin, short.get("attributed") or (), signs)
+    v, n, cats = check_suitability(spoken, title, thumb, hook, sources, claims, origin, short.get("attributed") or (), signs, judged)
     checks["advertiser_suitability"] = {"verdict": v, "notes": n, "topics": cats}
     return {"claims": claims, "checks": checks,
             "verdict": worst(*(c["verdict"] for c in checks.values()))}
 
 
 def pick_safe_title(titles: list[dict], claims: list[dict], sources: list[dict],
-                    known: set[str] | None = None) -> list[dict]:
+                    known: set[str] | None = None, attributed=()) -> list[dict]:
     """Titles that pass the accuracy check go first (the best-scoring of them wins), so a
     strong but misleading title never leads when an accurate one exists."""
     for t in titles:
-        t["accuracy"], t["accuracy_notes"] = check_headline(t["title"], claims, sources, "title", known)
+        t["accuracy"], t["accuracy_notes"] = check_headline(t["title"], claims, sources, "title", known, attributed)
     return sorted(titles, key=lambda t: (RANK[t["accuracy"]], -t.get("score", 0)))

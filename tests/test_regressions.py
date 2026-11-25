@@ -216,6 +216,17 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 133. D96 module 6 part 2 (his answers 2026-11-25, classes F1, Q1): the script's and title's
+     ambiguous words by meaning, in the D95 call (no new call). SILENT keeps still silent / still
+     feuding / haven't spoken / no reunion / went silent / cut off; TURN keeps reunited,
+     reconciled, patched up, buried the hatchet, talking/spoke again, back on good terms;
+     TITLE_HEDGE keeps "?", rumors, reportedly, eyeing, in talks, trade talks. The ambiguous ones
+     ("he never stopped talking", "narrative squashed", "Curry could play 20 seasons"): in the
+     Short by PART D (silence / turn / response, short["short_judged"]), in a title by PART A (the
+     titles join the sentences; the title order is redone with them), in the articles by the fact
+     sheet's "reconciled" sign. His answer: the safe side is always the STRICTER check (silence
+     counts, a turn or response told in the Short does not, a turn or response in the articles
+     does) - this also corrects part 1's response side. INSULT and MEANING_WORD stay lists.
  132. D96 module 6 part 1 (his answers 2026-11-25, classes F1, Q1): the articles' ambiguous words by
      meaning. OFFICIAL keeps nba.com, nba communications, press release, confirmed by the
      team/league; REACTION_EVIDENCE keeps backlash, outrage, uproar, trolled, mocked; RESPONSE (in
@@ -7274,7 +7285,7 @@ class ReportsAreRepairedNotOnlyHeld(unittest.TestCase):
 
     def test_the_gate_counts_the_same(self):
         src = (ROOT / "src" / "compliance.py").read_text(encoding="utf-8")
-        self.assertIn('check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or (), signs)', src)   # D96 m6
+        self.assertIn('check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or (), signs, judged)', src)   # D96 m6
         self.assertIn("not attributed_anywhere(spoken, attributed)", src)
         sc = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
         # D96 module 2: one call judges both questions (attribution and speech)
@@ -7709,10 +7720,21 @@ class ArticleSignsByMeaning(unittest.TestCase):
         import compliance as C
         spoken = "Per ESPN, he was arrested on domestic violence charges."
         mat = self.src("Police arrested him, per ESPN. The team needed a response after the loss.")
+        # part 2 (his answer 2026-11-25: the safe side is always the STRICTER check, a changed rule):
+        # with no answer the ambiguous word in the articles counts; "no response" lets it go
+        held = lambda notes: any("response or denial" in n for n in notes)       # noqa: E731
         _, notes, _ = C.check_suitability(spoken, "", "", "", mat, [], C.original_reporters(mat))
-        self.assertFalse(any("response" in n.lower() for n in notes))
+        self.assertTrue(held(notes))
+        _, notes, _ = C.check_suitability(spoken, "", "", "", mat, [], C.original_reporters(mat), (), {"response": False})
+        self.assertFalse(held(notes))
         _, notes, _ = C.check_suitability(spoken, "", "", "", mat, [], C.original_reporters(mat), (), {"response": True})
-        self.assertTrue(any("response" in n.lower() or "denial" in n.lower() for n in notes))
+        self.assertTrue(held(notes))
+        told = spoken + " He responded on Instagram that it is false."
+        _, notes, _ = C.check_suitability(told, "", "", "", mat, [], C.original_reporters(mat), (), {"response": True})
+        self.assertTrue(held(notes))                                   # the Short's "responded" not judged: not told
+        _, notes, _ = C.check_suitability(told, "", "", "", mat, [], C.original_reporters(mat), (), {"response": True},
+                                          {"response": True})
+        self.assertFalse(held(notes))
 
     def test_the_gate_reads_them(self):
         src = (ROOT / "src" / "compliance.py").read_text(encoding="utf-8")
@@ -7721,3 +7743,74 @@ class ArticleSignsByMeaning(unittest.TestCase):
         sc = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
         self.assertIn('"source_signs": signs,', sc)
         self.assertIn("sheet = fact_sheet(sources, signs)", sc)
+
+
+class ScriptWordsByMeaning(unittest.TestCase):
+    """133. D96 module 6 part 2 (his rule 2026-11-25: an ambiguous word by meaning in context, never a list)."""
+
+    SRC = [{"title": "t", "summary": "", "tier": 1, "publisher": "ESPN",
+            "text": "Barkley and Jordan stopped talking years ago. Barkley said Jordan reached out to him last week."}]
+
+    def test_silence_and_turn(self):
+        import compliance as C
+        spoken = "Barkley says Jordan cussed him out, and they stopped talking."
+        self.assertTrue(C.missed_turn(spoken, self.SRC))                                  # no answer: stricter
+        self.assertFalse(C.missed_turn(spoken, self.SRC, {"silence": False}))            # judged: not silence
+        self.assertFalse(C.missed_turn(spoken, self.SRC, {}, {"reconciled": False}))     # articles: no turn
+        told = spoken + " Then Jordan reached out to him."
+        self.assertTrue(C.missed_turn(told, self.SRC))                                    # the Short's turn not judged
+        self.assertFalse(C.missed_turn(told, self.SRC, {"turn": True}))
+        self.assertFalse(C.missed_turn("Draymond never stopped talking.", self.SRC, {"silence": False}))
+        self.assertTrue(C.missed_turn("Barkley and Jordan still haven't spoken.", self.SRC, {"silence": False}))   # clear decides
+        claims = [{"text": "Barkley and Jordan stopped talking", "status": "REPORTED", "source": 1}]
+        said = "Per ESPN, Barkley and Jordan stopped talking."
+        turn_note = lambda r: any("speaks of silence" in n for n in r[1])        # noqa: E731
+        self.assertTrue(turn_note(C.check_claims(claims, self.SRC, said)))
+        self.assertFalse(turn_note(C.check_claims(claims, self.SRC, said, (), None, {"silence": False})))
+
+    def test_title_hedge(self):
+        import compliance as C
+        claims = [{"text": "Rivers could be fired", "status": "REPORTED", "source": 1}]
+        src = [{"title": "t", "summary": "", "tier": 1, "publisher": "ESPN", "text": "Doc Rivers could be fired, per ESPN."}]
+        title = "Doc Rivers could be FIRED"
+        self.assertEqual(C.check_headline(title, claims, src, "title")[0], C.REVIEW)       # not judged: stricter
+        self.assertEqual(C.check_headline(title, claims, src, "title", None, [title])[0], C.PASS)
+        self.assertEqual(C.check_headline("Is Doc Rivers getting FIRED?", claims, src, "title")[0], C.PASS)   # clear
+
+    def test_the_d95_call_carries_them(self):
+        import script
+        script._attribution_seen.clear(); script._short_seen.clear()
+        saved = script.ask_claude
+        prompts = []
+        try:
+            def ask(prompt, model=None, **kw):
+                prompts.append(prompt)
+                return {"words": [1], "speech": [], "now": [], "short": {"silence": False, "turn": "yes"}}
+            script.ask_claude = ask
+            a, _ = script.judge_ambiguous(["Doc Rivers could be FIRED"], [], "ctx", (), ["silence", "turn"])
+            self.assertEqual(a, ["Doc Rivers could be FIRED"])
+            self.assertEqual(script.judged_short(["silence", "turn"], "ctx"), {"silence": False})   # only booleans
+            self.assertIn("PART D QUESTIONS:\nsilence\nturn", prompts[0])
+            self.assertEqual(len(prompts), 1)
+        finally:
+            script.ask_claude = saved
+            script._attribution_seen.clear(); script._short_seen.clear()
+        short = {"spoken": "They stopped talking. Then he apologized.", "titles": [{"title": "Curry could play 20 seasons"},
+                 {"title": "Is it over?"}], "thumbnail_text": "COULD HE?"}
+        self.assertEqual(script.short_questions(short), ["silence", "turn"])
+        self.assertEqual(script.ambiguous_titles(short["titles"], short["thumbnail_text"]), ["Curry could play 20 seasons"])
+        self.assertEqual(script.short_questions({"spoken": "They still haven't spoken."}), [])     # clear: no question
+
+    def test_the_articles_sign(self):
+        import script
+        self.assertIn('"reconciled": do the articles tell', script.FACTS)
+
+    def test_the_stages_pass_them(self):
+        src = (ROOT / "src" / "compliance.py").read_text(encoding="utf-8")
+        self.assertIn('    judged = short.get("short_judged")', src)
+        self.assertIn('v, n = check_headline(title, claims, sources, "title", known, attributed)', src)
+        self.assertIn("short_judged", (ROOT / "src" / "fix_after_read.py").read_text(encoding="utf-8"))
+        sc = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
+        self.assertIn('short["short_judged"] = judged_short(short_questions(short), short.get("spoken", ""))', sc)
+        self.assertIn('short["titles"] = compliance.pick_safe_title(short["titles"], short.get("claims") or [], sources, known,', sc)
+        self.assertIn("+ ambiguous_titles(short.get(\"titles\"), short.get(\"thumbnail_text\", \"\")),", sc)

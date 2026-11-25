@@ -47,13 +47,21 @@ INSIDERS = ["shams charania", "marc stein", "jake fischer", "chris haynes", "bri
             "stefan bondy", "marc spears", "jovan buha", "dave mcmenamin", "tim bontemps",
             "bobby marks", "kendra andrews", "law murray", "kelly iko", "mike vorkunov",
             "fred katz", "joe vardon", "eric nehm", "keith pompey", "tim macmahon"]
-OFFICIAL = re.compile(r"\bnba\.com\b|\bnba communications\b|\b(official(ly)?|announced|statement|"
-                      r"press release|confirmed by the (team|league|nba))\b", re.I)
+OFFICIAL = re.compile(r"\bnba\.com\b|\bnba communications\b|\b(press release|confirmed by the (team|league|nba))\b", re.I)
+# D96 module 6 part 1 (his answers 2026-11-25): "officially began", "announced" in a recap: these
+# count only when the fact sheet's reading of the articles says the story was officially announced
+# (short["source_signs"]["official"]); not judged: they do not count (the safe side)
+OFFICIAL_AMBIG = re.compile(r"\b(official(ly)?|announced|statement)\b", re.I)
+
+
+def sign(signs: dict | None, key: str) -> bool:
+    """D96 module 6: the fact sheet's answer (True only when it said so)."""
+    return bool(signs) and signs.get(key) is True
 ATTRIBUTION = re.compile(r"\b(?:per|according to|reported by|first reported by|via)\s+"
                          r"((?:the\s+)?[A-Z][\w'.&-]*(?:\s+[A-Z][\w'.&-]*){0,3})")
 
 
-def original_reporters(sources: list[dict]) -> dict:
+def original_reporters(sources: list[dict], signs: dict | None = None) -> dict:
     """Who broke it, as far as the articles say. Returns the distinct original reports:
     {"insiders": [...], "outlets": [...], "official": bool}. An outlet that only repeats a named
     insider adds nothing; an outlet with no attribution counts as its own report."""
@@ -63,7 +71,8 @@ def original_reporters(sources: list[dict]) -> dict:
         low = fold(text)
         named = {i for i in INSIDERS if i in low}
         cites_other = bool(ATTRIBUTION.search(text))
-        if OFFICIAL.search(text) and s.get("tier") == 1:
+        if s.get("tier") == 1 and (OFFICIAL.search(text)
+                                   or (OFFICIAL_AMBIG.search(text) and sign(signs, "official"))):
             official = True
         if named:
             found_insiders |= named
@@ -105,16 +114,16 @@ def on_record_reporters(sources: list[dict]) -> list[str]:
     return sorted(found)
 
 
-def independent_reports(sources: list[dict]) -> int:
-    r = original_reporters(sources)
+def independent_reports(sources: list[dict], signs: dict | None = None) -> int:
+    r = original_reporters(sources, signs)
     return len(r["insiders"]) + len(r["outlets"]) + (1 if r["official"] else 0)
 
 
-def check_sources(sources: list[dict]) -> tuple[str, list[str], dict]:
+def check_sources(sources: list[dict], signs: dict | None = None) -> tuple[str, list[str], dict]:
     """A story needs at least one trusted (tier 1) outlet, a named insider, or (D29) a named beat
     reporter credited for an on-record quote, read in full."""
     read = [s for s in sources if s.get("text")]
-    origin = original_reporters(sources)
+    origin = original_reporters(sources, signs)
     notes = []
     if not read:
         return REJECT, ["no article could be read: the story cannot be verified"], origin
@@ -312,7 +321,8 @@ def missed_turn(spoken: str, sources: list[dict]) -> str:
     return ""
 
 
-def check_claims(claims: list[dict], sources: list[dict], spoken: str, attributed=()) -> tuple[str, list[str], list[dict]]:
+def check_claims(claims: list[dict], sources: list[dict], spoken: str, attributed=(),
+                 signs: dict | None = None) -> tuple[str, list[str], list[dict]]:
     """Every important claim carries CONFIRMED / REPORTED / RUMOR / UNVERIFIED, written by the
     script writer and CHECKED here against the sources. A status is downgraded when the evidence
     does not carry it (never upgraded because several sites repeat it). Rumors and reports must
@@ -320,8 +330,8 @@ def check_claims(claims: list[dict], sources: list[dict], spoken: str, attribute
     notes, out = [], []
     if not claims:
         return REVIEW, ["no claims listed: the facts cannot be classified"], []
-    origin = original_reporters(sources)
-    independent = independent_reports(sources)
+    origin = original_reporters(sources, signs)
+    independent = independent_reports(sources, signs)
     on_record = on_record_reporters([s for s in sources if s.get("text")])   # D29: a named beat reporter
     verdict = PASS
     for c in claims:
@@ -382,15 +392,20 @@ SOCIAL_PROOF = re.compile(r"\b(fans?|the internet|twitter|social media|everyone|
                           r"lost it|losing it|going crazy|melting down|erupt\w*|explod\w*|roasting|"
                           r"reacting|talking about|can'?t stop|in shock|stunned|calling for|demanding)\b|"
                           r"\b(went viral|broke the internet|blew up online)\b", re.I)
-REACTION_EVIDENCE = re.compile(r"\b(fans?|supporters|social media|twitter|x\.com|instagram|tiktok|"
-                               r"reddit|viral|backlash|outrage|reacted|reaction|criticism|criticized|"
-                               r"slammed|mocked|trolled|swifties|online|comments?|buzz|trending|"
-                               r"uproar|blasted|ripped)\b", re.I)
+REACTION_EVIDENCE = re.compile(r"\b(backlash|outrage|uproar|trolled|mocked)\b", re.I)
+# D96 module 6 part 1: page furniture ("Comments (0)", "pic.twitter.com", "What's Trending Now")
+# matched these; they count only when the fact sheet says the articles report a real reaction
+REACTION_AMBIG = re.compile(r"\b(fans?|supporters|social media|twitter|x\.com|instagram|tiktok|"
+                            r"reddit|viral|reacted|reaction|criticism|criticized|"
+                            r"slammed|swifties|online|comments?|buzz|trending|blasted|ripped)\b", re.I)
 
 
-def check_social_proof(spoken: str, sources: list[dict], audience_hot: bool = False) -> tuple[str, list[str]]:
+def check_social_proof(spoken: str, sources: list[dict], audience_hot: bool = False,
+                       signs: dict | None = None) -> tuple[str, list[str]]:
     m = SOCIAL_PROOF.search(spoken)
-    if not m or audience_hot or REACTION_EVIDENCE.search(material(sources)):
+    mat = material(sources) if m else ""
+    if not m or audience_hot or REACTION_EVIDENCE.search(mat) \
+            or (REACTION_AMBIG.search(mat) and sign(signs, "fan_reaction")):        # D96 module 6
         return PASS, []
     return REVIEW, [f"fan reaction with no sign of one in the sources or today's data: \"{m.group(0)}\""]
 
@@ -436,7 +451,8 @@ def unsupported_details(text: str, sources: list[dict]) -> list[str]:
 
 
 def check_fabrication(spoken: str, sources: list[dict], bad_quotes: list[str],
-                      unsupported_numbers: list[str], audience_hot: bool = False) -> tuple[str, list[str]]:
+                      unsupported_numbers: list[str], audience_hot: bool = False,
+                      signs: dict | None = None) -> tuple[str, list[str]]:
     notes, verdict = [], PASS
     mat = fold(material(sources))
     for m in ANON.finditer(spoken):
@@ -458,7 +474,7 @@ def check_fabrication(spoken: str, sources: list[dict], bad_quotes: list[str],
     if details:
         verdict = worst(verdict, REVIEW)
         notes.append(f"details not in the sources: {', '.join(details)}")
-    v, n = check_social_proof(spoken, sources, audience_hot)
+    v, n = check_social_proof(spoken, sources, audience_hot, signs)
     return worst(verdict, v), notes + n
 
 
@@ -618,12 +634,17 @@ CATEGORIES = {
 ALWAYS_REVIEW = {"sexual", "violence", "hate", "self_harm"}
 INSULT = re.compile(r"\b(he|she|they|[A-Z][a-z]+) (is|was|are|looks like) (a |an )?(clown|idiot|moron|"
                     r"loser|joke|fraud|pathetic|stupid)\b")
-RESPONSE = re.compile(r"\b(denied|denies|deny|responded|response|statement|declined to comment|"
+RESPONSE = re.compile(r"\b(denied|denies|deny|declined to comment|"
                       r"no comment|has(n't| not) commented|lawyer|attorney|apologi[sz]ed)\b", re.I)
+# D96 module 6 part 1: in the articles, "responded / response / statement" ("the 76ers needed a
+# response") count only when the fact sheet says the accused responded; the spoken side (part 2)
+# still counts them as before
+RESPONSE_AMBIG = re.compile(r"\b(responded|response|statement)\b", re.I)
 
 
 def check_suitability(spoken: str, title: str, thumb: str, hook: str, sources: list[dict],
-                      claims: list[dict], origin: dict, attributed=()) -> tuple[str, list[str], list[str]]:
+                      claims: list[dict], origin: dict, attributed=(),
+                      signs: dict | None = None) -> tuple[str, list[str], list[str]]:
     """Legitimate sports drama passes (beef, trash talk, fines, trade demands, ejections).
     Profanity never goes in the title, the first frame or the hook; elsewhere it holds the
     Short. Serious allegations need a trusted outlet or named insider, attribution in the
@@ -649,8 +670,8 @@ def check_suitability(spoken: str, title: str, thumb: str, hook: str, sources: l
     if found:
         strong = any(s.get("tier") == 1 and s.get("text") for s in sources) or bool(origin.get("insiders"))
         attributed = attributed_anywhere(spoken, attributed)     # D95: an ambiguous word judged in context
-        response_known = bool(RESPONSE.search(mat))
-        response_told = bool(RESPONSE.search(spoken))
+        response_known = bool(RESPONSE.search(mat)) or (bool(RESPONSE_AMBIG.search(mat)) and sign(signs, "response"))
+        response_told = bool(RESPONSE.search(spoken) or RESPONSE_AMBIG.search(spoken))
         if "private" in found:
             verdict = REJECT
             notes.append("private personal information")
@@ -679,12 +700,13 @@ def evaluate_script(short: dict, sources: list[dict], known: set[str] | None = N
     thumb = short.get("thumbnail_text", "")
     hook = (short.get("hook") or {}).get("text", "")
     checks = {}
-    v, n, origin = check_sources(sources)
+    signs = short.get("source_signs")                  # D96 module 6: the fact sheet's reading of the articles
+    v, n, origin = check_sources(sources, signs)
     checks["source_verification"] = {"verdict": v, "notes": n, "origin": origin}
-    v, n, claims = check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or ())   # D95
+    v, n, claims = check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or (), signs)   # D95
     checks["claim_classification"] = {"verdict": v, "notes": n}
     v, n = check_fabrication(spoken, sources, short.get("unsupported_quotes", []),
-                             short.get("unsupported_numbers", []), bool(short.get("audience_hot")))
+                             short.get("unsupported_numbers", []), bool(short.get("audience_hot")), signs)
     checks["factual_accuracy"] = {"verdict": v, "notes": n}
     v, n, stats = check_originality(short.get("beats", []), sources)
     checks["original_storytelling"] = {"verdict": v, "notes": n, **stats}
@@ -694,7 +716,7 @@ def evaluate_script(short: dict, sources: list[dict], known: set[str] | None = N
     checks["title_accuracy"] = {"verdict": v, "notes": n}
     v, n = check_headline(thumb, claims, sources, "thumbnail", known)
     checks["thumbnail_accuracy"] = {"verdict": v, "notes": n}
-    v, n, cats = check_suitability(spoken, title, thumb, hook, sources, claims, origin, short.get("attributed") or ())
+    v, n, cats = check_suitability(spoken, title, thumb, hook, sources, claims, origin, short.get("attributed") or (), signs)
     checks["advertiser_suitability"] = {"verdict": v, "notes": n, "topics": cats}
     return {"claims": claims, "checks": checks,
             "verdict": worst(*(c["verdict"] for c in checks.values()))}

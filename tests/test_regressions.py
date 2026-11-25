@@ -216,6 +216,16 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 132. D96 module 6 part 1 (his answers 2026-11-25, classes F1, Q1): the articles' ambiguous words by
+     meaning. OFFICIAL keeps nba.com, nba communications, press release, confirmed by the
+     team/league; REACTION_EVIDENCE keeps backlash, outrage, uproar, trolled, mocked; RESPONSE (in
+     the articles) keeps denied, declined to comment, no comment, lawyer, attorney, apologized. The
+     ambiguous ones (official, announced, statement; fans, twitter, comments, viral, trending...;
+     responded, response) count only when the D82 fact sheet, in the same call, answered by
+     meaning that the story was officially announced / the articles report a real fan reaction /
+     the accused responded (short["source_signs"]); page furniture ("Comments (0)",
+     "pic.twitter.com", "What's Trending Now") and "this beef officially began" no longer count. No
+     answer (a failed call, an older Short): the safe side, they do not count. ANONYMOUS stays.
  131. D96 module 5 (his answers 2026-11-25, class E1): the audience signals by meaning. NBA_WORDS
      keeps nba, basketball, lakers, celtics, knicks, mavericks, 76ers, sixers, timberwolves; the
      other team names ("islanders vs kings", "las vegas weather"), STORY_WORDS' news / reaction /
@@ -7264,7 +7274,7 @@ class ReportsAreRepairedNotOnlyHeld(unittest.TestCase):
 
     def test_the_gate_counts_the_same(self):
         src = (ROOT / "src" / "compliance.py").read_text(encoding="utf-8")
-        self.assertIn('check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or ())', src)
+        self.assertIn('check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or (), signs)', src)   # D96 m6
         self.assertIn("not attributed_anywhere(spoken, attributed)", src)
         sc = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
         # D96 module 2: one call judges both questions (attribution and speech)
@@ -7641,3 +7651,73 @@ class SignalWordsByMeaning(unittest.TestCase):
         self.assertLess(call, src.index('    signals["suggestions"] = [x for x in dict.fromkeys(found) if not noise(x)]'))
         self.assertIn("(story_phrase(x) or len(keys & set(x.split())) > 1)", src)
         self.assertIn("if nba_text(trend_text(g))", src)
+
+
+class ArticleSignsByMeaning(unittest.TestCase):
+    """132. D96 module 6 part 1 (his rule 2026-11-25: an ambiguous word by meaning in context, never a list)."""
+
+    def src(self, text, tier=1):
+        return [{"title": "t", "summary": "", "text": text, "tier": tier, "publisher": "ESPN"}]
+
+    def test_the_fact_sheet_answers_them(self):
+        import script
+        saved = script.ask_claude
+        try:
+            script.ask_claude = lambda prompt, model=None, **kw: {
+                "facts": [], "signs": {"official": True, "fan_reaction": "yes", "response": False, "x": True}}
+            signs = {}
+            script.fact_sheet(self.src("The Pelicans announced it."), signs)
+            self.assertEqual(signs, {"official": True, "response": False})      # only real booleans
+            self.assertIn('"official": did the team, the league or the player\'s camp OFFICIALLY', script.FACTS)
+
+            def down(prompt, model=None, **kw):
+                raise RuntimeError("down")
+            script.ask_claude = down
+            signs = {}
+            script.fact_sheet(self.src("x"), signs)
+            self.assertEqual(signs, {})
+        finally:
+            script.ask_claude = saved
+
+    def test_official(self):
+        import compliance as C
+        recap = self.src("This beef officially began on March 6, when LeBron confronted Smith.")
+        self.assertFalse(C.original_reporters(recap)["official"])                       # not judged: safe side
+        self.assertFalse(C.original_reporters(recap, {"official": False})["official"])
+        self.assertTrue(C.original_reporters(self.src("The Pelicans announced it."), {"official": True})["official"])
+        self.assertTrue(C.original_reporters(self.src("Per a press release, he is out."))["official"])   # clear
+        self.assertFalse(C.original_reporters(self.src("The Pelicans announced it.", tier=2),
+                                              {"official": True})["official"])          # tier 1 still needed
+
+    def test_fan_reaction(self):
+        import compliance as C
+        line = "Fans are furious about it."
+        furniture = self.src("Murray is out. Comments (0) pic.twitter.com/abc What's Trending Now")
+        self.assertEqual(C.check_social_proof(line, furniture)[0], C.REVIEW)
+        self.assertEqual(C.check_social_proof(line, furniture, signs={"fan_reaction": True})[0], C.PASS)
+        self.assertEqual(C.check_social_proof(line, self.src("A huge backlash followed."))[0], C.PASS)   # clear
+        self.assertEqual(C.check_fabrication(line, furniture, [], [], False, {"fan_reaction": True})[0], C.PASS)
+        self.assertEqual(C.check_fabrication(line, furniture, [], [])[0], C.REVIEW)
+        # the claims check reads the same answer: CONFIRMED stays only with official word
+        claim = [{"text": "The Pelicans announced Murray is out.", "status": "CONFIRMED", "source": 1}]
+        ann = self.src("The Pelicans announced Murray is out.")
+        said = "The Pelicans said Murray is out."
+        self.assertEqual(C.check_claims(claim, ann, said, (), {"official": True})[2][0]["status"], "CONFIRMED")
+        self.assertEqual(C.check_claims(claim, ann, said)[2][0]["status"], "REPORTED")
+
+    def test_response(self):
+        import compliance as C
+        spoken = "Per ESPN, he was arrested on domestic violence charges."
+        mat = self.src("Police arrested him, per ESPN. The team needed a response after the loss.")
+        _, notes, _ = C.check_suitability(spoken, "", "", "", mat, [], C.original_reporters(mat))
+        self.assertFalse(any("response" in n.lower() for n in notes))
+        _, notes, _ = C.check_suitability(spoken, "", "", "", mat, [], C.original_reporters(mat), (), {"response": True})
+        self.assertTrue(any("response" in n.lower() or "denial" in n.lower() for n in notes))
+
+    def test_the_gate_reads_them(self):
+        src = (ROOT / "src" / "compliance.py").read_text(encoding="utf-8")
+        self.assertIn('    signs = short.get("source_signs")', src)
+        self.assertIn("v, n, origin = check_sources(sources, signs)", src)
+        sc = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
+        self.assertIn('"source_signs": signs,', sc)
+        self.assertIn("sheet = fact_sheet(sources, signs)", sc)

@@ -2188,7 +2188,7 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             screen = beats[i].get("on_screen", "") if i < len(beats) else ""
             # D94 (his answers 2026-11-25): a line reporting a player's or coach's words shows only
             # him; a speech line whose note names a real person outside sport shows no story man
-            mode, onscreen = line_lock(line, screen, who_all)
+            mode, onscreen = line_lock(line, screen, who_all, short.get("speech_lines") or ())   # D96
             team_ok = (lambda j, ok=team_ok: ok(j) and lock_allows(cands[j], mode, onscreen, who_all, screen))
             order = [j for j in order if team_ok(j)]
             k = ranked[0] + 1 if ranked else None
@@ -2679,19 +2679,42 @@ def screen_players(screen: str, who: list[str]) -> list[str]:
 # D94 (receipts2 eval: Trump's words over LeBron, Smith's over LeBron, Breen's over Embiid; his
 # answers 2026-11-25): a line reporting X's words about Y shows ONLY X, the speaker (the viewer must
 # never take Y for the man who said it). The speech verbs are D68's receipts list (his answer).
-SPEECH_VERBS = ("said", "says", "told", "wrote", "added", "responded", "replied", "posted", "explained", "asked")
+# D96 module 2 (his rule 2026-11-25: an ambiguous word is judged by meaning in context, never by a
+# list; his answers 2026-11-25, the same split as D95): CLEAR speech verbs decide alone; AMBIGUOUS
+# ones ("added 10 rebounds", "responded with a 10-0 run", "posted 25 points", "asked for a trade")
+# count only on a line the script stage's D95 call judged to report someone's words
+# (short["speech_lines"]); no judgement (old scripts, a failed call): the line works as before D94.
+SPEECH_VERBS = ("said", "says", "told", "wrote", "replied", "explained")
+SPEECH_AMBIG = ("added", "responded", "posted", "asked")
 SPEECH = re.compile(r"\b(?:" + "|".join(SPEECH_VERBS) + r")\b")
+SPEECH_AMBIG_RE = re.compile(r"\b(?:" + "|".join(SPEECH_AMBIG) + r")\b", re.I)
 
 
-def speakers(line: str, who: list[str]) -> list[str]:
-    """D94: the story men named right before a speech verb ("Smith says", "Mike Breen said",
-    "Wade says he..."): full name, last name or first name, then the verb."""
+def _line_key(line: str) -> str:
+    return re.sub(r"\s+", " ", (line or "").strip())
+
+
+def is_speech_line(line: str, speech: tuple | list | set = ()) -> bool:
+    """D94 + D96: the line reports someone's words: a clear speech verb, or an ambiguous one on a
+    line judged so in context."""
     text = fold(line or "")
+    return bool(SPEECH.search(text)) or (bool(SPEECH_AMBIG_RE.search(text))
+                                         and _line_key(line) in {_line_key(x) for x in speech or ()})
+
+
+def speakers(line: str, who: list[str], speech: tuple | list | set = ()) -> list[str]:
+    """D94: the story men named right before a speech verb ("Smith says", "Mike Breen said",
+    "Wade says he..."): full name, last name or first name, then the verb; D96: an ambiguous verb
+    ("Bassey asked, ...") only on a line judged to report someone's words."""
+    text = fold(line or "")
+    verbs = list(SPEECH_VERBS)
+    if _line_key(line) in {_line_key(x) for x in speech or ()}:
+        verbs += SPEECH_AMBIG
     out = []
     for p in who:
         parts = name_parts(p)
         forms = {" ".join(parts), parts[-1], parts[0]} if parts else set()
-        if any(re.search(rf"\b{re.escape(f)}\s+(?:{'|'.join(SPEECH_VERBS)})\b", text) for f in forms if f):
+        if any(re.search(rf"\b{re.escape(f)}\s+(?:{'|'.join(verbs)})\b", text) for f in forms if f):
             out.append(p)
     return out
 
@@ -2733,7 +2756,7 @@ def outside_speaker(screen: str, who: list[str]) -> list[str]:
             if name_words_ok(n) and not any(names_him(n, p) for p in who) and outside_person(n)]
 
 
-def line_lock(say: str, screen: str, who: list[str]) -> tuple[str, list[str]]:
+def line_lock(say: str, screen: str, who: list[str], speech: tuple | list | set = ()) -> tuple[str, list[str]]:
     """D94 then D71: who may be on this line.
     "speaker": the line reports the words of story men who lock a line (a player or coach, D92
       included): only they, whatever the note says (Wade, not Wembanyama, on "Wade says he...");
@@ -2741,10 +2764,10 @@ def line_lock(say: str, screen: str, who: list[str]) -> tuple[str, list[str]]:
     "outside": a speech line whose note names a real person outside sport (Trump): no story
       man at all, only a generic or team picture, else the previous picture stays;
     "note": as before (D71: the note's men when one locks; none: no limit)."""
-    sp = [p for p in speakers(say, who) if locks_line(p)]
+    sp = [p for p in speakers(say, who, speech) if locks_line(p)]
     if sp:
         return "speaker", sp
-    if SPEECH.search(fold(say or "")) and outside_speaker(screen, who):
+    if is_speech_line(say, speech) and outside_speaker(screen, who):
         return "outside", []
     return "note", screen_players(screen, who)
 
@@ -2880,7 +2903,8 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
         # D94 (his answers 2026-11-25): a line reporting a player's or coach's words shows only
         # him, before the note ("Wade says he has to get stronger": Wade, no longer Wembanyama);
         # a speech line whose note names a real person outside sport gets no story man
-        mode, men = line_lock(lines[i] if i < len(lines) else "", screens[i] if i < len(screens) else "", who or [])
+        mode, men = line_lock(lines[i] if i < len(lines) else "", screens[i] if i < len(screens) else "", who or [],
+                              (short or {}).get("speech_lines") or ())                       # D96
         if mode == "outside":
             skip(i, "the speaker is outside sport")
             return None

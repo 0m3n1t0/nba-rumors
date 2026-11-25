@@ -1709,48 +1709,78 @@ def rewrite_keeps_hook_rules(new: str, old: str, lead: str = "") -> bool:
     return not names or bool(names & compliance.names_in(first_words(new)))
 
 
-ATTRIBUTION_ASK = """Each numbered sentence below is from an NBA news Short. Its only sign of being a report, a
-rumor or someone's words is a word that can also mean something plain: "per", "report", "may",
-"could", "might", "would", "if", "wants", "interested", "considering", "expected to", "expects",
-"suggests", "responded", "asked", "posted", "added", "heard", "hears", "buzz", "whispers".
-Judge each sentence by its meaning and the story: does it tell its main claim as someone's words,
-a report or something uncertain (a rumor, a possibility: "the Lakers may trade him", "per ESPN",
-"he posted on Instagram that...", "he added, 'we're fine'"), or does it state it as plain fact and
-the word only has its plain meaning ("30 points per game", "the injury report", "May 2025", "posted
-25 points", "added 10 rebounds", "responded with a 10-0 run", "heard boos", "would have ejected
-him" telling what happened)?
+ATTRIBUTION_ASK = """Below are sentences from an NBA news Short, judged by their meaning and the story (THE SHORT).
+
+PART A. Each numbered sentence's only sign of being a report, a rumor or someone's words is a word
+that can also mean something plain: "per", "report", "may", "could", "might", "would", "if",
+"wants", "interested", "considering", "expected to", "expects", "suggests", "responded", "asked",
+"posted", "added", "heard", "hears", "buzz", "whispers". Does it tell its main claim as someone's
+words, a report or something uncertain (a rumor, a possibility: "the Lakers may trade him", "per
+ESPN", "he posted on Instagram that...", "he added, 'we're fine'"), or does it state it as plain
+fact and the word only has its plain meaning ("30 points per game", "the injury report", "May
+2025", "posted 25 points", "added 10 rebounds", "responded with a 10-0 run", "heard boos", "would
+have ejected him" telling what happened)?
+
+PART B. In each numbered line, does "added", "responded", "posted" or "asked" report what a PERSON
+SAID OR WROTE (his own words: "Bassey asked, 'What you gonna do?'", "he posted on Instagram", "he
+responded, 'I'm not worried'"), or an act or a stat ("added 10 rebounds", "responded with a 10-0
+run", "posted 25 points", "asked for a trade" as a request reported by others)?
 
 THE SHORT (context):
 SHORT_TEXT
 
-SENTENCES:
+PART A SENTENCES:
 SENTENCES_TEXT
 
-Return ONLY JSON: {"words": [the numbers of the sentences that tell their claim as someone's words, a report or something uncertain]}"""
+PART B LINES:
+LINES_TEXT
+
+Return ONLY JSON: {"words": [PART A numbers that tell their claim as someone's words, a report or
+something uncertain], "speech": [PART B numbers that report a person's own words]}"""
 
 _attribution_seen: dict[str, bool] = {}
+_speech_seen: dict[str, bool] = {}
 
 
-def judged_attributions(sentences: list[str], context: str) -> list[str]:
-    """D95 (his rule 2026-11-25: an ambiguous word is judged by its meaning in context, never by a
-    word list): the sentences that ARE a report, a hedge or someone's words. One call for the new ones (the main
-    model), cached for the run; a failed call or an unclear answer counts as NOT attribution (the
-    repair or the hold follows, the safe side); the Claude limit still stops the stage."""
-    todo = [x for x in dict.fromkeys(sentences) if x and x not in _attribution_seen]
-    if todo:
+def judge_ambiguous(sentences: list[str], lines: list[str], context: str) -> tuple[list[str], list[str]]:
+    """D95 + D96 module 2 (his rule 2026-11-25: an ambiguous word is judged by its meaning in
+    context, never by a word list; his answer: ONE call for both questions): PART A, the sentences
+    that ARE a report, a hedge or someone's words; PART B, the lines whose "added / responded /
+    posted / asked" reports a person's own words (the speaker rule, D94). One call for the new
+    ones (the main model), cached for the run; a failed call or an unclear answer counts as NOT
+    attribution / NOT speech (the safe side: the repair or the hold follows; a line works as before
+    D94); the Claude limit still stops the stage."""
+    todo_a = [x for x in dict.fromkeys(sentences) if x and x not in _attribution_seen]
+    todo_b = [x for x in dict.fromkeys(lines) if x and x not in _speech_seen]
+    if todo_a or todo_b:
         try:
             ans = ask_claude(ATTRIBUTION_ASK.replace("SHORT_TEXT", context)
-                             .replace("SENTENCES_TEXT", "\n".join(f"{k}. {x}" for k, x in enumerate(todo, 1))),
+                             .replace("SENTENCES_TEXT", "\n".join(f"{k}. {x}" for k, x in enumerate(todo_a, 1)) or "(none)")
+                             .replace("LINES_TEXT", "\n".join(f"{k}. {x}" for k, x in enumerate(todo_b, 1)) or "(none)"),
                              CLAUDE_MODEL, where="attribution")
-            yes = {int(k) for k in (ans or {}).get("words", []) if str(k).isdigit()}
+            yes_a = {int(k) for k in (ans or {}).get("words", []) if str(k).isdigit()}
+            yes_b = {int(k) for k in (ans or {}).get("speech", []) if str(k).isdigit()}
         except UsageLimit:
             raise
         except Exception as exc:
-            print(f"[!] ambiguous-word judgement failed ({str(exc)[:80]}): not counted as attribution")
-            yes = set()
-        for k, x in enumerate(todo, 1):
-            _attribution_seen[x] = k in yes
-    return [x for x in sentences if _attribution_seen.get(x)]
+            print(f"[!] ambiguous-word judgement failed ({str(exc)[:80]}): not counted as attribution or speech")
+            yes_a, yes_b = set(), set()
+        for k, x in enumerate(todo_a, 1):
+            _attribution_seen[x] = k in yes_a
+        for k, x in enumerate(todo_b, 1):
+            _speech_seen[x] = k in yes_b
+    return [x for x in sentences if _attribution_seen.get(x)], [x for x in lines if _speech_seen.get(x)]
+
+
+def judged_attributions(sentences: list[str], context: str) -> list[str]:
+    """D95: PART A only (the repair loop and the hook order ask before the Short is final)."""
+    return judge_ambiguous(sentences, [], context)[0]
+
+
+def ambiguous_speech_lines(short: dict) -> list[str]:
+    """D96 module 2: the spoken lines (hook included) with an ambiguous speech verb, to be judged."""
+    lines = [(short.get("hook") or {}).get("text", "")] + [b.get("say", "") for b in short.get("beats") or []]
+    return [x for x in lines if re.search(r"\b(added|responded|posted|asked)\b", x or "", re.I)]
 
 
 def attributed_in(claims: list[dict] | None, spoken: str, context: str = "") -> list[str]:
@@ -2629,8 +2659,11 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     except Exception as exc:
         print(f"[!] official results check skipped: {exc}")
     # monetization safety, enforced in code (the media, music and video checks follow in gate.py)
-    # D95: the deciding ambiguous-word sentences judged in context, so the gate counts the same ones
-    short["attributed"] = attributed_in(compliance.gate_statuses(short.get("claims") or [], sources), short.get("spoken", ""))
+    # D95: the deciding ambiguous-word sentences judged in context, so the gate counts the same ones;
+    # D96 module 2: in the same call, the lines whose ambiguous speech verb reports someone's words
+    short["attributed"], short["speech_lines"] = judge_ambiguous(
+        compliance.ambiguous_deciders(compliance.gate_statuses(short.get("claims") or [], sources), short.get("spoken", "")),
+        ambiguous_speech_lines(short), short.get("spoken", ""))
     result = compliance.evaluate_script(short, sources, known)
     short["claims"] = result["claims"]
     short["compliance"] = {"verdict": result["verdict"], "checks": result["checks"]}

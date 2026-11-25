@@ -216,6 +216,12 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 128. D96 module 2 (his answers 2026-11-25, class P1): D94's speech verbs split as in D95: said,
+     says, told, wrote, replied, explained decide alone; added, responded, posted, asked count only
+     on a line the script stage's single D95 call judged to report a person's own words
+     (short["speech_lines"], also redone by fix_after_read); no judgement: the line works as
+     before D94 (the note, D71). "Lendeborg posted 25 points" is no speaker line; "Bassey asked,
+     'What you gonna do?'" is, once judged.
  127. D95 (his answers 2026-11-25, class F1, D78 + D93): a report said as fact is repaired, not only
      held: (a) check_claims' REJECT "told as fact" (no attribution anywhere) now goes to the repair
      pass, which names the source in that sentence; (b) a claim the writer marked UNVERIFIED that
@@ -5904,7 +5910,7 @@ class ScreenNamesOnlyHim(unittest.TestCase):
         src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
         self.assertIn('screen = beats[i].get("on_screen", "") if i < len(beats) else ""', src)
         # D94 (his answers 2026-11-25): the pick asks line_lock, whose "note" mode is D71's shows_only
-        self.assertIn("mode, onscreen = line_lock(line, screen, who_all)", src)
+        self.assertIn('mode, onscreen = line_lock(line, screen, who_all, short.get("speech_lines") or ())', src)   # D96
         self.assertIn("team_ok = (lambda j, ok=team_ok: ok(j) and lock_allows(cands[j], mode, onscreen, who_all, screen))", src)
         self.assertIn('    return "note", screen_players(screen, who)', src)
         self.assertIn('    if mode == "note":\n        return shows_only(c, men, who, screen)', src)
@@ -6981,8 +6987,10 @@ class OnlyTheSpeaker(unittest.TestCase):
         return {"kind": "photo", "title": "x.jpg", "tag": {"v": "C", "s": "game", "t": "t", "who": who} if who else {}}
 
     def test_the_verbs_are_d68s_list(self):
-        self.assertEqual(self.m.SPEECH_VERBS, ("said", "says", "told", "wrote", "added", "responded",
-                                               "replied", "posted", "explained", "asked"))
+        # D96 module 2 (his answer 2026-11-25, a changed rule): D68's list split as in D95: clear
+        # verbs decide alone, ambiguous ones only on a line judged to report someone's words
+        self.assertEqual(self.m.SPEECH_VERBS, ("said", "says", "told", "wrote", "replied", "explained"))
+        self.assertEqual(self.m.SPEECH_AMBIG, ("added", "responded", "posted", "asked"))
 
     def test_speakers(self):
         sp = self.m.speakers
@@ -7198,7 +7206,7 @@ class ReportsAreRepairedNotOnlyHeld(unittest.TestCase):
             again = script.judged_attributions([post], "context")
         self.assertEqual((got, again, len(calls)), ([post, post], [post], 1))   # one call, cached
         self.assertIn("30 points per game", script.ATTRIBUTION_ASK)
-        self.assertIn("posted\n25 points", script.ATTRIBUTION_ASK)
+        self.assertIn("posted 25 points", script.ATTRIBUTION_ASK)
         script._attribution_seen.clear()
         with patch.object(script, "ask_claude", side_effect=RuntimeError("down")), redirect_stdout(io.StringIO()):
             self.assertEqual(script.judged_attributions([post], "c"), [])       # failure: not attribution
@@ -7217,10 +7225,11 @@ class ReportsAreRepairedNotOnlyHeld(unittest.TestCase):
         self.assertIn('check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or ())', src)
         self.assertIn("not attributed_anywhere(spoken, attributed)", src)
         sc = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
-        self.assertIn('short["attributed"] = attributed_in(compliance.gate_statuses(short.get("claims") or [], sources), short.get("spoken", ""))', sc)
-        self.assertLess(sc.index('short["attributed"] = attributed_in('), sc.index("result = compliance.evaluate_script(short, sources, known)"))
+        # D96 module 2: one call judges both questions (attribution and speech)
+        self.assertIn('short["attributed"], short["speech_lines"] = judge_ambiguous(', sc)
+        self.assertLess(sc.index('short["attributed"], short["speech_lines"] = judge_ambiguous('), sc.index("result = compliance.evaluate_script(short, sources, known)"))
         fx = (ROOT / "src" / "fix_after_read.py").read_text(encoding="utf-8")
-        self.assertLess(fx.index('short["attributed"] = script.attributed_in('), fx.index("result = C.evaluate_script(short, sources)"))
+        self.assertLess(fx.index('short["attributed"], short["speech_lines"] = script.judge_ambiguous('), fx.index("result = C.evaluate_script(short, sources)"))
 
 
     def test_the_whole_short_and_the_sensitive_topic_count_judged_sentences(self):
@@ -7234,3 +7243,57 @@ class ReportsAreRepairedNotOnlyHeld(unittest.TestCase):
         self.assertTrue(any("told as proven fact" in n for n in notes))
         v, notes, _ = C.check_suitability(spoken, "", "", "", src, rep, {"insiders": []}, [said])
         self.assertFalse(any("told as proven fact" in n for n in notes))   # judged in context: attributed
+
+
+class AmbiguousSpeechVerbsInContext(unittest.TestCase):
+    """128. D96 module 2 (his rule 2026-11-25: an ambiguous word by meaning, never a list)."""
+
+    WHO = ["Yaxel Lendeborg", "Steph Curry", "Charles Bassey", "Marcus Smart"]
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.p = patch.object(media, "career_teams", lambda p: {"t"})
+        self.p.start()
+
+    def tearDown(self):
+        self.p.stop()
+
+    def test_an_ambiguous_verb_needs_the_judgement(self):
+        m = self.m
+        stat = "Lendeborg posted 25 points and Curry sat."
+        quote = 'Udoka said Bassey asked, "What you gonna do?" and Smart swung.'
+        self.assertEqual(m.speakers(stat, self.WHO), [])
+        self.assertEqual(m.speakers(stat, self.WHO, [stat]), ["Yaxel Lendeborg"])   # only if judged speech
+        self.assertEqual(m.speakers(quote, self.WHO), [])
+        self.assertEqual(m.speakers(quote, self.WHO, [quote]), ["Charles Bassey"])
+        self.assertEqual(m.speakers("Curry said it.", self.WHO), ["Steph Curry"])       # clear: alone
+        self.assertFalse(m.is_speech_line("He posted 25 points."))
+        self.assertTrue(m.is_speech_line("He posted on Instagram.", ["He posted on Instagram."]))
+        self.assertTrue(m.is_speech_line("He said it."))
+        self.assertEqual(m.line_lock(stat, "Steph Curry on the bench", self.WHO), ("note", ["Steph Curry"]))
+
+    def test_one_call_judges_both(self):
+        import script
+        calls = []
+
+        def fake(prompt, model="", where=""):
+            calls.append(prompt)
+            return {"words": [1], "speech": [2]}
+        script._attribution_seen.clear(); script._speech_seen.clear()
+        with patch.object(script, "ask_claude", fake):
+            a, sp = script.judge_ambiguous(["Per ESPN, he is out."], ["He posted 25 points.", "He posted on X."], "ctx")
+        self.assertEqual((a, sp, len(calls)), (["Per ESPN, he is out."], ["He posted on X."], 1))
+        self.assertIn("PART B", calls[0])
+        script._attribution_seen.clear(); script._speech_seen.clear()
+        with patch.object(script, "ask_claude", side_effect=RuntimeError("down")), redirect_stdout(io.StringIO()):
+            self.assertEqual(script.judge_ambiguous(["a"], ["b posted"], "c"), ([], []))   # safe side
+        script._attribution_seen.clear(); script._speech_seen.clear()
+        short = {"hook": {"text": "Bassey asked for it."}, "beats": [{"say": "He said no."}, {"say": "He added 10 rebounds."}]}
+        self.assertEqual(script.ambiguous_speech_lines(short), ["Bassey asked for it.", "He added 10 rebounds."])
+
+    def test_the_picker_reads_it(self):
+        src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
+        self.assertIn('(short or {}).get("speech_lines") or ())', src)
+        self.assertIn("    if is_speech_line(say, speech) and outside_speaker(screen, who):", src)
+

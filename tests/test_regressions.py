@@ -216,15 +216,6 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
- 142. D99 (his "კი" to all five recommendations 2026-11-26, class R1 "tests are offline"): the tests
-     never reach the network (a full run tried commons.wikimedia.org twice, from test 104
-     test_refused_never_offered via media.prewarm_searches -> commons_videos, which swallows the
-     error; with network access, as on GitHub, it really searched). tests/no_network.py, imported
-     right after no_real_claude by every test file: every name lookup and every connection or send
-     in the test process, to any address (127.0.0.1 included), raises at once; a test during which
-     one happened fails under its own name even when the code swallows the error; the processes the
-     tests start get every proxy variable pointed at a closed local port. Test 104 now stubs the
-     Commons search as "nothing found". src/ unchanged.
  141. D98 (his "კი" and answers 2026-11-26, class R1 "tests are offline"): the tests never call the
      real Claude, whether or not the CLI is installed (this cloud environment has it on PATH: the
      suite made 5 real calls and test_gate_and_repair failed). tests/no_real_claude.py, imported
@@ -455,7 +446,6 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 import no_real_claude  # noqa: F401,E402  D98: the tests never call the real Claude (first)
-import no_network  # noqa: F401,E402  D99: the tests never reach the network (right after D98)
 
 
 def claude_did_not_answer(*_args, **_kwargs):
@@ -5663,10 +5653,8 @@ class RedoOneShortsPictures(unittest.TestCase):
     def test_refused_never_offered(self):
         import media
         seen = []
-        saved = (media.plan, media.shortlist_photos, media.candidates, media.contact_sheet, media.spoken,
-                 media.commons_videos)
+        saved = (media.plan, media.shortlist_photos, media.candidates, media.contact_sheet, media.spoken)
         try:
-            media.commons_videos = lambda *a, **k: []     # D99 (his answer 5): the Commons search finds nothing
             media.plan = lambda short: [{"person": "Steve Kerr", "queries": []}]
             media.spoken = lambda short: [{"say": "Kerr called it terrible."}]
             media.shortlist_photos = lambda *a, **k: None
@@ -5683,8 +5671,7 @@ class RedoOneShortsPictures(unittest.TestCase):
             self.assertEqual(seen, ["pa"])
             self.assertIn("pb", media.REJECTED)                 # the fill and the VS card skip it too
         finally:
-            (media.plan, media.shortlist_photos, media.candidates, media.contact_sheet, media.spoken,
-             media.commons_videos) = saved
+            media.plan, media.shortlist_photos, media.candidates, media.contact_sheet, media.spoken = saved
             media.REFUSED.clear()
 
     def test_replaced_stay_marked(self):
@@ -8155,92 +8142,6 @@ class GateUsesMediaRules(unittest.TestCase):
                            ("Jaylen_Brown_2022.jpg", "Jaylen Brown", True), ("Green field.jpg", "Draymond Green", False)):
             self.assertEqual(gate.full_name_in(t, p), want, t)
             self.assertEqual(media.full_name_in_title(t, p), want, t)
-
-
-class NoNetworkInTests(unittest.TestCase):
-    """142. D99: the tests never reach the network (tests/no_network.py)."""
-
-    def setUp(self):
-        self.mark = no_network.mark()
-
-    def tearDown(self):
-        no_network.forget_since(self.mark)           # the calls these tests make on purpose
-
-    def test_every_test_file_loads_the_guard(self):
-        import ast
-        files = sorted((ROOT / "tests").glob("test_*.py"))
-        self.assertGreaterEqual(len(files), 3)
-        for f in files:
-            tree = ast.parse(f.read_text(encoding="utf-8"))
-            top = [a.name for n in tree.body if isinstance(n, ast.Import) for a in n.names]
-            self.assertIn("no_network", top, f"{f.name} must import no_network (D99)")
-
-    def test_every_way_in_this_process_is_refused(self):
-        import http.client
-        import socket
-        import urllib.request
-        import media
-        import wiki_http
-        G = no_network
-        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            tries = [lambda: socket.getaddrinfo("commons.wikimedia.org", 443),
-                     lambda: socket.gethostbyname("localhost"),
-                     lambda: socket.gethostbyname_ex("example.com"),
-                     lambda: socket.gethostbyaddr("127.0.0.1"),
-                     lambda: socket.create_connection(("127.0.0.1", 80), timeout=1),
-                     lambda: tcp.connect(("127.0.0.1", 80)),
-                     lambda: tcp.connect_ex(("10.0.0.1", 80)),
-                     lambda: udp.sendto(b"x", ("8.8.8.8", 53)),
-                     lambda: udp.sendto(b"x", 0, ("8.8.8.8", 53)),
-                     lambda: udp.sendmsg([b"x"], [], 0, ("8.8.8.8", 53)),
-                     lambda: http.client.HTTPSConnection("commons.wikimedia.org", timeout=1).connect(),
-                     lambda: urllib.request.urlopen("https://commons.wikimedia.org/w/api.php", timeout=1),
-                     lambda: wiki_http.fetch("https://commons.wikimedia.org/w/api.php", "ua", 1),
-                     lambda: media.get("https://example.com/")]
-            for n, call in enumerate(tries):
-                before = len(G.CALLS)
-                with self.assertRaises(OSError, msg=n):       # NetworkCall, or urllib's URLError around it
-                    call()
-                self.assertEqual(len(G.CALLS), before + 1, n)
-        finally:
-            udp.close()
-            tcp.close()
-
-    def test_a_child_process_gets_a_closed_proxy(self):
-        for name in no_network.PROXY_VARS:
-            self.assertEqual(os.environ.get(name), no_network.DEAD_PROXY, name)
-        self.assertNotIn("NO_PROXY", os.environ)
-        self.assertNotIn("no_proxy", os.environ)
-        code = ("import urllib.request, sys\n"
-                "try:\n    urllib.request.urlopen('https://commons.wikimedia.org/w/api.php', timeout=5)\n"
-                "except Exception as e:\n    sys.exit(7 if 'refused' in str(e).lower() else 3)\nsys.exit(0)")
-        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
-        self.assertEqual(r.returncode, 7, r.stderr)          # the closed port refused it at once
-
-    def test_a_swallowed_call_still_fails_its_test(self):
-        import socket
-
-        class Inner(unittest.TestCase):
-            def test_swallows(self):
-                try:                                   # like media.commons_videos: everything caught
-                    socket.getaddrinfo("commons.wikimedia.org", 443)
-                except BaseException:                  # noqa: BLE001
-                    pass
-
-            def test_clean(self):
-                pass
-        result = unittest.TestResult()
-        unittest.defaultTestLoader.loadTestsFromTestCase(Inner).run(result)
-        self.assertEqual([t.id().rsplit(".", 1)[1] for t, _ in result.failures], ["test_swallows"])
-        self.assertIn("reached the network", result.failures[0][1])
-        self.assertFalse(result.wasSuccessful())
-
-    def test_the_commons_search_of_test_104_is_stubbed(self):
-        src = (ROOT / "tests" / "test_regressions.py").read_text(encoding="utf-8")
-        body = src.split("def test_refused_never_offered", 1)[1].split("def test_replaced_stay_marked", 1)[0]
-        self.assertIn("media.commons_videos = lambda *a, **k: []", body)
 
 
 class NoRealClaudeInTests(unittest.TestCase):

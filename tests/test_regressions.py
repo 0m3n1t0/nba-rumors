@@ -216,6 +216,13 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 137. D91 P2 (stage 5 of the class-fix plan; his answer 2026-11-25: P2 first): team_fits' ten
+     layered rules (D30, D38, D41, D43, D45, D49/D67, D59, D60, D61, D62) are ONE rule: the
+     photo's era (media.photo_era_of) against the line's scope (media.line_scope) in
+     media.era_allowed. Same results: a differential replay of the old and the new function on
+     1,119,200 real (line, photo) pairs (kept scripts' lines x tagged photos of the 27 snapshot
+     people, every team mark, national-only, judged and unjudged now/today) differs in 0; the P2
+     library, the suite and the replay unchanged; every layer's mutant is caught.
  136. D96 module 6 part 4 (his answers 2026-11-25, classes P2, E1): the last lists. Pre-NBA: a
      tagged photo is pre-NBA by the tagger's scene OR its note naming his college
      (media.college_photo reads the note; team_marks keeps the mark without the title's words and
@@ -8028,3 +8035,26 @@ class LastListsByMeaning(unittest.TestCase):
         for wf in ("benchmark.yml", "weekly.yml"):
             y = (ROOT / ".github" / "workflows" / wf).read_text(encoding="utf-8")
             self.assertLess(y.index("Install Claude Code"), y.index("python src/benchmark.py"), wf)
+
+
+class OneEraRule(unittest.TestCase):
+    """137. D91 P2: team_fits is one rule (era against scope)."""
+
+    def test_one_rule(self):
+        import inspect
+        import media
+        body = inspect.getsource(media.team_fits)
+        self.assertIn("return era_allowed(photo_era_of(c, person), line_scope(line, person, names))", body)
+        scope = {"nba_named": False, "named": set(), "timed": False, "national_line": False, "current": "",
+                 "past_years": [], "spells": []}
+        era = {"jersey": "", "pre_nba": False, "former": True, "national": False, "national_only": False}
+        self.assertTrue(media.era_allowed(era, scope))                                   # D30: no team, no time
+        self.assertFalse(media.era_allowed(era, {**scope, "timed": True}))               # D42: a time, today's team
+        self.assertFalse(media.era_allowed({**era, "former": False, "pre_nba": True}, {**scope, "nba_named": True}))
+        nat = {**era, "former": False, "national": True}
+        self.assertFalse(media.era_allowed(nat, scope))                                  # D45
+        self.assertTrue(media.era_allowed({**nat, "national_only": True}, scope))        # D67
+        self.assertTrue(media.era_allowed(nat, {**scope, "national_line": True}))
+        past = {**scope, "past_years": [2020], "spells": [("los angeles lakers", 2018, 2025)]}
+        self.assertFalse(media.era_allowed({**era, "former": False, "jersey": "atlanta hawks"}, past))   # D60
+        self.assertTrue(media.era_allowed({**era, "former": False, "jersey": "los angeles lakers"}, past))

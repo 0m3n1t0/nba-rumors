@@ -2804,53 +2804,71 @@ def national_photo(c: dict) -> bool:
     return t.get("s") == "national" or bool(NATIONAL_PHOTO.search(fold(t.get("t") or "")))
 
 
+def photo_era_of(c: dict, person: str) -> dict:
+    """D91 (stage 5 of the class-fix plan, class P2; his answer 2026-11-25: P2 first): the photo's
+    era in one place - the jersey it shows, PRE-NBA (D62: his college in the tag note, or the
+    collection mark), national colours (D45, D96), a former team only (D28). Marks c["team"]
+    "pre-nba" for his college photo, as before (the final read sees PRE-NBA)."""
+    t = c.get("tag") or {}
+    if person and college_photo(c, person):
+        c["team"] = "pre-nba"                # D62: his college in the tag note (or the title, untagged)
+    return {"jersey": jersey_team(t), "pre_nba": c.get("team") == "pre-nba",
+            "former": c.get("team") == "former", "national": national_photo(c),
+            "national_only": bool(c.get("national_only"))}
+
+
+def line_scope(line: str, person: str, names: list[str] | tuple = ()) -> dict:
+    """D91 (class P2): what time of his career the line is about, in one place - the NBA teams it
+    names (D41 capitals, D43 not a word of a story person's name, D59 a city), of them the ones he
+    played for or coached (D61), a time (D42 + D96: now/today by meaning; tonight, this season, a
+    year from today's spell), his past years (D60), a national-team line (D45)."""
+    if person:
+        teams_of(person)                     # his career and current spell (loaded once, cached)
+    nba_named = teams_in(line, list(names) + ([person] if person else []))
+    career = (career_teams(person) | _coached.get(_wikidata.get(person, ""), set())) if person else set()
+    current = teams_of(person)[0] if person else ""
+    since = _team_since.get(_wikidata.get(person, ""), 0) if person else 0
+    return {"nba_named": bool(nba_named), "named": (nba_named & career) if career else nba_named,
+            "timed": names_a_time(line, person), "national_line": bool(NATIONAL_LINE.search(fold(line or ""))),
+            "current": current,
+            "past_years": [int(y) for y in LINE_YEAR.findall(line or "") if not current or (since and int(y) < since)],
+            "spells": _spells.get(_wikidata.get(person, ""), []) if person else []}
+
+
+def era_allowed(era: dict, scope: dict) -> bool:
+    """D91 (class P2): ONE rule, his agreed answers in order - the photo's era must be one the line
+    allows (D30: a line naming no team and no time allows any NBA jersey, a former one too)."""
+    # national colours: a national-team line only; D67 (as D49): when he has no NBA photo at all,
+    # also a line naming no team and no time
+    if era["national"] and not scope["national_line"] \
+            and not (era["national_only"] and not scope["nba_named"] and not scope["timed"]):
+        return False
+    # D60: a year in his past allows only a jersey of a team he played for that year
+    if era["jersey"] and scope["spells"] and scope["past_years"] \
+            and not any(a <= y <= b for y in scope["past_years"] for team, a, b in scope["spells"] if team == era["jersey"]):
+        return False
+    # PRE-NBA (D49, D62): only on a line naming no NBA team (any, D61) and no time
+    if era["pre_nba"]:
+        return not scope["nba_named"] and not scope["timed"]
+    # a named team of his: that jersey; no jersey seen: not a known former team (his answer)
+    if scope["named"]:
+        return era["jersey"] in scope["named"] if era["jersey"] else not era["former"]
+    if not scope["timed"]:
+        return True
+    # a time ("now", "this season", a year of today's spell): today's team (D42)
+    if era["former"]:
+        return False
+    return not (era["jersey"] and scope["current"] and era["jersey"] != scope["current"])
+
+
 def team_fits(c: dict, line: str, person: str, names: list[str] | tuple = ()) -> bool:
     """The team part of D30, for every photo (D38, his answer 2026-11-16: Claude-scored picks too;
     run 43934705382 showed Jalen Green in a Rockets jersey on a Suns line). A clip has no tag and no
-    team mark, so it always fits."""
-    t = c.get("tag") or {}
-    if person and college_photo(c, person):
-        c["team"] = "pre-nba"                # D62: his college in the title or the tag
-    if national_photo(c) and not NATIONAL_LINE.search(fold(line or "")):
-        # D45: national colours only on a national-team line; D67: when he has no NBA photo at all,
-        # also on a line naming no team or time (as D49 for his college photo)
-        if not (c.get("national_only") and not teams_in(line, list(names) + ([person] if person else []))
-                and not names_a_time(line, person)):
-            return False
-    if person:
-        teams_of(person)                     # his current spell's start year (names_a_time)
-    # D43 (his answer 2026-11-16): the photo's own person's name words are no team either ("Tragic
-    # Magic" on a Magic Johnson photo, when the script never says his full name)
-    named = teams_in(line, list(names) + ([person] if person else []))
-    nba_line = bool(named)
-    # D61 (his answers 2026-11-17): a team he never played for NOR coached does not judge his jersey
-    # ("Garnett won MVP in 2003 to 04, right after Denver took Carmelo": Denver is Carmelo's team;
-    # "Rivers took over a 32-14 Bucks team": the Bucks are his, as coach); a line naming any NBA team
-    # still refuses a PRE-NBA photo (Gary Trent's college photo on a Bucks line)
-    career = (career_teams(person) | _coached.get(_wikidata.get(person, ""), set())) if person else set()
-    if career:
-        named &= career
-    jersey, current = jersey_team(t), (teams_of(person)[0] if person else "")
-    # D60 (run 44053022347; his answer 2026-11-17): a year in his past (before today's spell, or any
-    # year when he plays for no team now) allows only a jersey of a team he played for that year
-    # (infobox spells, both halves of a season): Howard in Hawks colours on "He won the 2020 title"
-    spells = _spells.get(_wikidata.get(person, ""), []) if person else []
-    if jersey and spells:
-        since = _team_since.get(_wikidata.get(person, ""), 0)
-        past = [int(y) for y in LINE_YEAR.findall(line or "") if not current or (since and int(y) < since)]
-        if past and not any(a <= y <= b for y in past for team, a, b in spells if team == jersey):
-            return False
-    if not named and not names_a_time(line, person):
-        return not (nba_line and c.get("team") == "pre-nba")
-    if c.get("team") == "pre-nba":
-        return False
-    if named:
-        if jersey:
-            return jersey in named
-        return c.get("team") != "former"     # a former team we cannot name never proves the named team (his answer)
-    if c.get("team") == "former":
-        return False
-    return not (jersey and current and jersey != current)
+    team mark, so it always fits. D91 (his answer 2026-11-25): the ten layered rules (D30, D38,
+    D41-D43, D45, D49/D67, D59-D62) are now one rule - the photo's era (photo_era_of) against the
+    line's scope (line_scope) - with the same results (the P2 library and the full differential
+    replay prove it)."""
+    return era_allowed(photo_era_of(c, person), line_scope(line, person, names))
 
 
 def report_why(name: str, i: int, what: str, why: dict) -> None:

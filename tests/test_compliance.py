@@ -231,8 +231,25 @@ class Stage2(unittest.TestCase):
         fan = {"Credit": "Own work", "ImageDescription": "Warm-ups before the game", "Categories": "Basketball"}
         flagged = {"Categories": "Deletion requests November 2026|Lakers"}
         self.assertFalse(media.commons_trusted(tv, "File:Lakers highlights.webm", video=True))
-        self.assertTrue(media.commons_trusted(fan, "File:Warmups.webm", video=True))
         self.assertFalse(media.commons_trusted(flagged, "File:Player.jpg"))
+        # D96 module 3 (a changed rule): "own work" is an ambiguous word now; Claude judges it in
+        # context, and a failed judgement is the safe side (not trusted)
+        saved, seen = media.ask_claude, dict(media._meta_seen)
+        try:
+            for answer, want in (({"yes": [1]}, True), ({"yes": []}, False), (None, False)):
+                media._meta_seen.clear()
+                media._meta_pending.clear()
+
+                def judge(prompt, model=None, answer=answer, **kw):
+                    if answer is None:
+                        raise RuntimeError("down")
+                    return answer
+                media.ask_claude = judge
+                self.assertEqual(media.commons_trusted(fan, "File:Warmups.webm", video=True), want)
+        finally:
+            media.ask_claude = saved
+            media._meta_seen.clear()
+            media._meta_seen.update(seen)
 
     # Music: a new library track is recorded but NOT usable until the owner confirms it
     def test_15_music_ledger(self):

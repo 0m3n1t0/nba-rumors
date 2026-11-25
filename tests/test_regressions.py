@@ -216,6 +216,16 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 129. D96 module 3 (his answers 2026-11-25, classes P1, P2, Q1): the picture words by meaning.
+     Clear words still decide alone; ambiguous ones (the clip words "slam", "court", "arena",
+     "warm-up", "college", "junior", "family", the broadcast words "ESPN", "TNT", the provenance
+     words "own work", "government") become a FITS / BROADCAST / TRUSTED / CATEGORY question that
+     Claude judges in context (the Short's common searches in ONE call); a failed call is the safe
+     side (refused, not trusted); the gate's broadcast check agrees (item["meta_judged"]). "now" and
+     "today" name a time only on a line the script's D95 call judged (PART C, short["time_lines"];
+     a failed call or a Short never judged: as before). The photo tagger decides a photo's
+     basketball scene, national colours (its scene OR its note, D45 kept) and a group ("g"; a photo
+     tagged before D96: its title words, as before).
  128. D96 module 2 (his answers 2026-11-25, class P1): D94's speech verbs split as in D95: said,
      says, told, wrote, replied, explained decide alone; added, responded, posted, asked count only
      on a line the script stage's single D95 call judged to report a person's own words
@@ -324,6 +334,7 @@ from __future__ import annotations
 import copy
 import io
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -532,6 +543,16 @@ VIDEOS = [
 ]
 
 
+def _fake_meta_judge(prompt, model=None, **kw):
+    """D96 module 3: Claude's picture-word judgement for the fake Commons files: an own-work
+    upload is trusted, nothing here is a broadcast, every ambiguous clip here is a real NBA scene
+    (the women's, CEO and namesake clips are refused by the clear rules before any question)."""
+    items = re.findall(r"^(\d+)\. (FITS|BROADCAST|TRUSTED|CATEGORY): (.*)$", prompt.split("ITEMS:")[-1], re.M)
+    yes = [int(n) for n, kind, text in items
+           if kind in ("FITS", "CATEGORY") or (kind == "TRUSTED" and "own work" in text.lower())]
+    return {"yes": yes}
+
+
 class MediaCase(unittest.TestCase):
     """Common set-up: media.py talks to a fake Commons / Wikipedia / Wikidata."""
 
@@ -539,13 +560,16 @@ class MediaCase(unittest.TestCase):
         import media
         self.m = media
         self.saved = {k: getattr(media, k) for k in ("get", "commons_trusted")}
+        self.saved["ask_claude"] = media.ask_claude
         self.caches = [media._person_cache, media._birth_year, media._wiki_title, media._wikidata,
-                       media._commons_cat, media._vid_cache, media._photo_cache, media.PHOTO_STATS]
+                       media._commons_cat, media._vid_cache, media._photo_cache, media.PHOTO_STATS,
+                       media._meta_seen, media._meta_pending]
         self.backup = [dict(c) for c in self.caches]
         for c in self.caches:
             c.clear()
         media.get = _fake_media_get(WIKI, CATS, P373, VIDEOS)
         media.commons_trusted = lambda meta, title, video=False: True
+        media.ask_claude = _fake_meta_judge     # D96 module 3: the ambiguous words judged in context
         media.real_people(["Luka Doncic", "Devin Booker", "Robert Williams", "Bomani Jones"])  # as people() does
 
     def tearDown(self):
@@ -7297,3 +7321,136 @@ class AmbiguousSpeechVerbsInContext(unittest.TestCase):
         self.assertIn('(short or {}).get("speech_lines") or ())', src)
         self.assertIn("    if is_speech_line(say, speech) and outside_speaker(screen, who):", src)
 
+
+
+class PictureWordsByMeaning(unittest.TestCase):
+    """129. D96 module 3 (his rule 2026-11-25: an ambiguous word by meaning in context, never a list)."""
+
+    def setUp(self):
+        import media
+        import script
+        self.m, self.s = media, script
+        self.saved = (media.ask_claude, dict(media._meta_seen), media._TIME_LINES[0])
+        media._meta_seen.clear()
+        media._meta_pending.clear()
+
+    def tearDown(self):
+        m = self.m
+        m.ask_claude = self.saved[0]
+        m._meta_seen.clear()
+        m._meta_seen.update(self.saved[1])
+        m._meta_pending.clear()
+        m._TIME_LINES[0] = self.saved[2]
+
+    def test_ambiguous_clip_word_is_judged(self):
+        m = self.m
+        seen = []
+
+        def judge(prompt, model=None, **kw):
+            seen.append(prompt)
+            return {"yes": [1]}
+        m.ask_claude = judge
+        c = {"_ask": [("fits", "File:Court.webm", "Lakers on the court")]}
+        self.assertTrue(m.meta_ok(c))
+        self.assertEqual(c["meta_judged"], {"fits": True})
+        self.assertIn("FITS: Lakers on the court", seen[0])
+        m._meta_seen.clear()
+        m.ask_claude = lambda prompt, model=None, **kw: {"yes": []}
+        self.assertFalse(m.meta_ok({"_ask": [("fits", "File:Court2.webm", "a family court")]}))
+
+    def test_failed_judgement_is_the_safe_side(self):
+        m = self.m
+
+        def down(prompt, model=None, **kw):
+            raise RuntimeError("down")
+        m.ask_claude = down
+        self.assertFalse(m.meta_ok({"_ask": [("fits", "a", "x")]}))
+        self.assertFalse(m.meta_ok({"_ask": [("broadcast", "b", "ESPN")]}))     # counted as broadcast
+        self.assertFalse(m.meta_ok({"_ask": [("trusted", "c", "own work")]}))
+
+    def test_common_searches_wait_for_one_call(self):
+        m = self.m
+        calls = []
+        m.ask_claude = lambda prompt, model=None, **kw: calls.append(prompt) or {"yes": [1, 2]}
+        m._META_DEFER[0] = True
+        try:
+            self.assertIsNone(m.meta_answer("fits", "k1", "arena"))
+            self.assertIsNone(m.meta_answer("trusted", "k2", "own work"))
+            self.assertEqual(calls, [])
+        finally:
+            m._META_DEFER[0] = False
+        m.meta_judge_pending()
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(m._meta_seen["fits|k1"] and m._meta_seen["trusted|k2"])
+
+    def test_clear_words_still_decide_alone(self):
+        m = self.m
+        m.ask_claude = lambda *a, **k: self.fail("a clear word needs no question")
+        ok, asks = m.video_trust({"Credit": "White House", "ImageDescription": "", "Categories": ""}, "File:x.webm")
+        self.assertEqual((ok, asks), (True, []))
+        ok, asks = m.video_trust({"Credit": "", "ImageDescription": "Fox Sports telecast", "Categories": ""}, "File:y.webm")
+        self.assertFalse(ok)
+
+    def test_gate_broadcast_agrees(self):
+        import gate
+        x = {"kind": "video", "title": "ESPN warmups", "page": "", "match": 8, "source": "Wikimedia Commons"}
+        flags = {"people": []}
+        v_unjudged, notes_unjudged = gate.check_visuals([x], flags)
+        v_judged, notes_judged = gate.check_visuals([{**x, "meta_judged": {"broadcast": False}}], flags)
+        self.assertTrue(any("broadcast" in n.lower() for n in notes_unjudged))
+        self.assertFalse(any("broadcast" in n.lower() for n in notes_judged))
+
+    def test_now_and_today_by_meaning(self):
+        m, s = self.m, self.s
+        m._TIME_LINES[0] = None                                    # never judged: as before
+        self.assertTrue(m.names_a_time("Now, here is the twist.", ""))
+        m._TIME_LINES[0] = {"He is a Laker now."}
+        self.assertTrue(m.names_a_time("He is a Laker now.", ""))
+        self.assertFalse(m.names_a_time("Now, here is the twist.", ""))
+        self.assertTrue(m.names_a_time("Tonight he faces Boston.", ""))   # a clear word
+        s._time_seen.clear()
+        saved = s.ask_claude
+        try:
+            s.ask_claude = lambda prompt, model=None, **kw: {"words": [], "speech": [], "now": [1]}
+            s.judge_ambiguous([], [], "ctx", ["He is a Laker now.", "Now, here is the twist."])
+            self.assertEqual(s.judged_time_lines(["He is a Laker now.", "Now, here is the twist."]), ["He is a Laker now."])
+            s._time_seen.clear()
+
+            def down(prompt, model=None, **kw):
+                raise RuntimeError("down")
+            s.ask_claude = down
+            s.judge_ambiguous([], [], "ctx", ["Today he is out."])
+            self.assertEqual(s.judged_time_lines(["Today he is out."]), ["Today he is out."])   # safe: a time
+        finally:
+            s.ask_claude = saved
+            s._time_seen.clear()
+        short = {"hook": {"text": "Now he is a Laker."}, "beats": [{"say": "He scored 30."}, {"say": "Today he rests."}]}
+        self.assertEqual(s.ambiguous_time_lines(short), ["Now he is a Laker.", "Today he rests."])
+
+    def test_the_tagger_decides(self):
+        import photo_tags as pt
+        m = self.m
+        tags, _ = pt.parse_tags({"photos": [{"n": 1, "v": "C", "s": "game", "e": "calm", "t": "x", "g": "group"},
+                                            {"n": 2, "v": "C", "s": "game", "e": "calm", "t": "x", "g": "maybe"}]}, 2)
+        self.assertEqual(tags[1]["g"], "group")
+        self.assertNotIn("g", tags[2])
+        self.assertIn('"g": "alone"', pt.TAG_PROMPT)
+        # a group by what the tagger saw; no "g" (tagged before D96): the title words
+        alone = {"title": "File:Stephen Curry with the ball.jpg", "tag": {"v": "C", "s": "game", "g": "alone"}}
+        group = {"title": "File:Stephen Curry 2019.jpg", "tag": {"v": "C", "s": "game", "g": "group"}}
+        old = {"title": "File:Stephen Curry with the ball.jpg", "tag": {"v": "C", "s": "game"}}
+        self.assertTrue(m.solo_title(alone, "Stephen Curry"))
+        self.assertFalse(m.solo_title(group, "Stephen Curry"))
+        self.assertFalse(m.solo_title(old, "Stephen Curry"))
+        import gate
+        self.assertFalse(gate.group_of({**alone, "own_category": True}))
+        self.assertTrue(gate.group_of({**group, "own_category": True}))
+        self.assertTrue(gate.group_of(old))
+        # basketball by the scene; untagged by the title, as before
+        self.assertTrue(pt.hoops({"tag": {"s": "game"}, "hoops": False}))
+        self.assertFalse(pt.hoops({"tag": {"s": "pre_nba"}, "hoops": True}))
+        self.assertTrue(pt.hoops({"hoops": True}))
+        # national colours: the scene OR the note (D45 kept)
+        self.assertTrue(m.national_photo({"tag": {"s": "national", "t": "anthem"}}))
+        self.assertTrue(m.national_photo({"tag": {"s": "game", "t": "stares at camera, Canada jersey"}}))
+        self.assertFalse(m.national_photo({"tag": {"s": "game", "t": "drives in Knicks jersey"}}))

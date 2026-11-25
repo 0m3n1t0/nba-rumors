@@ -155,7 +155,8 @@ def refresh_checks(short: dict, sources: list[dict]) -> None:
     # D95: the rewritten lines' ambiguous words judged in context, exactly as the script stage does
     short["attributed"], short["speech_lines"] = script.judge_ambiguous(            # D95 + D96 module 2
         C.ambiguous_deciders(C.gate_statuses(short.get("claims") or [], sources), spoken),
-        script.ambiguous_speech_lines(short), spoken)
+        script.ambiguous_speech_lines(short), spoken, script.ambiguous_time_lines(short))
+    short["time_lines"] = script.judged_time_lines(script.ambiguous_time_lines(short))   # D96 module 3
     result = C.evaluate_script(short, sources)
     checks = result["checks"]
     for k in ("title_accuracy", "thumbnail_accuracy"):     # the title and thumbnail did not change: their

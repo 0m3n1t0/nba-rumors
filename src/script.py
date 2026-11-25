@@ -1726,6 +1726,11 @@ SAID OR WROTE (his own words: "Bassey asked, 'What you gonna do?'", "he posted o
 responded, 'I'm not worried'"), or an act or a stat ("added 10 rebounds", "responded with a 10-0
 run", "posted 25 points", "asked for a trade" as a request reported by others)?
 
+PART C. In each numbered line, does "now" or "today" place what it tells at the PRESENT time of the
+story (his team or form today: "he is a Laker now", "today he leads the league", "the Suns now sit
+at 20-10"), or is it only a turn of speech or a general phrase ("Now, here is the twist", "in
+today's NBA", "now that you mention it", "from now on", "until now" about the past)?
+
 THE SHORT (context):
 SHORT_TEXT
 
@@ -1735,40 +1740,55 @@ SENTENCES_TEXT
 PART B LINES:
 LINES_TEXT
 
+PART C LINES:
+TIMES_TEXT
+
 Return ONLY JSON: {"words": [PART A numbers that tell their claim as someone's words, a report or
-something uncertain], "speech": [PART B numbers that report a person's own words]}"""
+something uncertain], "speech": [PART B numbers that report a person's own words], "now": [PART C
+numbers that place it at the present time]}"""
 
 _attribution_seen: dict[str, bool] = {}
 _speech_seen: dict[str, bool] = {}
+_time_seen: dict[str, bool] = {}       # D96 module 3: PART C, "now" / "today" lines
 
 
-def judge_ambiguous(sentences: list[str], lines: list[str], context: str) -> tuple[list[str], list[str]]:
+def judge_ambiguous(sentences: list[str], lines: list[str], context: str,
+                    times: list[str] | tuple = ()) -> tuple[list[str], list[str]]:
     """D95 + D96 module 2 (his rule 2026-11-25: an ambiguous word is judged by its meaning in
     context, never by a word list; his answer: ONE call for both questions): PART A, the sentences
     that ARE a report, a hedge or someone's words; PART B, the lines whose "added / responded /
     posted / asked" reports a person's own words (the speaker rule, D94). One call for the new
     ones (the main model), cached for the run; a failed call or an unclear answer counts as NOT
     attribution / NOT speech (the safe side: the repair or the hold follows; a line works as before
-    D94); the Claude limit still stops the stage."""
+    D94); the Claude limit still stops the stage.
+    D96 module 3 (his answer 2026-11-25: in the same call): PART C, the lines whose "now" / "today"
+    places them at the present time (judged_time_lines reads them); a failed call counts them as a
+    time, as before D96 (the stricter picture check)."""
     todo_a = [x for x in dict.fromkeys(sentences) if x and x not in _attribution_seen]
     todo_b = [x for x in dict.fromkeys(lines) if x and x not in _speech_seen]
-    if todo_a or todo_b:
+    todo_c = [x for x in dict.fromkeys(times) if x and x not in _time_seen]
+    if todo_a or todo_b or todo_c:
         try:
             ans = ask_claude(ATTRIBUTION_ASK.replace("SHORT_TEXT", context)
                              .replace("SENTENCES_TEXT", "\n".join(f"{k}. {x}" for k, x in enumerate(todo_a, 1)) or "(none)")
-                             .replace("LINES_TEXT", "\n".join(f"{k}. {x}" for k, x in enumerate(todo_b, 1)) or "(none)"),
+                             .replace("LINES_TEXT", "\n".join(f"{k}. {x}" for k, x in enumerate(todo_b, 1)) or "(none)")
+                             .replace("TIMES_TEXT", "\n".join(f"{k}. {x}" for k, x in enumerate(todo_c, 1)) or "(none)"),
                              CLAUDE_MODEL, where="attribution")
             yes_a = {int(k) for k in (ans or {}).get("words", []) if str(k).isdigit()}
             yes_b = {int(k) for k in (ans or {}).get("speech", []) if str(k).isdigit()}
+            yes_c = {int(k) for k in (ans or {}).get("now", []) if str(k).isdigit()}
         except UsageLimit:
             raise
         except Exception as exc:
-            print(f"[!] ambiguous-word judgement failed ({str(exc)[:80]}): not counted as attribution or speech")
-            yes_a, yes_b = set(), set()
+            print(f"[!] ambiguous-word judgement failed ({str(exc)[:80]}): not counted as attribution or speech; "
+                  "a now/today line counts as a time")
+            yes_a, yes_b, yes_c = set(), set(), set(range(1, len(todo_c) + 1))
         for k, x in enumerate(todo_a, 1):
             _attribution_seen[x] = k in yes_a
         for k, x in enumerate(todo_b, 1):
             _speech_seen[x] = k in yes_b
+        for k, x in enumerate(todo_c, 1):
+            _time_seen[x] = k in yes_c
     return [x for x in sentences if _attribution_seen.get(x)], [x for x in lines if _speech_seen.get(x)]
 
 
@@ -1781,6 +1801,17 @@ def ambiguous_speech_lines(short: dict) -> list[str]:
     """D96 module 2: the spoken lines (hook included) with an ambiguous speech verb, to be judged."""
     lines = [(short.get("hook") or {}).get("text", "")] + [b.get("say", "") for b in short.get("beats") or []]
     return [x for x in lines if re.search(r"\b(added|responded|posted|asked)\b", x or "", re.I)]
+
+
+def ambiguous_time_lines(short: dict) -> list[str]:
+    """D96 module 3: the spoken lines (hook included) with "now" or "today", to be judged (PART C)."""
+    lines = [(short.get("hook") or {}).get("text", "")] + [b.get("say", "") for b in short.get("beats") or []]
+    return [x for x in lines if re.search(r"\b(now|today)\b", x or "", re.I)]
+
+
+def judged_time_lines(lines: list[str]) -> list[str]:
+    """D96 module 3: the lines judged (PART C) to name the present time; media.names_a_time reads them."""
+    return [x for x in lines if _time_seen.get(x)]
 
 
 def attributed_in(claims: list[dict] | None, spoken: str, context: str = "") -> list[str]:
@@ -2663,7 +2694,8 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     # D96 module 2: in the same call, the lines whose ambiguous speech verb reports someone's words
     short["attributed"], short["speech_lines"] = judge_ambiguous(
         compliance.ambiguous_deciders(compliance.gate_statuses(short.get("claims") or [], sources), short.get("spoken", "")),
-        ambiguous_speech_lines(short), short.get("spoken", ""))
+        ambiguous_speech_lines(short), short.get("spoken", ""), ambiguous_time_lines(short))
+    short["time_lines"] = judged_time_lines(ambiguous_time_lines(short))      # D96 module 3: same call
     result = compliance.evaluate_script(short, sources, known)
     short["claims"] = result["claims"]
     short["compliance"] = {"verdict": result["verdict"], "checks": result["checks"]}

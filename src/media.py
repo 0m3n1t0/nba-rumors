@@ -80,7 +80,13 @@ SA_NOTE = ("This video is licensed under CC BY-SA 4.0 (https://creativecommons.o
 CREDIT_MARK = "Photo and video credits:"
 CHANGES_NOTE = "Changes: the photos and clips above were cropped, zoomed, colour-graded and captioned."
 NO_TOOLS = "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task"
-LOGO_WORDS = re.compile(r"\b(logo|brand|nike|adidas|jordan|nba|wnba|jersey number|trademark|text)\b", re.I)
+# D96 module 3 (his rule 2026-11-25: an ambiguous word is judged by its meaning in context, never by a
+# list; his approved split 2026-11-25): every filter below has CLEAR words (decide alone, as before)
+# and AMBIGUOUS ones (*_AMBIG): a candidate whose only issue is an ambiguous word goes to Claude
+# (meta_judge: one call for the Short's common searches, a small second one for later searches);
+# no judgement or a failed call: the safe side, as before (rejected / not trusted).
+LOGO_WORDS = re.compile(r"\b(logo|brand|nike|adidas|wnba|jersey number|trademark)\b", re.I)
+LOGO_AMBIG = re.compile(r"\b(jordan|nba|text)\b", re.I)
 FALLBACK_BROLL = ["basketball dunk", "basketball game", "basketball player dribbling",
                   "basketball arena crowd", "basketball court action"]
 MAX_PHOTOS, MAX_CLIPS = 3, 9          # candidates shown to Claude per beat
@@ -97,13 +103,15 @@ SPORT_WORDS = re.compile(r"\b(basketball|sport|sports|athlete|player|arena|stadi
 # stock clips must be basketball (the colosseum, empty fields or random crowds are not this story)
 # Stock footage must SHOW basketball. "press conference / microphone / interview" were allowed
 # and let in a coffee cup on a desk: anything that is not basketball never goes on screen.
-HOOPS_TAGS = re.compile(r"\b(basketball|dunk|slam dunk|hoop|layup|free throw|three-pointer)\b", re.I)
+HOOPS_TAGS = re.compile(r"\b(basketball|dunk|slam dunk|layup|free throw|three-pointer)\b", re.I)
+HOOPS_AMBIG = re.compile(r"\b(hoops?)\b", re.I)                                  # D96: a hula hoop
 # This is an NBA (men's pro) channel: women's, college, youth or amateur games are a different
 # context, never "generic pro basketball".
 NOT_NBA_LEVEL = re.compile(r"\b(wom[ae]n'?s?|female|girls?|lad(y|ies)|wnba|femenin\w*|feminin\w*|"
-                           r"femminil\w*|frauen|damen|dames|kobiet|ncaa|college|university|"
-                           r"high ?school|youth|junior|u-?1\d|u-?2[0-3]|amateur|wheelchair|3x3|"
+                           r"femminil\w*|frauen|damen|dames|kobiet|ncaa|"
+                           r"high ?school|u-?1\d|u-?2[0-3]|amateur|wheelchair|3x3|"
                            r"streetball|kids?|children|wnbl)\b", re.I)
+NOT_NBA_AMBIG = re.compile(r"\b(college|university|youth|junior)\b", re.I)       # D96: "Jr.", an arena
 # Proof that a clip with no named person is the NBA: the league or an NBA team by name.
 # Full team names, and only nicknames that mean nothing else ("Heat", "Kings", "Magic", "Jazz",
 # "Nets", "Suns", "Bulls", "Hawks", "Thunder" alone could be anything).
@@ -117,10 +125,11 @@ NBA_PROOF = re.compile(r"\bnba\b|\b(atlanta hawks|boston celtics|brooklyn nets|c
                        r"utah jazz|washington wizards|celtics|lakers|knicks|76ers|sixers|mavericks|"
                        r"nuggets|pistons|pacers|clippers|grizzlies|pelicans|timberwolves|raptors|"
                        r"cavaliers|trail ?blazers)\b", re.I)
-UNRELATED = re.compile(r"\b(nurse|wheelchair|elderly|senior|patient|bab(y|ies)|child(ren)?|kids?|boys?|girls?|"
-                       r"teen(ager)?s?|youth|junior|school|schoolyard|students?|street|streetball|park|"
-                       r"playground|outdoor|backyard|amateur|aerial|drone|empty|colosseum|ruins|wedding|family|garden|nature|beach|cooking|"
+UNRELATED = re.compile(r"\b(nurse|wheelchair|elderly|patient|bab(y|ies)|child(ren)?|kids?|boys?|girls?|"
+                       r"teen(ager)?s?|schoolyard|students?|streetball|"
+                       r"playground|backyard|amateur|aerial|drone|colosseum|ruins|wedding|garden|beach|cooking|"
                        r"food|cat|dog|yoga|meditation)\b", re.I)
+UNRELATED_AMBIG = re.compile(r"\b(senior|youth|junior|school|street|park|outdoor|empty|family|nature)\b", re.I)
 MUSIC_QUERIES = {  # background music by story mood (Openverse audio, CC0 / CC BY only)
     # short queries: Openverse matches few words well, long phrases return nothing
     "dark": ["dark trap", "trap beat"],
@@ -1110,24 +1119,124 @@ _photo_cache: dict[str, list[dict]] = {}
 COMMONS_FLAGS = re.compile(r"copyright violation|copyvio|deletion request|possible copyright|no permission|"
                            r"license review needed|unknown copyright|flickr review needed|"
                            r"files with no machine-readable license", re.I)
-BROADCAST = re.compile(r"\b(espn|tnt|abc sports|nbc sports|nba ?tv|bally sports|fanduel sports|broadcast|"
+BROADCAST = re.compile(r"\b(abc sports|nbc sports|nba ?tv|bally sports|fanduel sports|"
                        r"telecast|full game|game highlights|nba highlights|screen ?(recording|capture)|tv feed)\b", re.I)
-TRUSTED_VIDEO = re.compile(r"own work|white house|voice of america|\bvoa\b|dvids|u\.s\. (army|navy|air force|"
-                           r"marine|department)|department of defense|government|license review", re.I)
+BROADCAST_AMBIG = re.compile(r"\b(espn|tnt|abc|nbc|bally|broadcast)\b", re.I)    # D96: "ESPN The Magazine" event
+TRUSTED_VIDEO = re.compile(r"white house|voice of america|\bvoa\b|dvids|u\.s\. (army|navy|air force|"
+                           r"marine|department)|department of defense", re.I)
+TRUSTED_AMBIG = re.compile(r"own work|government|license review", re.I)            # D96: words in a description
+
+
+META_ASK = """You check picture candidates for a vertical NBA news Short (men's pro basketball; monetized
+on YouTube, so no TV broadcast footage). Each numbered item gives a candidate's title, description,
+credit or tags, and ONE question. Judge by meaning and context, not by single words: an ambiguous
+word ("Jordan", "court", "arena", "ESPN", "own work", "family", "junior", "hoop") can mean
+different things. Questions:
+  FITS: is this real men's pro basketball (NBA) footage or a clip that belongs to an NBA story, and
+        NOT a logo/brand shot, kids, women's, college, youth, amateur, a street or park game, or a
+        family / nature / random life scene?
+  BROADCAST: is this a TV network's broadcast footage (ESPN, TNT, ABC, NBC, Bally...: a telecast,
+        a screen capture, highlights cut from TV), rather than someone's own recording or an event
+        photo?
+  TRUSTED: is this the uploader's own recording ("own work") or an official government
+        recording, not a copy of someone else's footage?
+  CATEGORY: is this Commons category (with its files) about the basketball player PERSON, not a
+        namesake?
+
+ITEMS:
+ITEMS_TEXT
+
+Return ONLY JSON: {"yes": [the numbers whose answer is YES]}"""
+
+_meta_seen: dict[str, bool] = {}       # D96 module 3: "kind|key" -> the answer to its question
+_meta_pending: dict[str, str] = {}     # asked but not yet judged (the common searches, judged at once)
+_META_DEFER = [False]                  # True while the Short's common searches run (his answer)
+META_SAFE = {"fits": False, "broadcast": True, "trusted": False, "category": False}   # the safe side
+META_WANT = {"fits": True, "broadcast": False, "trusted": True}
+
+
+def meta_answer(kind: str, key: str, text: str) -> bool | None:
+    """D96 module 3 (his rule 2026-11-25: an ambiguous word by meaning in context): the answer to
+    one ambiguous-word question, judged by Claude. While the Short's common searches run, the
+    question waits (None) and is judged with the others in ONE call (meta_judge_pending, his
+    answer); afterwards a new question is judged at once in a small call. A failed call: the safe
+    answer (META_SAFE), as before."""
+    k = f"{kind}|{key}"
+    if k in _meta_seen:
+        return _meta_seen[k]
+    _meta_pending[k] = f"{kind.upper()}: {text[:400]}"
+    if _META_DEFER[0] and kind != "category":     # a category decides the photo search itself: at once
+        return None
+    meta_judge_pending()
+    return _meta_seen.get(k, META_SAFE[kind])
+
+
+def meta_judge_pending() -> None:
+    """One call for every waiting question (the main model); the Claude limit still stops the stage."""
+    todo = list(_meta_pending.items())
+    _meta_pending.clear()
+    if not todo:
+        return
+    try:
+        ans = ask_claude(META_ASK.replace("ITEMS_TEXT", "\n".join(f"{n}. {q}" for n, (_, q) in enumerate(todo, 1))),
+                         model=CLAUDE_MODEL, where="picture words")
+        yes = {int(x) for x in (ans or {}).get("yes", []) if str(x).isdigit()}
+    except UsageLimit:
+        raise
+    except Exception as exc:
+        print(f"[!] picture-word judgement failed ({str(exc)[:80]}): the safe side")
+        for k, _ in todo:
+            _meta_seen[k] = META_SAFE[k.split("|", 1)[0]]
+        return
+    for n, (k, _) in enumerate(todo, 1):
+        _meta_seen[k] = n in yes
+
+
+def meta_ok(c: dict) -> bool:
+    """D96: a candidate passes when every ambiguous-word question it carries got the wanted answer
+    (FITS yes, BROADCAST no, TRUSTED yes); a question still waiting: not yet (the safe side)."""
+    judged = {}
+    for kind, key, text in c.get("_ask") or []:
+        a = meta_answer(kind, key, text)
+        if a is None or a != META_WANT[kind]:
+            return False
+        judged[kind] = a
+    if judged:
+        c["meta_judged"] = judged       # the gate reads it (its broadcast check must agree)
+    return True
+
+
+def video_trust(meta: dict, title: str) -> tuple[bool, list]:
+    """D96 module 3: commons_trusted for a video with the split lists: a clear broadcast word
+    refuses, a clear government source trusts; an ambiguous word becomes a question."""
+    if COMMONS_FLAGS.search(meta.get("Categories", "")):
+        return False, []
+    blob = " ".join([title, clean(meta.get("ImageDescription", "")), clean(meta.get("Credit", "")),
+                     clean(meta.get("Artist", ""))])
+    if BROADCAST.search(blob):
+        return False, []
+    asks = []
+    if BROADCAST_AMBIG.search(blob):
+        asks.append(("broadcast", title, blob))
+    cats = meta.get("Categories", "")
+    if not TRUSTED_VIDEO.search(blob + " " + cats):
+        if not TRUSTED_AMBIG.search(blob + " " + cats):
+            return False, []
+        asks.append(("trusted", title, blob + " | categories: " + clean(cats)[:200]))
+    return True, asks
 
 
 def commons_trusted(meta: dict, title: str, video: bool = False) -> bool:
     """False for files Commons itself flags, and for clips whose provenance is not an own-work
-    or government upload (a 'CC BY' label on a TV clip does not make it licensable)."""
+    or government upload (a 'CC BY' label on a TV clip does not make it licensable).
+    D96 module 3: for a video the same rule as video_trust (one rule, no second list): its
+    ambiguous-word questions are judged at once here."""
     if COMMONS_FLAGS.search(meta.get("Categories", "")):
         return False
     if not video:
         return True
-    blob = " ".join([title, clean(meta.get("ImageDescription", "")), clean(meta.get("Credit", "")),
-                     clean(meta.get("Artist", ""))])
-    if BROADCAST.search(blob):
-        return False
-    return bool(TRUSTED_VIDEO.search(blob + " " + meta.get("Categories", "")))
+    ok, asks = video_trust(meta, title)
+    return ok and all(meta_answer(kind, key, text) == META_WANT[kind] for kind, key, text in asks)
 
 
 CATEGORY_SUBCATS = 4      # the person's newest sub-categories also read ("Jayson Tatum in 2025")
@@ -1205,6 +1314,12 @@ def category_files(person: str) -> list[dict]:
         # an NBA team name proves it too
         hoops = any(BASKETBALL.search(about(f)) or NBA_PROOF.search(fold(about(f))) for f in files) \
             or any(BASKETBALL.search(c) or NBA_PROOF.search(fold(c)) for c in subs)
+        if not hoops and (any(BASKETBALL_AMBIG.search(about(f)) for f in files)
+                          or any(BASKETBALL_AMBIG.search(c) for c in subs)):
+            # D96 module 3: only "court", "arena", "slam", "warm-up" speak for it: judged in context
+            sample = " / ".join(about(f)[:120] for f in files[:8]) + " | subcategories: " + ", ".join(subs[:6])
+            hoops = bool(meta_answer("category", f"{person}|{cat}",
+                                     f"PERSON = {person}. Category: {cat}. Files: {sample}"))
         if cat not in sure and not cat.endswith("(basketball)") and not hoops and parents_say_basketball(cat):
             hoops = True        # D79: his category's own parents ("Dallas Mavericks players")
         if cat not in sure and not cat.endswith("(basketball)") and not hoops:
@@ -1287,7 +1402,7 @@ def commons_photos(person: str) -> list[dict]:
                    + ([int(date[:4])] if date else []) or [2000])
         # a file in the player's own Commons category is a basketball photo of him, even when
         # its title and caption never say "basketball" (the category was checked for namesakes)
-        hoops = bool(BASKETBALL.search(text)) or title in in_category
+        hoops = bool(TITLE_HOOPS.search(text)) or title in in_category      # D96: ordering only
         found.append({
             "kind": "photo", "url": info.get("thumburl"), "title": re.sub(r"^File:", "", title),
             "page": info.get("descriptionurl", ""), "author": clean(meta.get("Artist", "")) or "unknown author",
@@ -1298,8 +1413,8 @@ def commons_photos(person: str) -> list[dict]:
             "own_category": title in in_category,   # filed under this very player on Commons
             "team": photo_team(person, text + " " + clean(meta.get("Categories", "")), year if year > 2000 else None),
         })
-    if sum(f["hoops"] for f in found) >= 2:   # enough real basketball photos: drop the namesakes
-        found = [f for f in found if f["hoops"]]
+    # D96 module 3 (his answer 2026-11-25): the title words ("slam", "court", "arena") only ORDER the
+    # photos (hoops first, by the score); the tagger decides what a photo is (a namesake is "O")
     PHOTO_STATS.setdefault(person, {})["commons"] = len(found)
     _photo_cache[person] = sorted(found, key=lambda f: -f["score"])
     return _photo_cache[person]
@@ -1456,7 +1571,7 @@ def openverse_photos(person: str) -> list[dict]:
             "license": lic, "license_url": r.get("license_url", ""),
             "source": f"{(r.get('source') or 'Openverse').title()} via Openverse",
             "score": (5 if h >= w else 0) + min(w * h / 4e6, 4),
-            "hoops": bool(BASKETBALL.search(text)),
+            "hoops": bool(TITLE_HOOPS.search(text)),                       # D96: ordering only
             "team": photo_team(person, text),
         })
     PHOTO_STATS.setdefault(person, {})["openverse"] = len(out)
@@ -1501,7 +1616,7 @@ def flickr_photos(person: str) -> list[dict]:
             continue
         url, w, h = size
         year = int((r.get("datetaken") or "2000")[:4] or 2000)
-        hoops = bool(BASKETBALL.search(text))
+        hoops = bool(TITLE_HOOPS.search(text))                              # D96: ordering only
         out.append({
             "kind": "photo", "url": url, "title": r.get("title", "") or person,
             "page": f"https://www.flickr.com/photos/{r.get('owner')}/{r.get('id')}/",
@@ -1512,8 +1627,7 @@ def flickr_photos(person: str) -> list[dict]:
             "hoops": hoops,
             "team": photo_team(person, text, year if year > 2000 else None),
         })
-    if sum(f["hoops"] for f in out) >= 2:      # enough real basketball photos: drop the namesakes
-        out = [f for f in out if f["hoops"]]
+    # D96 module 3: the title words only order (hoops first, by the score); the tagger decides
     PHOTO_STATS.setdefault(person, {})["flickr"] = len(out)
     return sorted(out, key=lambda f: -f["score"])
 
@@ -1568,7 +1682,9 @@ def photos(person: str) -> list[dict]:
 # ---------- Wikimedia Commons VIDEO: real players and real games ----------
 
 _vid_cache: dict[str, list[dict]] = {}
-BASKETBALL = re.compile(r"basketball|nba|dunk|slam|layup|free throw|three-pointer|warm-?up|court|arena", re.I)
+BASKETBALL = re.compile(r"basketball|nba|dunk|layup|free throw|three-pointer", re.I)
+BASKETBALL_AMBIG = re.compile(r"\b(slam|court|arena|warm-?up)\b", re.I)          # D96: a court date, slam poetry
+TITLE_HOOPS = re.compile(r"basketball|nba|dunk|slam|layup|free throw|three-pointer|warm-?up|court|arena", re.I)
 
 
 def commons_videos(search: str, person: str = "") -> list[dict]:
@@ -1577,7 +1693,7 @@ def commons_videos(search: str, person: str = "") -> list[dict]:
     With a person: the person must be named in the file. Without: it must be about basketball."""
     key = f"{search}|{person}"
     if key in _vid_cache:
-        return _vid_cache[key]
+        return [c for c in _vid_cache[key] if meta_ok(c)]
     params = {
         "action": "query", "format": "json", "generator": "search", "gsrnamespace": "6",
         "gsrsearch": f'{search} filetype:video', "gsrlimit": "25",
@@ -1601,12 +1717,23 @@ def commons_videos(search: str, person: str = "") -> list[dict]:
         # A clip that is not of the story's person must PROVE it is the NBA (the word "NBA" or
         # an NBA team in its title, description or Commons categories): "Canberra Capitals
         # game" is an Australian women's team and says "women" nowhere.
-        if not person and (not BASKETBALL.search(text) or NOT_NBA_LEVEL.search(text + " " + cats)
-                           or not NBA_PROOF.search(text + " " + cats)):
-            continue
+        asks = []
+        if not person:
+            # D96 module 3: clear words decide; "slam", "court", "arena", "warm-up", "college",
+            # "university", "youth", "junior" only through a FITS question in context
+            if NOT_NBA_LEVEL.search(text + " " + cats) or not NBA_PROOF.search(text + " " + cats):
+                continue
+            if not BASKETBALL.search(text):
+                if not BASKETBALL_AMBIG.search(text):
+                    continue
+                asks.append(("fits", title, f"{title} | {text[:300]} | categories: {cats[:200]}"))
+            elif NOT_NBA_AMBIG.search(text + " " + cats):
+                asks.append(("fits", title, f"{title} | {text[:300]} | categories: {cats[:200]}"))
         lic = clean(meta.get("LicenseShortName", ""))
-        if not licence_ok(lic) or not commons_trusted(meta, title, video=True):
+        trusted, more = video_trust(meta, title)
+        if not licence_ok(lic) or not trusted:
             continue
+        asks += more
         ders = [d for d in info.get("derivatives") or [] if "webm" in d.get("type", "") or "mp4" in d.get("type", "")]
         ders.sort(key=lambda d: int(d.get("height") or 0))
         small = next((d["src"] for d in ders if int(d.get("height") or 0) >= 240), None)
@@ -1623,10 +1750,11 @@ def commons_videos(search: str, person: str = "") -> list[dict]:
             "title": re.sub(r"^File:", "", title), "page": info.get("descriptionurl", ""),
             "author": clean(meta.get("Artist", "")) or "unknown author", "license": lic,
             "license_url": meta.get("LicenseUrl", ""), "source": "Wikimedia Commons",
-            "duration": round(secs) or 20, "real": True,
+            "duration": round(secs) or 20, "real": True, "_ask": asks,
+            "description": clean(meta.get("ImageDescription", ""))[:300],
         })
     _vid_cache[key] = found
-    return found
+    return [c for c in found if meta_ok(c)]
 
 
 # ---------- Pixabay b-roll ----------
@@ -1638,7 +1766,7 @@ def pixabay_videos(query: str) -> list[dict]:
     if not PIXABAY_KEY:
         return []
     if query in _pix_cache:
-        return _pix_cache[query]
+        return [c for c in _pix_cache[query] if meta_ok(c)]
     params = {"key": PIXABAY_KEY, "q": query, "per_page": "30", "safesearch": "true", "video_type": "film"}
     try:
         data = json.loads(get(PIXABAY + "?" + urllib.parse.urlencode(params)))
@@ -1648,10 +1776,18 @@ def pixabay_videos(query: str) -> list[dict]:
     out = []
     for hit in data.get("hits", []):
         tags = hit.get("tags", "")
-        if LOGO_WORDS.search(tags) or UNRELATED.search(tags) or not HOOPS_TAGS.search(tags) \
-                or NOT_NBA_LEVEL.search(tags) \
+        # D96 module 3: clear words decide; an ambiguous one ("jordan", "nba", "text", "family",
+        # "park", "street", "empty", "junior", "college", "hoop"...) asks FITS in context
+        if LOGO_WORDS.search(tags) or UNRELATED.search(tags) or NOT_NBA_LEVEL.search(tags) \
                 or hit.get("duration", 0) < 3:
             continue
+        asks = []
+        if not HOOPS_TAGS.search(tags):
+            if not HOOPS_AMBIG.search(tags):
+                continue
+            asks.append(("fits", str(hit.get("id")), tags))
+        elif LOGO_AMBIG.search(tags) or UNRELATED_AMBIG.search(tags) or NOT_NBA_AMBIG.search(tags):
+            asks.append(("fits", str(hit.get("id")), tags))
         sizes = hit.get("videos", {})
         pick = next((sizes[s] for s in ("medium", "large", "small") if sizes.get(s, {}).get("url")), None)
         if not pick or pick.get("size", 0) > 60e6:
@@ -1663,9 +1799,10 @@ def pixabay_videos(query: str) -> list[dict]:
             "license": "Pixabay Content License", "license_url": "https://pixabay.com/service/license-summary/",
             "source": "Pixabay", "duration": hit.get("duration", 0),
             "score": hit.get("views", 0) + (5e6 if pick.get("height", 0) > pick.get("width", 0) else 0),
+            "_ask": asks,
         })
     _pix_cache[query] = sorted(out, key=lambda f: -f["score"])
-    return _pix_cache[query]
+    return [c for c in _pix_cache[query] if meta_ok(c)]
 
 
 # ---------- assemble one Short ----------
@@ -1979,7 +2116,7 @@ def fresh_first(order: list[int], cands: list[dict], tier, scores: dict, scenes,
     def pref(j):
         c = cands[j]
         return (scene_of(c) in scenes if scene_of(c) else False,
-                bool(hook and c["kind"] == "photo" and not c.get("hoops")))
+                bool(hook and c["kind"] == "photo" and not photo_tags.hoops(c)))      # D96: the tag scene
     out, i = [], 0
     while i < len(order):
         j = i
@@ -2066,12 +2203,30 @@ def shortlist_photos(short: dict, beats: list[dict], plans: list[dict]) -> dict[
         return None
 
 
+def prewarm_searches(short: dict) -> None:
+    """D96 module 3 (his answer 2026-11-25): the Short's common searches (the story people's clips,
+    the generic game clips) run first and their ambiguous-word questions are judged in ONE call;
+    a later search with new questions makes a small second call."""
+    _META_DEFER[0] = True
+    try:
+        for who in people(short)[:3]:
+            commons_videos(f'"{who}"', who)
+        commons_videos("basketball game")
+        commons_videos("NBA basketball")
+    finally:
+        _META_DEFER[0] = False
+    meta_judge_pending()
+
+
 def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
     folder.mkdir(parents=True, exist_ok=True)
     REJECTED.clear()
     REJECTED.update(REFUSED)        # stage 4e: the final read's wrong pictures stay out of this Short
     beats = spoken(short)
     plans = plan(short)
+    tl = short.get("time_lines")
+    _TIME_LINES[0] = None if tl is None else {x.strip() for x in tl}      # D96 module 3
+    prewarm_searches(short)          # D96 module 3: the common searches' ambiguous words, one call
     work = Path(tempfile.mkdtemp(prefix="media_"))
     sheets = Path(tempfile.mkdtemp(prefix="sheets_"))  # Claude sees ONLY this folder
     try:
@@ -2466,13 +2621,20 @@ SHOT_EVERY = 3.0   # seconds: one DIFFERENT picture about every 3 s (Shorts paci
 GROUP_TITLE = re.compile(r"\b(and|with|vs|versus|family)\b|&", re.I)
 
 
+def group_of(c: dict, title: str) -> bool:
+    """D96 module 3 (his answer 2026-11-25: the tagger decides): a group photo by what the tagger
+    saw ("g"); a photo without that tag, by its title words, as before (gate.check_visuals agrees)."""
+    g = photo_tags.group_photo(c)
+    return bool(GROUP_TITLE.search(title)) if g is None else g
+
+
 def solo_title(c: dict, person: str) -> bool:
     """A photo Claude did not look at is used only when its file title names this person in full
     (first AND last name: "Green" alone also matches a green field) and nobody else."""
     title = fold(re.sub(r"\.[a-z0-9]{3,4}$", "", c.get("title", ""), flags=re.I))
     parts = name_parts(person) if person.strip() else []
     return bool(parts) and all(re.search(rf"\b{re.escape(w)}\b", title) for w in (parts[:1] + parts[-1:])) \
-        and suffix_in_title(title, person) and not GROUP_TITLE.search(title)      # D73: the same suffix
+        and suffix_in_title(title, person) and not group_of(c, title)      # D73: the same suffix; D96
 
 
 def his_by_title(c: dict, person: str) -> bool:
@@ -2483,7 +2645,7 @@ def his_by_title(c: dict, person: str) -> bool:
     if solo_title(c, person):
         return True
     title = fold(re.sub(r"\.[a-z0-9]{3,4}$", "", c.get("title", ""), flags=re.I))
-    return bool(c.get("own_category")) and not GROUP_TITLE.search(title)
+    return bool(c.get("own_category")) and not group_of(c, title)      # D96: the tag first
 
 
 def person_photos(person: str, shown: set) -> list[dict]:
@@ -2546,7 +2708,9 @@ TEAM_WORD = re.compile(r"\b(" + "|".join(sorted({re.escape(w) for t, ws in NBA_T
 CITY_WORD = re.compile(r"\b(" + "|".join(sorted({re.escape(w) for ws in CITY_TEAMS.values() for w in ws},
                                                 key=len, reverse=True)) + r")\b" + NEWSPAPER_AFTER, re.I)
 LINE_YEAR = re.compile(r"\b((?:19|20)\d\d)\b")
-LINE_NOW = re.compile(r"\b(?:this|last|next) (?:season|year)\b|\bnow\b|\btonight\b|\btoday\b", re.I)
+LINE_NOW = re.compile(r"\b(?:this|last|next) (?:season|year)\b|\btonight\b", re.I)
+LINE_NOW_AMBIG = re.compile(r"\bnow\b|\btoday\b", re.I)      # D96 module 3: by meaning (short["time_lines"])
+_TIME_LINES: list = [None]     # the Short's judged "now / today" lines; None: not judged (as before D96)
 
 
 def keep_case(s: str) -> str:
@@ -2573,8 +2737,13 @@ def names_a_time(line: str, person: str) -> bool:
     """D42 (his answer 2026-11-16): "now", "tonight", "today", "this/last/next season/year", or a
     year from the one he joined today's team on. A year BEFORE that ("They won the 2016 title" for
     Kyrie, a Maverick since 2023) is his past, so it counts as no time named. When that start year
-    is unknown, a year still counts as a time (as before)."""
+    is unknown, a year still counts as a time (as before).
+    D96 module 3 (his answers 2026-11-25): "tonight", "this/last/next season/year" and years stay
+    clear words; "now" and "today" count only when Claude judged the line to place it at the
+    present time (script PART C, short["time_lines"]); a Short never judged: as before."""
     if LINE_NOW.search(line or ""):
+        return True
+    if LINE_NOW_AMBIG.search(line or "") and (_TIME_LINES[0] is None or (line or "").strip() in _TIME_LINES[0]):
         return True
     since = _team_since.get(_wikidata.get(person, ""), 0) if person else 0
     return any(not since or int(y) >= since for y in LINE_YEAR.findall(line or ""))
@@ -2596,21 +2765,26 @@ def topup_ok(c: dict, line: str, person: str, names: list[str] | tuple = ()) -> 
 
 # D45 (run 43945813466; his answer 2026-11-16): a national-team photo (five of RJ Barrett in
 # Canada colours on the Knicks-Raptors lines) fits only a line about the national team, the
-# Olympics, a World Cup or FIBA. A photo is national-team when its tag names a country of the NBA's
-# players or says national team / Team USA / Olympic / FIBA; a line, when it says national team,
+# Olympics, a World Cup or FIBA. A photo is national-team when the tagger saw a national-team scene
+# (D96 module 3) or its tag note names a country of the NBA's players or says national team / Team
+# USA / Olympic / FIBA; a line, when it says national team,
 # Team <country>, Olympic(s), World Cup, FIBA, EuroBasket or AmeriCup.
 COUNTRIES = ("usa", "united states", "canada", "france", "germany", "serbia", "slovenia", "greece", "spain",
              "australia", "lithuania", "latvia", "turkey", "turkiye", "nigeria", "cameroon", "croatia",
              "montenegro", "italy", "japan", "philippines", "dominican republic", "puerto rico", "brazil",
              "argentina", "senegal", "south sudan", "new zealand", "finland", "bosnia", "israel", "china")
 NATIONAL_PHOTO = re.compile(r"\b(?:" + "|".join(re.escape(c) for c in COUNTRIES)
-                            + r"|national team|team usa|olympics?|fiba)\b")
+                            + r"|national team|team usa|olympics?|fiba)\b")       # the tagger's note
 NATIONAL_LINE = re.compile(r"\b(?:national team|team (?:" + "|".join(re.escape(c) for c in COUNTRIES)
                            + r")|olympics?|world cup|fiba|eurobasket|americup)\b")
 
 
 def national_photo(c: dict) -> bool:
-    return bool(NATIONAL_PHOTO.search(fold((c.get("tag") or {}).get("t") or "")))
+    """D96 module 3 (his answers 2026-11-25: the tagger decides; the scene OR its note): national
+    colours when the tagger saw a national-team scene, or wrote national colours in its note (D45:
+    RJ Barrett's Canada photos were tagged "game"). 2028 real tags: 95 national, 85 before."""
+    t = c.get("tag") or {}
+    return t.get("s") == "national" or bool(NATIONAL_PHOTO.search(fold(t.get("t") or "")))
 
 
 def team_fits(c: dict, line: str, person: str, names: list[str] | tuple = ()) -> bool:

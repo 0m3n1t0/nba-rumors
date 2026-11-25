@@ -75,9 +75,12 @@ file name, never a guess. For EVERY number return:
   "t": what he is doing and, when you can see it, the team on his jersey, at most 8 plain words,
        no quotation marks ("walks off head down, Warriors jersey", "shoots a three, Suns",
        "laughs on a stage").
+  "g": "alone" = he is the only subject of the photo (others may stand far behind or be cut off),
+       "group" = two or more people are its subject together (teammates posing, a handshake, him
+       with his family or another star).
 Also list the photos that are THE SAME MOMENT (burst shots seconds apart: same place, same people,
 same pose; or a crop of another tile) as groups of numbers: "same": [[3, 4], [10, 11, 12]].
-Return ONLY JSON: {"photos":[{"n":1,"v":"C","s":"game","e":"sad","t":"walks off head down"}, ...],
+Return ONLY JSON: {"photos":[{"n":1,"v":"C","s":"game","e":"sad","t":"walks off head down","g":"alone"}, ...],
 "same":[[3,4]]}"""
 
 PICK_PROMPT = """You are the photo researcher of a vertical NBA news Short. For each beat below, choose
@@ -264,6 +267,9 @@ def parse_tags(out: dict, n: int) -> tuple[dict[int, dict], list[list[int]]]:
         s = str(p.get("s", "other")).lower()
         tags[k] = {"v": v, "s": s if s in SCENES else "other",
                    "e": str(p.get("e", "unclear")).lower()[:12], "t": str(p.get("t", ""))[:60]}
+        g = str(p.get("g", "")).lower()
+        if g in ("alone", "group"):          # D96 module 3: a group photo by what the tagger saw
+            tags[k]["g"] = g
     groups = []
     for g in out.get("same") or []:
         try:
@@ -341,7 +347,7 @@ def tag_person(person: str, pool: list[dict], ask, ua: str, era, scene_of) -> in
 
 def _apply(c: dict, tag: dict) -> None:
     # "who": whose photo the tagger was told it is (D38/D43: photo_owner reads it)
-    c["tag"] = {k: tag[k] for k in ("v", "s", "e", "t", "who") if k in tag}
+    c["tag"] = {k: tag[k] for k in ("v", "s", "e", "t", "g", "who") if k in tag}
     if tag.get("m"):
         c["moment"] = tag["m"]
     # D15 (run 43317261723: Lendeborg in Michigan colours as "Warriors rookie", with no PRE-NBA
@@ -349,6 +355,22 @@ def _apply(c: dict, tag: dict) -> None:
     # is marked PRE-NBA for the editor too, unless the team data already says more
     if c["tag"].get("s") == "pre_nba" and not c.get("team"):
         c["team"] = "pre-nba"
+
+
+HOOPS_SCENES = ("game", "warmup", "bench", "allstar", "national")    # the basketball scenes (fill_rank)
+
+
+def hoops(c: dict) -> bool:
+    """D96 module 3 (his answer 2026-11-25: the tagger decides): a tagged photo is a basketball
+    photo by the scene the tagger SAW; an untagged one by its title words, as before (ordering only)."""
+    s = (c.get("tag") or {}).get("s")
+    return s in HOOPS_SCENES if s else bool(c.get("hoops"))
+
+
+def group_photo(c: dict) -> bool | None:
+    """D96 module 3: the tagger's "g" (a photo tagged before D96 has none: None, the title decides)."""
+    g = (c.get("tag") or {}).get("g")
+    return None if g is None else g == "group"
 
 
 def usable(c: dict) -> bool:
@@ -399,7 +421,7 @@ def fill_rank(c: dict) -> tuple:
     (never dropped: used when nothing else is left)."""
     t = c.get("tag") or {}
     return (not t, c.get("team") == "former", t.get("v") != "C",
-            t.get("s") not in ("game", "warmup", "bench", "allstar", "national"), not c.get("hoops"))
+            t.get("s") not in HOOPS_SCENES, not hoops(c))
 
 
 def fill_ok(c: dict) -> bool:

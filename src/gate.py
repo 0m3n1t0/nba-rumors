@@ -46,8 +46,12 @@ LEDGER = DATA / "history" / "ledger"
 ACCEPTED = re.compile(r"^(cc0|public domain|pd|cc by|cc-by|attribution|pixabay content license|"
                       r"public domain mark)", re.I)
 REFUSED = re.compile(r"\b(nc|nd)\b|non-?commercial|no ?deriv", re.I)
-BROADCAST = re.compile(r"\b(espn|tnt|abc|nbc|nba ?tv|bally|fanduel sports|broadcast|telecast|"
+# D96 module 3 (his rule and split 2026-11-25): the same split as media.py: clear words refuse alone;
+# an ambiguous one ("ESPN", "TNT", "ABC", "broadcast") refuses unless the media stage's judgement in
+# context said "not broadcast" (x["meta_judged"]["broadcast"] is False); no judgement: refused, as before
+BROADCAST = re.compile(r"\b(abc sports|nbc sports|nba ?tv|bally sports|fanduel sports|telecast|"
                        r"full game|game highlights|nba highlights|screen ?(recording|capture)|tv feed)\b", re.I)
+BROADCAST_AMBIG = re.compile(r"\b(espn|tnt|abc|nbc|bally|broadcast)\b", re.I)
 
 
 def licence_accepted(lic: str) -> bool:
@@ -73,6 +77,12 @@ def full_name_in(title: str, person: str) -> bool:
 GROUP_TITLE = re.compile(r"\b(and|with|vs|versus|family)\b|&", re.I)   # = media.GROUP_TITLE
 
 
+def group_of(x: dict) -> bool:
+    """= media.group_of (D96 module 3): the tagger's "g" first, the title words without it."""
+    g = (x.get("tag") or {}).get("g")
+    return bool(GROUP_TITLE.search(x.get("title", ""))) if g is None else g == "group"
+
+
 def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:
     verdict, notes = C.PASS, []
     if flags.get("unjudged"):
@@ -90,7 +100,7 @@ def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:
         # title names a group (run 43945813466: RJ Barrett's own-category photos were held)
         if x.get("match") is None and x.get("kind") == "photo" and who \
                 and not any(full_name_in(x.get("title", ""), w) for w in who) \
-                and not (x.get("own_category") and not GROUP_TITLE.search(x.get("title", ""))):
+                and not (x.get("own_category") and not group_of(x)):
             verdict = C.worst(verdict, C.REVIEW)
             notes.append(f"picture not judged and not named after the story's people: {(x.get('title') or '')[:50]}")
         # a clip Claude never judged (last-resort stock footage) may show anything: an amateur,
@@ -119,7 +129,9 @@ def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:
             verdict = C.worst(verdict, C.REVIEW)
             notes.append(f"no author for the attribution: {label[:60]}")
         if x.get("kind") == "video" and "pixabay" not in (x.get("source") or "").lower():
-            if BROADCAST.search(f"{x.get('title', '')} {x.get('page', '')} {x.get('description', '')}"):
+            blob = f"{x.get('title', '')} {x.get('page', '')} {x.get('description', '')}"
+            if BROADCAST.search(blob) or (BROADCAST_AMBIG.search(blob)
+                                          and (x.get("meta_judged") or {}).get("broadcast") is not False):
                 verdict = C.REJECT
                 notes.append(f"looks like TV / NBA broadcast footage: {label[:60]}")
     return verdict, notes

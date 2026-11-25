@@ -480,5 +480,138 @@
    "Tim Hardaway"
   ],
   "why": "father and son are two people (D73)"
+ },
+ {
+  "id": "P1-29",
+  "kind": "top-up",
+  "source": "factsheet eval 2026-11-25 (run 45584327361 / 45359876897), story 2026-11-13_43485568700_short_1 line 3",
+  "who": [
+   "Gilbert Arenas",
+   "Steph Curry",
+   "Draymond Green",
+   "Yaxel Lendeborg"
+  ],
+  "line": "After Curry left, rookie Yaxel Lendeborg scored 25 points and 10 rebounds.",
+  "on_screen": "Yaxel Lendeborg playing for the Warriors",
+  "career_unknown": [
+   "Yaxel Lendeborg"
+  ],
+  "expect_person": "Yaxel Lendeborg",
+  "why": "his career lookup did not answer: the note still names him, not Curry (D92)"
+ },
+ {
+  "id": "P1-30",
+  "kind": "top-up",
+  "source": "factsheet eval 2026-11-25 (run 45584327361 / 45359876897), story 2026-11-13_43485568700_short_1 line 3",
+  "who": [
+   "Gilbert Arenas",
+   "Steph Curry",
+   "Draymond Green",
+   "Yaxel Lendeborg"
+  ],
+  "line": "After Curry left, rookie Yaxel Lendeborg scored 25 points and 10 rebounds.",
+  "on_screen": "Yaxel Lendeborg playing for the Warriors",
+  "career_unknown": [
+   "Yaxel Lendeborg"
+  ],
+  "no_photo": [
+   "Yaxel Lendeborg"
+  ],
+  "expect_person": null,
+  "why": "the eval's error: no photo of him left, Curry stood in; an unknown career locks the line (D92)"
+ },
+ {
+  "id": "P1-31",
+  "kind": "top-up",
+  "source": "factsheet eval 2026-11-25 (run 45584327361 / 45359876897), story 2026-11-17_44040546534_short_2 line 1",
+  "who": [
+   "Gilbert Arenas",
+   "Luka Doncic",
+   "JJ Redick"
+  ],
+  "line": "The Lakers beat Phoenix. In a timeout, Luka took assistant Lindsey Harding's clipboard.",
+  "on_screen": "Luka Dončić in the Lakers huddle",
+  "career_unknown": [
+   "Luka Doncic"
+  ],
+  "no_photo": [
+   "Luka Doncic"
+  ],
+  "expect_person": null,
+  "why": "the eval's error: Arenas on Luka's act while Luka's career was unknown (D92)"
+ },
+ {
+  "id": "P1-32",
+  "kind": "top-up",
+  "source": "run 43145065648 short_1 beat 2 (P1-20) with Wikipedia unreachable",
+  "who": [
+   "Gary Trent",
+   "Kawhi Leonard",
+   "Brian Windhorst"
+  ],
+  "line": "ESPN's Brian Windhorst said, \"Everybody in the league expects a guilty finding.\"",
+  "on_screen": "Brian Windhorst on ESPN",
+  "career_unknown": [
+   "Brian Windhorst"
+  ],
+  "no_photo": [
+   "Brian Windhorst"
+  ],
+  "expect_person": null,
+  "why": "the person check did not answer: a reporter cannot be told from a player, so the line is locked (D92, his answer); P1-20 is the answered twin"
+ },
+ {
+  "id": "P1-33",
+  "kind": "pick",
+  "source": "factsheet eval 2026-11-25 (run 45584327361 / 45359876897), story 2026-11-17_44040546534_short_2 line 1",
+  "who": [
+   "Gilbert Arenas",
+   "Luka Doncic",
+   "JJ Redick"
+  ],
+  "line": "The Lakers beat Phoenix. In a timeout, Luka took assistant Lindsey Harding's clipboard.",
+  "on_screen": "Luka Dončić in the Lakers huddle",
+  "career_unknown": [
+   "Luka Doncic"
+  ],
+  "photo": {
+   "title": "Gilbert Arenas dribbling November 2010.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "focused",
+    "t": "dribbles looking up court, Wizards 9",
+    "who": "Gilbert Arenas"
+   }
+  },
+  "expect": false,
+  "why": "Luka's career unknown: Arenas is still another man on Luka's act (D92)"
+ },
+ {
+  "id": "P1-34",
+  "kind": "pick",
+  "source": "factsheet eval 2026-11-25 (run 45584327361 / 45359876897), story 2026-11-17_44040546534_short_2 line 1",
+  "who": [
+   "Gilbert Arenas",
+   "Luka Doncic",
+   "JJ Redick"
+  ],
+  "line": "The Lakers beat Phoenix. In a timeout, Luka took assistant Lindsey Harding's clipboard.",
+  "on_screen": "Luka Dončić in the Lakers huddle",
+  "career_unknown": [
+   "Luka Doncic"
+  ],
+  "photo": {
+   "title": "Luka Doncic Lakers Jarrett Allen Donovan Mitchell Cavaliers Jan 2026 (cropped).jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "focused",
+    "t": "protects ball between two defenders",
+    "who": "Luka Doncic"
+   }
+  },
+  "expect": true,
+  "why": "his own photo stays allowed when his career is unknown (D92)"
  }
 ]

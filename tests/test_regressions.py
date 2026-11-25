@@ -216,6 +216,13 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 124. D92 (his answers 2026-11-25, class P1): a named man whose NBA career could NOT be looked up
+     (Wikipedia's person check unreachable, a confirmed page with no Wikidata item, the Wikidata or
+     Wikipedia career request failing) locks the line to the men it names, like a known career
+     (D50/D71, pick and top-ups); a reporter whose lookup answered keeps D50; the college/national
+     extras (D49, D67) stay for a known career only. Factsheet eval: Curry on rookie Lendeborg's
+     line, Arenas on Luka's. The run flags and the eval result record each man's career and whose
+     lookup did not answer. Cases: tests/cases/p1_who.json P1-29..34.
  123. D87 (his answers 2026-11-24, class E1): one rule for all four audience signals (YouTube heat,
      search phrases, Reddit, Google Trends): a surname alone stands for a man only when no other
      sports person with that surname is in today's top stories, as Wikipedia confirms them (one
@@ -281,6 +288,7 @@ the "Safety tests" step before anything is installed or made.
 from __future__ import annotations
 
 import copy
+import io
 import json
 import shutil
 import sys
@@ -288,6 +296,7 @@ import tempfile
 import types
 import unittest
 import urllib.parse
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -6808,3 +6817,105 @@ class OneSurnameRule(unittest.TestCase):
         self.assertLess(main.index("OWNERS.clear()"), star)
         for later in ("raw[i] = sum(", "t[\"search_hits\"] =", "trend_matches(t, g)", "reddit_heat(t, "):
             self.assertLess(star, main.index(later), later)
+
+
+class UnknownCareerLocksTheLine(unittest.TestCase):
+    """124. D92 (his answers 2026-11-25, class P1). The lock "a line about one man shows no other
+    known man" (D50, D71, D72) held only when the man's NBA career was FOUND; when the lookup did not
+    answer he was treated like a reporter and anyone in the story could stand in (factsheet eval:
+    Curry on rookie Lendeborg's line, Arenas on Luka's; both careers are found today). Now an
+    unknown career locks too; an answered "no NBA career" keeps D50."""
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.saved = {k: dict(getattr(media, k)) for k in ("_wikidata", "_wiki_title", "_person_cache", "_teams", "_career")}
+        self.unknown = set(media._career_unknown)
+        media._career_unknown.clear()
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            getattr(self.m, k).clear()
+            getattr(self.m, k).update(v)
+        self.m._career_unknown.clear()
+        self.m._career_unknown.update(self.unknown)
+
+    def test_the_person_check_unreachable_marks_every_name(self):
+        m = self.m
+        with patch.object(m, "PEOPLE_CHECK", True), patch.object(m, "get", side_effect=RuntimeError("down")), \
+                redirect_stdout(io.StringIO()):
+            self.assertIsNone(m.real_people(["Brian Windhorst", "Yaxel Lendeborg"]))
+        self.assertTrue(m.career_unknown("Brian Windhorst"))
+        self.assertTrue(m.career_unknown("Yaxel Lendeborg"))
+        self.assertEqual(m.screen_players("Brian Windhorst on ESPN", ["Gary Trent", "Brian Windhorst"]), ["Brian Windhorst"])
+
+    def test_a_page_without_a_wikidata_item_is_unknown_and_an_answer_clears_it(self):
+        m = self.m
+        pages = {"pages": {"1": {"title": "Yaxel Lendeborg", "pageprops": {"wikibase-shortdesc": "American basketball player"}}}}
+        with patch.object(m, "PEOPLE_CHECK", True), patch.object(m, "get", return_value=json.dumps({"query": pages})):
+            m.real_people(["Yaxel Lendeborg"])
+        self.assertIn("Yaxel Lendeborg", m._career_unknown)
+        m._person_cache.pop("Yaxel Lendeborg", None)
+        pages["pages"]["1"]["pageprops"]["wikibase_item"] = "Q1"
+        with patch.object(m, "PEOPLE_CHECK", True), patch.object(m, "get", return_value=json.dumps({"query": pages})):
+            m.real_people(["Yaxel Lendeborg"])
+        self.assertNotIn("Yaxel Lendeborg", m._career_unknown)
+
+    def test_a_failed_career_request_is_unknown(self):
+        m = self.m
+        m._wikidata["Luka Doncic"] = "Q-test-luka"
+        m._wiki_title["Luka Doncic"] = "Luka Dončić"
+        m._teams.pop("Q-test-luka", None)
+        with patch.object(m, "get", side_effect=RuntimeError("down")), redirect_stdout(io.StringIO()):
+            self.assertTrue(m.career_unknown("Luka Doncic"))
+        self.assertTrue(m.locks_line("Luka Doncic"))
+
+    def one_side_fails(self, failing: str) -> bool:
+        """Wikidata OR Wikipedia's infobox fails, the other answers with no NBA team: still unknown."""
+        m = self.m
+        m._career_unknown.clear()
+        m._wikidata["Luka Doncic"] = "Q-test-luka2"
+        m._wiki_title["Luka Doncic"] = "Luka Dončić"
+        m._teams.pop("Q-test-luka2", None)
+        m._career.pop("Q-test-luka2", None)
+        answers = {"wikidata": json.dumps({"claims": {"P54": []}}),
+                   "wikipedia": json.dumps({"query": {"pages": {"1": {"revisions": [{"slots": {"main": {"*": "{{Infobox}}"}}}]}}}})}
+
+        def fake(url, timeout=30):
+            side = "wikidata" if "wikidata.org" in url else "wikipedia"
+            if side == failing:
+                raise RuntimeError("down")
+            return answers[side]
+        with patch.object(m, "get", fake), redirect_stdout(io.StringIO()):
+            return m.career_unknown("Luka Doncic")
+
+    def test_either_career_request_failing_is_unknown(self):
+        self.assertTrue(self.one_side_fails("wikidata"))
+        self.assertTrue(self.one_side_fails("wikipedia"))
+        self.assertFalse(self.one_side_fails("none"))         # both answered, no NBA team: not unknown
+
+    def test_an_answered_no_career_keeps_d50(self):
+        m = self.m
+        with patch.object(m, "career_teams", lambda p: set()):
+            self.assertFalse(m.career_unknown("Shams Charania"))
+            self.assertFalse(m.locks_line("Shams Charania"))
+            self.assertEqual(m.screen_players("Shams Charania on ESPN", ["Steph Curry", "Shams Charania"]), [])
+        with patch.object(m, "career_teams", lambda p: {"golden state warriors"} if p == "Steph Curry" else set()):
+            m._career_unknown.add("Steph Curry")              # a known career is never "unknown"
+            self.assertFalse(m.career_unknown("Steph Curry"))
+            self.assertTrue(m.locks_line("Steph Curry"))
+
+    def test_both_stages_use_it_and_the_record_keeps_it(self):
+        src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
+        self.assertIn("return named if any(locks_line(p) for p in named) else []", src)
+        self.assertIn("players = [p for p in said if locks_line(p)]", src)
+        self.assertIn("for person in [p for p in players if career_teams(p)]:", src)   # D49/D67 as before
+        self.assertIn('flags["career_unknown"] = [p for p in flags["people"] if career_unknown(p)]', src)
+        import eval_run
+        with tempfile.TemporaryDirectory() as d, patch.object(eval_run, "DATA", Path(d)):
+            (Path(d) / "media").mkdir()
+            (Path(d) / "media" / "short_1_flags.json").write_text(json.dumps(
+                {"careers": {"Luka Doncic": []}, "career_unknown": ["Luka Doncic"]}), encoding="utf-8")
+            got = eval_run.result_of({"id": "s", "headline": "h"}, {"hook": {"text": "x"}, "beats": []})
+        self.assertEqual((got["careers"], got["career_unknown"]), ({"Luka Doncic": []}, ["Luka Doncic"]))
+

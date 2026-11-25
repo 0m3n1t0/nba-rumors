@@ -449,6 +449,11 @@ def is_person_desc(desc: str) -> bool:
 
 
 _person_cache: dict[str, bool] = {}
+# D92 (factsheet eval 2026-11-25, class P1; his answers 2026-11-25): the names whose NBA career could
+# NOT be looked up in this run - Wikipedia's person check unreachable (the names were used
+# unchecked), a confirmed page with no Wikidata item, or the Wikidata / Wikipedia career request
+# failing. An unknown career is not "no career": D50/D71 keep the line to the men it names.
+_career_unknown: set[str] = set()
 
 
 def real_people(names_list: list[str]) -> list[str] | None:
@@ -466,6 +471,7 @@ def real_people(names_list: list[str]) -> list[str] | None:
             data = json.loads(get(f"https://en.wikipedia.org/w/api.php?{q}", 30)).get("query", {})
         except Exception as exc:
             print(f"[!] Wikipedia person check failed ({exc}): names used unchecked")
+            _career_unknown.update(todo)   # D92: nothing about their careers can be known (his answer: lock for all)
             return None
         alias = {}
         for step in ("normalized", "redirects"):
@@ -487,6 +493,9 @@ def real_people(names_list: list[str]) -> list[str] | None:
                 _wiki_title[n] = page     # "Luka Dončić": the exact name of his Commons category
                 if item.get(page):
                     _wikidata[n] = item[page]
+                    _career_unknown.discard(n)
+                else:
+                    _career_unknown.add(n)     # D92: a confirmed page with no Wikidata item: career unknown
             if page in good and page in born:
                 _birth_year[n] = born[page]
     return [n for n in names_list if _person_cache.get(n)]
@@ -632,6 +641,7 @@ def teams_of(person: str) -> tuple[str, set[str]]:
                                         for d in first)
     except Exception as exc:
         print(f"[!] Wikidata teams failed for {person}: {exc}")
+        _career_unknown.add(person)            # D92: the request failed: his career is unknown
     add_wiki_career(person, q)
     return _teams[q]
 
@@ -658,6 +668,7 @@ def add_wiki_career(person: str, q: str) -> None:
         text = (((page.get("revisions") or [{}])[0].get("slots") or {}).get("main") or {}).get("*", "")
     except Exception as exc:
         print(f"[!] Wikipedia career failed for {person}: {exc}")
+        _career_unknown.add(person)            # D92: the request failed: his career is unknown
         return
     teams, current, since, start = wiki_career(text)
     _spells[q] = wiki_spells(text)
@@ -805,6 +816,20 @@ def career_teams(person: str) -> set[str]:
     """Every NBA team he ever played for (Wikidata), also for a retired player; empty = unknown."""
     teams_of(person)
     return set(_career.get(_wikidata.get(person, ""), set()))
+
+
+def career_unknown(person: str) -> bool:
+    """D92 (his answers 2026-11-25): no NBA team is known for him AND the lookup did not answer
+    (see _career_unknown). A man whose lookup answered with no NBA spell (a reporter, an
+    executive) is not unknown: D50 as before."""
+    return not career_teams(person) and person in _career_unknown
+
+
+def locks_line(person: str) -> bool:
+    """D50/D71 + D92: a man named on a line keeps the line to the men it names when he has an NBA
+    career, or when his career could not be looked up (factsheet eval: Curry on rookie Lendeborg's
+    line, Arenas on Luka's, both while their careers were unknown)."""
+    return bool(career_teams(person)) or career_unknown(person)
 
 
 # The team ON HIS JERSEY in a photo tag ("dribbles in Wizards jersey", "shoots a three, Suns"):
@@ -2618,7 +2643,7 @@ def screen_players(screen: str, who: list[str]) -> list[str]:
     (D50: a note naming only reporters or executives limits nothing); "HOOK" or no name: none.
     All the men it names are allowed (a man whose career could not be looked up is no less named)."""
     named = [p for p in who if names_him(screen, p)]
-    return named if any(career_teams(p) for p in named) else []
+    return named if any(locks_line(p) for p in named) else []     # D92: an unknown career locks too
 
 
 def same_man(owner: str, person: str, who: list[str]) -> bool:
@@ -2749,8 +2774,10 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
         # D50 (his answer 2026-11-17): a line naming a man with an NBA career shows only the men it
         # names (Paul George's line got Jaylen Brown); a line naming only reporters, executives or
         # nobody may show anyone in the story, as before (Windhorst's line: the player he discussed)
-        players = [p for p in said if career_teams(p)]
-        for person in players:
+        # D92 (his answers 2026-11-25): a named man whose career could not be looked up locks the
+        # line too; the college / national extras (D49, D67) stay for a known career only, as before
+        players = [p for p in said if locks_line(p)]
+        for person in [p for p in players if career_teams(p)]:
             if not faces.get(person) and person not in college_tried:
                 college_tried.add(person)                 # D49: his college photos, once
                 faces[person] = college_faces(person, shown) or national_faces(person, shown)   # D67
@@ -3127,6 +3154,8 @@ def main() -> None:
             flags = {}
         flags["people"] = people(short)[:4]
         flags["careers"] = {p: sorted(career_teams(p)) for p in flags["people"]}   # the gate's jersey law
+        # D92 (his answer 2026-11-25): which of them had a career lookup that did not answer
+        flags["career_unknown"] = [p for p in flags["people"] if career_unknown(p)]
         flags_path.write_text(json.dumps(flags), encoding="utf-8")
         items = fill_empty(items, len(spoken(short)), MEDIA / name, used, who, short)
         items = verify_openverse(items)

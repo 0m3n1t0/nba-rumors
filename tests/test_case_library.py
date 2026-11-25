@@ -16,7 +16,7 @@ import json
 import shutil
 import sys
 import unittest
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -56,6 +56,8 @@ class Snapshot:
             media._college[q] = list(c["college"])
         self.net = patch.object(media, "get", side_effect=RuntimeError("the case library is offline"))
         self.net.start()
+        self.unknown = set(media._career_unknown)
+        media._career_unknown.clear()
         return media
 
     def __exit__(self, *exc):
@@ -63,6 +65,22 @@ class Snapshot:
         for k, v in self.saved.items():
             getattr(self.m, k).clear()
             getattr(self.m, k).update(v)
+        self.m._career_unknown.clear()
+        self.m._career_unknown.update(self.unknown)
+
+
+@contextmanager
+def lookup_failed(m, case):
+    """D92: the case's "career_unknown" men had a career lookup that did not answer in the run
+    (no Wikidata item known, marked unknown), exactly as media leaves them after a failed request."""
+    names = case.get("career_unknown", [])
+    gone = {n: m._wikidata.pop(n) for n in names if n in m._wikidata}
+    m._career_unknown.update(names)
+    try:
+        yield
+    finally:
+        m._career_unknown.difference_update(names)
+        m._wikidata.update(gone)
 
 
 class LibraryShape(unittest.TestCase):
@@ -97,8 +115,9 @@ class P1WhoLibrary(unittest.TestCase):
             for c in [c for c in load("p1_who.json") if c["kind"] == "pick"]:
                 with self.subTest(c["id"], on_screen=c["on_screen"], photo=c["photo"]["title"]):
                     photo = {"kind": "photo", **c["photo"]}
-                    named = m.screen_players(c["on_screen"], c["who"])
-                    self.assertEqual(m.shows_only(photo, named, c["who"], c["on_screen"]), c["expect"], c["why"])
+                    with lookup_failed(m, c):
+                        named = m.screen_players(c["on_screen"], c["who"])
+                        self.assertEqual(m.shows_only(photo, named, c["who"], c["on_screen"]), c["expect"], c["why"])
 
     def test_title_cases(self):
         # D73: a title counts as a suffixed man's only with the same suffix, both where an unjudged
@@ -144,9 +163,11 @@ class P1WhoLibrary(unittest.TestCase):
                                             image_ok=lambda path: True, picture_hash=lambda path: None,
                                             beat_seconds=lambda short, i: 2.0,
                                             college_faces=lambda person, shown: [], national_faces=lambda person, shown: []):
-                            with redirect_stdout(io.StringIO()):
+                            with redirect_stdout(io.StringIO()), lookup_failed(m, c):
                                 got = m.fill_empty([None], 1, folder, set(), c["who"], {"_name": "t", "beats": [{}]})[0]
-                        self.assertEqual((got or {}).get("title"), f"{c['expect_person']} 2026.jpg", c["why"])
+                        # D92: no expected person = the line must stay without another man's photo
+                        want = f"{c['expect_person']} 2026.jpg" if c["expect_person"] else None
+                        self.assertEqual((got or {}).get("title"), want, c["why"])
             finally:
                 shutil.rmtree(folder, ignore_errors=True)
 

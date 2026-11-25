@@ -180,6 +180,7 @@ def result_of(story: dict, short: dict | None, why_not: str = "") -> dict:
     media = load(DATA / "media" / "short_1.json", []) or []
     timing = load(DATA / "audio" / "short_1.timing.json", {}) or {}
     fixes = load(DATA / "review" / "short_1_fixes.json", []) or []
+    flags = load(DATA / "media" / "short_1_flags.json", {}) or {}
     short = load(DATA / "scripts" / "short_1.json", short) or short       # after the fix (stage 4e)
     checks = (short.get("compliance") or {}).get("checks") or {}
     held = not short.get("ready", True) or (short.get("compliance") or {}).get("verdict", "PASS") != "PASS"
@@ -223,6 +224,9 @@ def result_of(story: dict, short: dict | None, why_not: str = "") -> dict:
                    "pictures": [[(x or {}).get("title", "") for x in [it] + (it.get("alts") or [])] if it else []
                                 for it in media]},
         "original": story.get("original"),
+        # D92 (his answer 2026-11-25): each person's career as the run found it, and whose lookup did
+        # not answer, so a wrong picture can be traced to its cause next time
+        "careers": flags.get("careers") or {}, "career_unknown": flags.get("career_unknown") or [],
     }
 
 

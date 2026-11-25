@@ -216,6 +216,18 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 140. D91 Q1 (his answer 2026-11-25: then the gate's copies): gate.py kept COPIES of the media
+     stage's rules (BROADCAST, BROADCAST_AMBIG, GROUP_TITLE, SUFFIXES, the full-name test, the
+     group test), matched by hand at D44, D73 and D96; now it uses media's own definitions
+     (media.full_name_in_title is the one full-name test, also inside solo_title). Same results:
+     598 real picture titles x 61 story people, old vs new, differ in 0 for both stages; the
+     gate's verdicts on 50 kept Shorts differ in 0. (media now also reads "_" as a space, as the
+     gate did; no real title has one.)
+ 139. D91 F1/Q1 (his answers 2026-11-25): the hook's (D17) and the titles' (D24) truth checks
+     follow ONE failure rule, the stricter one: a title truth call that still fails after
+     ask_claude's second try counts every title read as overstated (as D83 for the hook), so the
+     Short is held ("every title says more than the sources"); before, a failed call changed
+     nothing.
  138. D91 P1 (his answer 2026-11-25: one rule for the pick and the top-ups): D50 ("a line naming
      a man with an NBA career shows only the men it names") held only for the top-ups; Claude's
      pick obeyed it only when the on_screen note named a man (D71). media.line_lock now returns
@@ -3772,9 +3784,12 @@ class TitleBoldButTrue(unittest.TestCase):
     def test_all_overstated_or_failed(self):
         got, _ = self.run_with({"overstated": [1, 2, 3], "why": "x"})
         self.assertTrue(got[0].get("all_overstated"))
+        # D91 (a changed rule, his answer 2026-11-25: one rule with the hook's D83): a call that
+        # still fails counts every title read as overstated, so the Short is held
         got, _ = self.run_with(OSError("down"))
-        self.assertEqual([t["title"] for t in got], [t["title"] for t in self.TITLES])
-        self.assertFalse(any(t.get("overstated") for t in got))
+        self.assertEqual(sorted(t["title"] for t in got), sorted(t["title"] for t in self.TITLES))
+        self.assertTrue(all(t.get("overstated") for t in got))
+        self.assertTrue(got[0].get("all_overstated"))
         got, _ = self.run_with({"overstated": [], "why": ""})
         self.assertEqual(got[0]["title"], self.TITLES[0]["title"])
 
@@ -8088,3 +8103,20 @@ class OneWhoRule(unittest.TestCase):
             self.assertEqual(media.line_lock("Barkley laughed it off.", "", who), ("note", []))
             # the note first (D71 / D72): it names Kuzma, so Kuzma, not the line's Luka
             self.assertEqual(media.line_lock("Luka was fine.", "Kyle Kuzma on the floor", who), ("note", ["Kyle Kuzma"]))
+
+
+class GateUsesMediaRules(unittest.TestCase):
+    """140. D91 Q1: one definition for both stages."""
+
+    def test_same_objects(self):
+        import gate
+        import media
+        self.assertIs(gate.BROADCAST, media.BROADCAST)
+        self.assertIs(gate.BROADCAST_AMBIG, media.BROADCAST_AMBIG)
+        self.assertIs(gate.GROUP_TITLE, media.GROUP_TITLE)
+        src = (ROOT / "src" / "gate.py").read_text(encoding="utf-8")
+        self.assertNotIn("re.compile(r\"\\b(abc sports", src)          # no copy left
+        for t, p, want in (("Gary Trent Jr. 2023.jpg", "Gary Trent Jr.", True), ("Gary Trent 1998.jpg", "Gary Trent Jr.", False),
+                           ("Jaylen_Brown_2022.jpg", "Jaylen Brown", True), ("Green field.jpg", "Draymond Green", False)):
+            self.assertEqual(gate.full_name_in(t, p), want, t)
+            self.assertEqual(media.full_name_in_title(t, p), want, t)

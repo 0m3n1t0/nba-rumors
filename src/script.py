@@ -1738,7 +1738,10 @@ def check_title_truth(titles: list[dict], sources: list[dict]) -> list[dict]:
     re-evaluated in two weeks, nobody lied). The hook was read against the sources (D17), the
     title never was. One call reads the top titles at once; an overstated one steps behind the
     others (the best true one leads); when every title read is overstated, "all_overstated" is set
-    and the Short is held. A failed call changes nothing."""
+    and the Short is held. D91 (his answer 2026-11-25: the hook's and the titles' truth checks
+    follow ONE rule, his standing decision that an honesty check takes its stricter side): a
+    call that still fails after ask_claude's second try counts every title read as overstated,
+    as D83 does for the hook, so the Short is held (before: "a failed call changes nothing")."""
     top = titles[:TITLES_CHECKED]
     if not top:
         return titles
@@ -1748,8 +1751,8 @@ def check_title_truth(titles: list[dict], sources: list[dict]) -> list[dict]:
     except UsageLimit:
         raise
     except Exception as exc:
-        print(f"[!] title truth check skipped: {exc}")
-        return titles
+        print(f"[!] title truth check failed ({exc}): every title read counts as overstated (D91, as D83)")
+        ans = {"overstated": list(range(1, len(top) + 1)), "why": "the truth check could not read it"}
     bad = {int(n) for n in ((ans or {}).get("overstated") or []) if str(n).strip().isdigit()}
     why = str((ans or {}).get("why", ""))[:120] or "overstated"
     for n, t in enumerate(top, 1):

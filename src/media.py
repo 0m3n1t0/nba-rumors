@@ -2645,13 +2645,21 @@ def group_of(c: dict, title: str) -> bool:
     return bool(GROUP_TITLE.search(title)) if g is None else g
 
 
+def full_name_in_title(title: str, person: str) -> bool:
+    """His first AND last name in a file title ("Green" alone also matches a green field), with the
+    same suffix for a suffixed man (D73). D91 (his answer 2026-11-25): the ONE definition, used by
+    solo_title here and by the gate (gate.full_name_in), so the two stages cannot disagree."""
+    t = fold(re.sub(r"\.[a-z0-9]{3,4}$", "", title or "", flags=re.I)).replace("_", " ")
+    parts = name_parts(person) if (person or "").strip() else []
+    return bool(parts) and all(re.search(rf"\b{re.escape(w)}\b", t) for w in (parts[:1] + parts[-1:])) \
+        and suffix_in_title(t, person)
+
+
 def solo_title(c: dict, person: str) -> bool:
     """A photo Claude did not look at is used only when its file title names this person in full
     (first AND last name: "Green" alone also matches a green field) and nobody else."""
-    title = fold(re.sub(r"\.[a-z0-9]{3,4}$", "", c.get("title", ""), flags=re.I))
-    parts = name_parts(person) if person.strip() else []
-    return bool(parts) and all(re.search(rf"\b{re.escape(w)}\b", title) for w in (parts[:1] + parts[-1:])) \
-        and suffix_in_title(title, person) and not group_of(c, title)      # D73: the same suffix; D96
+    title = fold(re.sub(r"\.[a-z0-9]{3,4}$", "", c.get("title", ""), flags=re.I)).replace("_", " ")
+    return full_name_in_title(c.get("title", ""), person) and not group_of(c, title)      # D73; D96; D91
 
 
 def his_by_title(c: dict, person: str) -> bool:

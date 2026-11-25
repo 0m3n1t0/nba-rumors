@@ -49,9 +49,9 @@ REFUSED = re.compile(r"\b(nc|nd)\b|non-?commercial|no ?deriv", re.I)
 # D96 module 3 (his rule and split 2026-11-25): the same split as media.py: clear words refuse alone;
 # an ambiguous one ("ESPN", "TNT", "ABC", "broadcast") refuses unless the media stage's judgement in
 # context said "not broadcast" (x["meta_judged"]["broadcast"] is False); no judgement: refused, as before
-BROADCAST = re.compile(r"\b(abc sports|nbc sports|nba ?tv|bally sports|fanduel sports|telecast|"
-                       r"full game|game highlights|nba highlights|screen ?(recording|capture)|tv feed)\b", re.I)
-BROADCAST_AMBIG = re.compile(r"\b(espn|tnt|abc|nbc|bally|broadcast)\b", re.I)
+# D91 (his answer 2026-11-25, class Q1): the media stage's OWN definitions, no copies, so the two
+# stages cannot drift apart (the copies had to be matched by hand: D44, D73, D96 module 3)
+from media import BROADCAST, BROADCAST_AMBIG, GROUP_TITLE, SUFFIXES  # noqa: E402,F401
 
 
 def licence_accepted(lic: str) -> bool:
@@ -59,28 +59,16 @@ def licence_accepted(lic: str) -> bool:
     return bool(lic) and not REFUSED.search(lic) and bool(ACCEPTED.search(lic))
 
 
-SUFFIXES = ("jr", "sr", "ii", "iii", "iv")    # = media.SUFFIXES (D73)
-
-
 def full_name_in(title: str, person: str) -> bool:
-    """The same rule as media.solo_title (D73, his answers 2026-11-19): his first and last name, and
-    for a man with a suffix ("Gary Trent Jr.") the same suffix too ("Jr" or "Jr."); the surname is
-    the word before the suffix. The two stages must never disagree (D71's lesson)."""
-    t, parts = C.fold(title or "").replace("_", " "), C.fold(person).replace(",", " ").split()
-    suffix = parts[-1].rstrip(".") if len(parts) > 2 and parts[-1].rstrip(".") in SUFFIXES else ""
-    if suffix:
-        parts = parts[:-1]
-    return bool(parts) and all(re.search(rf"\b{re.escape(w)}\b", t) for w in (parts[:1] + parts[-1:])) \
-        and (not suffix or bool(re.search(rf"\b{suffix}\b", t)))
-
-
-GROUP_TITLE = re.compile(r"\b(and|with|vs|versus|family)\b|&", re.I)   # = media.GROUP_TITLE
+    """= media.full_name_in_title (D73; D91: one definition for both stages)."""
+    import media
+    return media.full_name_in_title(title, person)
 
 
 def group_of(x: dict) -> bool:
-    """= media.group_of (D96 module 3): the tagger's "g" first, the title words without it."""
-    g = (x.get("tag") or {}).get("g")
-    return bool(GROUP_TITLE.search(x.get("title", ""))) if g is None else g == "group"
+    """= media.group_of (D96 module 3; D91: one definition): the tagger's "g" first, the title words without it."""
+    import media
+    return media.group_of(x, x.get("title", ""))
 
 
 def check_visuals(items: list, flags: dict) -> tuple[str, list[str]]:

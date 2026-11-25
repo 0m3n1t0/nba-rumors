@@ -216,6 +216,20 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 127. D95 (his answers 2026-11-25, class F1, D78 + D93): a report said as fact is repaired, not only
+     held: (a) check_claims' REJECT "told as fact" (no attribution anywhere) now goes to the repair
+     pass, which names the source in that sentence; (b) a claim the writer marked UNVERIFIED that
+     the D82 fact sheet holds takes the sheet item's kind and article (Luka: Yahoo's own words);
+     (c) a hook telling a hedged claim as plain fact steps behind like an overstated one (Murray);
+     (d) attribution words in two groups (his approved split): clear ones decide alone (said, told,
+     reported, according to, wrote, replied, explained, questioned...); ambiguous ones (per, report,
+     may, could, might, would, if, wants, interested, considering, expected to, expects, suggests,
+     responded, asked, posted, added, heard, hears, buzz, whispers) never decide alone: Claude
+     judges such a sentence in context (his rule: an ambiguous word by meaning, never a word list;
+     "per ESPN" vs "30 points per game"), recorded in
+     short["attributed"] so the gate counts the same - the Arenas hook "just questioned" is no longer a false hold; the
+     repair and the hook order read the gate's own statuses (gate_statuses), one matcher
+     (claim_sentence) for bare_claims and told_as_fact.
  126. D85 (his answers 2026-11-25): the Claude models are pinned to exact ids, claude-sonnet-5-5
      (CLAUDE_MODEL) and claude-haiku-5-5 (CLAUDE_MODEL_LIGHT), in collect, eval and media-preview
      and as the code defaults (script, media, editor, skills); when Anthropic retires a pinned
@@ -2512,7 +2526,7 @@ class HookDetailInSourceWords(unittest.TestCase):
         import script
         src = inspect.getsource(script.build_short)
         # (audit 2026-11-13: the ordering moved into truth_order, still after the detail fix)
-        self.assertLess(src.index("fix_hook_detail(hooks[0], sources, lead)"), src.index("truth_order(hooks, sources, lead)"))   # D27: + lead
+        self.assertLess(src.index("fix_hook_detail(hooks[0], sources, lead)"), src.index("truth_order(hooks, sources, lead, draft.get(\"claims\"))"))   # D27: + lead; D95: + claims
 
 
 class WhereTheFeudStandsNow(unittest.TestCase):
@@ -2692,7 +2706,7 @@ class BoldButTrue(unittest.TestCase):
         self.assertIn("BOLD BUT TRUE", script.PROMPT)
         self.assertIn("never past it", script.PROMPT)
         src = inspect.getsource(script.build_short)
-        self.assertIn("truth_order(hooks, sources, lead)", src)   # D27: + the lead person
+        self.assertIn("truth_order(hooks, sources, lead, draft.get(\"claims\"))", src)   # D27: + the lead person; D95: + claims
 
     def test_an_overstated_leading_hook_holds_the_short(self):
         """Audit 2026-11-13: if every checked hook stayed overstated, the Short is held (REVIEW)."""
@@ -7079,3 +7093,144 @@ class PinnedModels(unittest.TestCase):
         src = (ROOT / "src" / "eval_run.py").read_text(encoding="utf-8")
         self.assertIn('if (DATA / "model_gone.txt").exists():', src)
 
+
+class ReportsAreRepairedNotOnlyHeld(unittest.TestCase):
+    """127. D95 (his answers 2026-11-25, D78 + D93). The F1 class "a report said as fact" held 8 eval
+    Shorts and was never repaired: an UNVERIFIED label and a whole-script REJECT never reached the
+    repair pass, a hook could lead with a rumor as fact, and "questioned" was no attribution."""
+
+    def test_the_new_verbs_attribute_but_not_stats(self):
+        import compliance as C
+        # his approved split (2026-11-25): clear words decide by themselves, ambiguous ones never do
+        for v in ("wrote", "replied", "explained", "questioned", "says", "reported", "reports",
+                  "according to", "linked", "eyeing", "in talks"):
+            self.assertTrue(C.SENTENCE_HEDGE.search(f"Arenas {v} it."), v)
+        for v in ("wrote", "replied", "explained", "questioned", "reported", "according to"):
+            self.assertTrue(C.HEDGE.search(f"Arenas {v} it."), v)
+        for v in ("per", "report", "may", "could", "might", "would", "if", "wants", "interested",
+                  "considering", "expected to", "expects", "suggests", "responded", "asked", "posted",
+                  "added", "heard", "hears", "buzz", "whispers"):
+            self.assertFalse(C.SENTENCE_HEDGE.search(f"Lendeborg {v} it."), v)
+            self.assertFalse(C.HEDGE.search(f"Lendeborg {v} it."), v)
+            self.assertTrue(C.SENTENCE_AMBIG.search(f"Lendeborg {v} it."), v)
+
+    def test_the_arenas_hook_is_no_false_hold(self):
+        import compliance as C
+        claims = [{"text": "Arenas questioned how Draymond Green can function without Curry and said a rookie", "status": "SPECULATION"}]
+        hook = "Gilbert Arenas just questioned whether Draymond Green works without Steph Curry."
+        self.assertEqual(C.bare_claims(claims, hook), [])
+        self.assertTrue(C.bare_claims(claims, "Draymond Green can't function without Curry."))   # still caught
+
+    def test_the_murray_hook_steps_behind(self):
+        import script
+        claims = [{"text": "Multiple teams view Murray as a distressed asset", "status": "RUMOR"}]
+        hooks = [{"text": "Multiple teams now see Dejounte Murray as a distressed asset.", "unsupported_details": []},
+                 {"text": "Windhorst: rival teams see Dejounte Murray as a distressed asset.", "unsupported_details": []}]
+        with patch.object(script, "check_hook_truth", lambda h, s, lead="": "ok"), \
+                patch.object(script.compliance, "gate_statuses", lambda c, s: c):
+            script.truth_order(hooks, [], "", claims)
+        self.assertTrue(hooks[0]["text"].startswith("Windhorst:"))
+        self.assertTrue(hooks[1]["bare_report"])
+        # every hook bare: it leads and the gate holds, as before
+        hooks = [{"text": "Multiple teams now see Dejounte Murray as a distressed asset.", "unsupported_details": []}]
+        with patch.object(script, "check_hook_truth", lambda h, s, lead="": "ok"), \
+                patch.object(script.compliance, "gate_statuses", lambda c, s: c):
+            script.truth_order(hooks, [], "", claims)
+        self.assertEqual(len(hooks), 1)
+
+    def test_told_as_fact_goes_to_the_repair(self):
+        import compliance as C, script
+        claims = [{"text": "Curry tore his oblique and is out at least two weeks", "status": "REPORTED", "source": 1}]
+        beats = [{"say": "Curry tore his oblique in Houston and is out at least two weeks."},
+                 {"say": "I think the Warriors are in trouble."}]
+        hook = "Gilbert Arenas wonders how the Warriors survive without Steph Curry."
+        self.assertEqual(C.told_as_fact(claims, hook + " " + " ".join(b["say"] for b in beats)),
+                         ["Curry tore his oblique in Houston and is out at least two weeks."])
+        with patch.object(C, "gate_statuses", lambda c, s: c):
+            probs = script.repair_needed(hook, beats, {"hard": [], "soft": []}, [], claims)
+        self.assertTrue(any("said as fact with no source anywhere" in p for p in probs))
+        # every wording the problem suggests is one the gate accepts as attribution by itself (clear
+        # words: "per" is ambiguous since his rule of 2026-11-25, so it is not suggested)
+        for w in ("the Warriors said", "ESPN reported", "according to Yahoo"):
+            self.assertTrue(C.HEDGE.search(w), w)
+            self.assertIn(w, " ".join(probs))
+        beats[0]["say"] = "The Warriors said Curry tore his oblique and is out at least two weeks."
+        self.assertEqual(C.told_as_fact(claims, hook + " " + " ".join(b["say"] for b in beats)), [])   # attributed: nothing
+
+    def test_relabel_from_the_fact_sheet(self):
+        import script
+        sheet = [{"text": "The moment went viral as the Lakers nearly blew a 31-point second-half lead, with some "
+                          "interpreting Doncic's actions as disrespectful toward Harding.", "kind": "REPORTED",
+                  "who": "Yahoo Sports", "source": 1},
+                 {"text": "Arenas strongly disagreed with that interpretation.", "kind": "REPORTED", "who": "Yahoo Sports", "source": 1}]
+        claims = [{"text": "Some people interpreted the grab as disrespectful toward Harding", "status": "UNVERIFIED"},
+                  {"text": "Luka secretly asked for a trade last week", "status": "UNVERIFIED"},
+                  {"text": "Arenas disagreed with that interpretation", "status": "SPECULATION", "source": 1}]
+        changed = script.relabel_from_sheet(claims, sheet)
+        self.assertEqual(changed, ["Some people interpreted the grab as disrespectful toward Harding"])
+        self.assertEqual((claims[0]["status"], claims[0]["source"]), ("REPORTED", 1))
+        self.assertEqual(claims[1]["status"], "UNVERIFIED")          # not on the sheet: held, as before
+        self.assertEqual(claims[2]["status"], "SPECULATION")         # only UNVERIFIED is relabelled
+        self.assertEqual(script.relabel_from_sheet([dict(claims[1])], []), [])   # no sheet: as before
+
+    def test_wired(self):
+        src = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
+        self.assertIn('for text in relabel_from_sheet(draft.get("claims") or [], sheet):', src)
+        self.assertLess(src.index("relabel_from_sheet(draft.get"), src.index("truth_order(hooks, sources, lead, draft.get"))
+        self.assertIn("judged = compliance.gate_statuses(claims, sources) if sources is not None else claims", src)
+
+    def test_posted_added_are_judged_in_context(self):
+        import compliance as C, script
+        claims = [{"text": "Murray hinted the sabotage inside the Pelicans is real", "status": "RUMOR"}]
+        stat = "Murray posted 25 points while hinting the sabotage inside the Pelicans is real."
+        post = "Murray posted on Instagram that the sabotage inside the Pelicans is real."
+        self.assertIn(stat, C.ambiguous_deciders(claims, stat))
+        self.assertEqual(C.bare_claims(claims, post), [claims[0]["text"]])             # not judged: a bare claim
+        self.assertEqual(C.bare_claims(claims, post, [post]), [])                       # judged his words
+        calls = []
+
+        def fake(prompt, model="", where=""):
+            calls.append(prompt)
+            return {"words": [2]}
+        script._attribution_seen.clear()
+        with patch.object(script, "ask_claude", fake):
+            got = script.judged_attributions([stat, post, post], "context")
+            again = script.judged_attributions([post], "context")
+        self.assertEqual((got, again, len(calls)), ([post, post], [post], 1))   # one call, cached
+        self.assertIn("30 points per game", script.ATTRIBUTION_ASK)
+        self.assertIn("posted\n25 points", script.ATTRIBUTION_ASK)
+        script._attribution_seen.clear()
+        with patch.object(script, "ask_claude", side_effect=RuntimeError("down")), redirect_stdout(io.StringIO()):
+            self.assertEqual(script.judged_attributions([post], "c"), [])       # failure: not attribution
+        script._attribution_seen.clear()
+        with patch.object(script, "ask_claude", side_effect=script.UsageLimit("limit")):
+            with self.assertRaises(script.UsageLimit):
+                script.judged_attributions([post], "c")
+        script._attribution_seen.clear()
+        # the whole-Short test counts a judged sentence too
+        rep = [{"text": "the sabotage inside the Pelicans is real", "status": "REPORTED", "source": 1}]
+        self.assertTrue(C.told_as_fact(rep, post))
+        self.assertEqual(C.told_as_fact(rep, post, [post]), [])
+
+    def test_the_gate_counts_the_same(self):
+        src = (ROOT / "src" / "compliance.py").read_text(encoding="utf-8")
+        self.assertIn('check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or ())', src)
+        self.assertIn("not attributed_anywhere(spoken, attributed)", src)
+        sc = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
+        self.assertIn('short["attributed"] = attributed_in(compliance.gate_statuses(short.get("claims") or [], sources), short.get("spoken", ""))', sc)
+        self.assertLess(sc.index('short["attributed"] = attributed_in('), sc.index("result = compliance.evaluate_script(short, sources, known)"))
+        fx = (ROOT / "src" / "fix_after_read.py").read_text(encoding="utf-8")
+        self.assertLess(fx.index('short["attributed"] = script.attributed_in('), fx.index("result = C.evaluate_script(short, sources)"))
+
+
+    def test_the_whole_short_and_the_sensitive_topic_count_judged_sentences(self):
+        import compliance as C
+        said = "The Lakers may have to answer for the lawsuit."
+        spoken = f"{said} I think it gets ugly."
+        rep = [{"text": "the lawsuit against the Lakers", "status": "REPORTED", "source": 1}]
+        self.assertIn(said, C.ambiguous_deciders(rep, spoken))        # no clear attribution anywhere
+        src = [{"title": "t", "publisher": "ESPN", "tier": 1, "text": "x", "summary": ""}]
+        v, notes, _ = C.check_suitability(spoken, "", "", "", src, rep, {"insiders": []})
+        self.assertTrue(any("told as proven fact" in n for n in notes))
+        v, notes, _ = C.check_suitability(spoken, "", "", "", src, rep, {"insiders": []}, [said])
+        self.assertFalse(any("told as proven fact" in n for n in notes))   # judged in context: attributed

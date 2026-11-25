@@ -128,20 +128,37 @@ def check_sources(sources: list[dict]) -> tuple[str, list[str], dict]:
 
 # ---------- 2. claim classification (stored in the story data, enforced here) ----------
 
-HEDGE = re.compile(r"\b(per|according to|reportedly|report(s|ed)?|says|said|told|rumou?rs?|"
-                   r"sources?|insiders?|could|might|may|eyeing|interested|considering|linked|"
-                   r"expected to|in talks|wants?|would|if)\b", re.I)
-
-
-# The words that make a sentence a report, a rumor or someone's opinion rather than a plain
-# fact: attribution to a person ("Bomani says...", "Windhorst thinks...") counts.
+# D95 (his rule 2026-11-25: an ambiguous word is judged by its meaning in context, never by a word
+# list; his approved split of 2026-11-25). The words that make a sentence a report, a rumor or
+# someone's words rather than a plain fact are in two groups:
+# - CLEAR: they mean that wherever they stand ("said", "reported", "according to"): the list decides;
+# - AMBIGUOUS: they also have a plain meaning ("30 points per game", "the injury report", "May 2025",
+#   "would have ejected him", "posted 25 points", "responded with a 10-0 run", "heard boos"): when
+#   only such words could carry a sentence, the script stage asks Claude about that sentence in
+#   context and records the ones that ARE a report, a hedge or someone's words in
+#   short["attributed"]; every check below counts exactly those, so the script stage, the repair,
+#   the fix after the read and the gate agree.
+# HEDGE / HEDGE_AMBIG: the whole-Short test (any attribution anywhere); SENTENCE_HEDGE /
+# SENTENCE_AMBIG: the one-sentence test (bare_claims).
+HEDGE = re.compile(r"\b(according to|reportedly|reports|reported|says|said|told|rumou?rs?|"
+                   r"wrote|replied|explained|questioned|sources?|insiders?|eyeing|linked|in talks)\b", re.I)
+HEDGE_AMBIG = re.compile(r"\b(per|report|could|might|may|interested|considering|expected to|wants?|would|if|"
+                         r"responded|asked)\b", re.I)
 SENTENCE_HEDGE = re.compile(
-    r"\b(per|according to|says|said|told|tells|claims?|argues?|insists?|reportedly|report(s|ed|edly)?|rumou?r(s|ed)?|sources?|insiders?|people close|"
-    r"could|might|may|expected to|in talks|linked|eyeing|interested|considering|thinks?|believes?|"
-    r"predicts?|expects?|suggest(s|ed)?|speculat\w*|whispers?|buzz|hears?|heard|apparently|allegedly)\b",
-    re.I)
+    r"\b(according to|says|said|told|tells|claims?|argues?|insists?|reportedly|reports|reported|rumou?r(s|ed)?|"
+    r"sources?|insiders?|people close|in talks|linked|eyeing|thinks?|believes?|predicts?|speculat\w*|"
+    r"apparently|allegedly|wrote|replied|explained|questioned)\b", re.I)
+SENTENCE_AMBIG = re.compile(
+    r"\b(per|report|may|could|might|would|if|wants?|interested|considering|expected to|expects?|"
+    r"suggest(s|ed)?|responded|asked|posted|added|heard|hears|buzz|whispers?)\b", re.I)
 # The stated-shock hook opens a rumor with its source and a colon ("Shams: the Lakers are
 # shopping Reaves."): that names the source in the same sentence, so it counts as attribution.
+
+
+def _norm(sentence: str) -> str:
+    return re.sub(r"\s+", " ", (sentence or "").strip())
+
+
 SOURCE_LEAD = re.compile(r"^\s*(?:[A-Z][\w.'’-]*\s+){0,4}[A-Z][\w.'’-]*\s*:\s")
 CONTENT_WORD = re.compile(r"[a-z]{4,}")
 # A sentence ends at . ! ? followed by space, but NOT after an initial or a short title:
@@ -154,7 +171,69 @@ def split_sentences(text: str) -> list[str]:
     return [x for x in SENTENCE_END.split((text or "").strip()) if x and x.strip()]
 
 
-def bare_claims(claims: list[dict], spoken: str) -> list[str]:
+def claim_sentence(claim: dict, sentences: list[str]) -> str:
+    """The spoken sentence that says this claim: the one sharing the most of its content words,
+    when it shares at least half of them (2 at least); "" when none does (bare_claims' rule)."""
+    want = set(CONTENT_WORD.findall(fold(claim.get("text", ""))))
+    if len(want) < 2:
+        return ""
+    best, best_n = None, 0
+    for x in sentences:
+        n = len(want & set(CONTENT_WORD.findall(fold(x))))
+        if n > best_n:
+            best, best_n = x, n
+    return best if best and best_n >= max(2, len(want) // 2) else ""
+
+
+def gate_statuses(claims: list[dict], sources: list[dict]) -> list[dict]:
+    """D95: the claims with the statuses the gate will judge them by (check_claims' downgrades:
+    CONFIRMED -> REPORTED without official word, REPORTED -> RUMOR without a trusted outlet), so
+    the repair pass and the hook order see exactly what the gate holds (two stages must agree)."""
+    return check_claims(claims, sources, "")[2] if claims else []
+
+
+def attributed_anywhere(spoken: str, attributed=()) -> bool:
+    """check_claims' whole-Short test: attribution anywhere, an ambiguous word judged in context included (D95)."""
+    if HEDGE.search(spoken or ""):
+        return True
+    judged = {_norm(x) for x in attributed or ()}
+    return any(_norm(x) in judged for x in split_sentences(spoken or ""))
+
+
+def told_as_fact(claims: list[dict], spoken: str, attributed=()) -> list[str]:
+    """D95 (his answer 2026-11-25): the sentences behind check_claims' REJECT "a report or rumor is
+    told as fact: no attribution in the narration" (a REPORTED or hedged claim, and no attribution
+    anywhere), so the repair pass can name the source in them; [] when the gate would not reject."""
+    if not any(str(c.get("status", "")).upper() in ("REPORTED",) + HEDGED for c in claims or []) \
+            or attributed_anywhere(spoken, attributed):
+        return []
+    sentences = [x for x in split_sentences(spoken) if not x.strip().endswith("?")]
+    out = []
+    for c in claims or []:
+        if str(c.get("status", "")).upper() in ("REPORTED",) + HEDGED:
+            x = claim_sentence(c, sentences)
+            if x and x not in out:
+                out.append(x)
+    return out
+
+
+def ambiguous_deciders(claims: list[dict], spoken: str) -> list[str]:
+    """D95: the sentences whose ambiguous word decides a check, to be judged in context: a hedged
+    claim's sentence with no clear attribution, and, when the whole Short has no clear attribution,
+    every sentence with an ambiguous one."""
+    sentences = [x for x in split_sentences(spoken or "") if not x.strip().endswith("?")]
+    out = []
+    for c in claims or []:
+        if str(c.get("status", "")).upper() in HEDGED:
+            x = claim_sentence(c, sentences)
+            if x and SENTENCE_AMBIG.search(x) and not SENTENCE_HEDGE.search(x):
+                out.append(x)
+    if not HEDGE.search(spoken or ""):           # the whole-Short test (claims, sensitive topics) needs them
+        out += [x for x in split_sentences(spoken or "") if HEDGE_AMBIG.search(x)]
+    return list(dict.fromkeys(_norm(x) for x in out))
+
+
+def bare_claims(claims: list[dict], spoken: str, attributed=()) -> list[str]:
     """C2 (owner's plan): an anonymous-source report, a rumor or a speculation must sound like
     one IN ITS OWN SENTENCE ("sources say...", "reportedly", "he thinks..."); one "reportedly"
     elsewhere no longer covers it. Returns the claims spoken as plain fact. A REPORTED claim is
@@ -166,19 +245,13 @@ def bare_claims(claims: list[dict], spoken: str) -> list[str]:
         if str(c.get("status", "")).upper() not in HEDGED:
             continue
         want = set(CONTENT_WORD.findall(fold(c.get("text", ""))))
-        if len(want) < 2:
-            continue
-        best, best_n = None, 0
-        for x in sentences:
-            n = len(want & set(CONTENT_WORD.findall(fold(x))))
-            if n > best_n:
-                best, best_n = x, n
+        best = claim_sentence(c, sentences)          # D95: one matcher for bare_claims and told_as_fact
         lead = SOURCE_LEAD.search(best or "")
         # "Lakers: Reaves is on the block." is a headline, not a source: the lead must not be
         # one of the claim's own words
         sourced = bool(lead) and not (set(CONTENT_WORD.findall(fold(lead.group(0)))) & want)
-        if best and best_n >= max(2, len(want) // 2) and not SENTENCE_HEDGE.search(best) \
-                and not sourced:
+        judged = bool(best) and _norm(best) in {_norm(x) for x in attributed or ()}   # D95: in context
+        if best and not SENTENCE_HEDGE.search(best) and not sourced and not judged:
             out.append(c.get("text", ""))
     return out
 
@@ -239,7 +312,7 @@ def missed_turn(spoken: str, sources: list[dict]) -> str:
     return ""
 
 
-def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[str, list[str], list[dict]]:
+def check_claims(claims: list[dict], sources: list[dict], spoken: str, attributed=()) -> tuple[str, list[str], list[dict]]:
     """Every important claim carries CONFIRMED / REPORTED / RUMOR / UNVERIFIED, written by the
     script writer and CHECKED here against the sources. A status is downgraded when the evidence
     does not carry it (never upgraded because several sites repeat it). Rumors and reports must
@@ -276,13 +349,13 @@ def check_claims(claims: list[dict], sources: list[dict], spoken: str) -> tuple[
         if status == "UNVERIFIED":
             verdict = worst(verdict, REVIEW)
             notes.append(f"UNVERIFIED claim: {c.get('text', '')[:80]}")
-    if any(c["status"] in ("REPORTED",) + HEDGED for c in out) and not HEDGE.search(spoken):
+    if any(c["status"] in ("REPORTED",) + HEDGED for c in out) and not attributed_anywhere(spoken, attributed):
         verdict = worst(verdict, REJECT)
         notes.append("a report or rumor is told as fact: no attribution in the narration")
     for text in dropped_meaning(out, spoken):
         verdict = worst(verdict, REVIEW)
         notes.append(f"a word that changes what happened was dropped: {text}")
-    for text in bare_claims(out, spoken):
+    for text in bare_claims(out, spoken, attributed):
         verdict = worst(verdict, REVIEW)
         notes.append(f"a rumor / anonymous report / opinion sounds like a fact: {text[:80]}")
     turn = missed_turn(spoken, sources)
@@ -550,7 +623,7 @@ RESPONSE = re.compile(r"\b(denied|denies|deny|responded|response|statement|decli
 
 
 def check_suitability(spoken: str, title: str, thumb: str, hook: str, sources: list[dict],
-                      claims: list[dict], origin: dict) -> tuple[str, list[str], list[str]]:
+                      claims: list[dict], origin: dict, attributed=()) -> tuple[str, list[str], list[str]]:
     """Legitimate sports drama passes (beef, trash talk, fines, trade demands, ejections).
     Profanity never goes in the title, the first frame or the hook; elsewhere it holds the
     Short. Serious allegations need a trusted outlet or named insider, attribution in the
@@ -575,7 +648,7 @@ def check_suitability(spoken: str, title: str, thumb: str, hook: str, sources: l
             found.append(cat)
     if found:
         strong = any(s.get("tier") == 1 and s.get("text") for s in sources) or bool(origin.get("insiders"))
-        attributed = bool(HEDGE.search(spoken))
+        attributed = attributed_anywhere(spoken, attributed)     # D95: an ambiguous word judged in context
         response_known = bool(RESPONSE.search(mat))
         response_told = bool(RESPONSE.search(spoken))
         if "private" in found:
@@ -608,7 +681,7 @@ def evaluate_script(short: dict, sources: list[dict], known: set[str] | None = N
     checks = {}
     v, n, origin = check_sources(sources)
     checks["source_verification"] = {"verdict": v, "notes": n, "origin": origin}
-    v, n, claims = check_claims(short.get("claims") or [], sources, spoken)
+    v, n, claims = check_claims(short.get("claims") or [], sources, spoken, short.get("attributed") or ())   # D95
     checks["claim_classification"] = {"verdict": v, "notes": n}
     v, n = check_fabrication(spoken, sources, short.get("unsupported_quotes", []),
                              short.get("unsupported_numbers", []), bool(short.get("audience_hot")))
@@ -621,7 +694,7 @@ def evaluate_script(short: dict, sources: list[dict], known: set[str] | None = N
     checks["title_accuracy"] = {"verdict": v, "notes": n}
     v, n = check_headline(thumb, claims, sources, "thumbnail", known)
     checks["thumbnail_accuracy"] = {"verdict": v, "notes": n}
-    v, n, cats = check_suitability(spoken, title, thumb, hook, sources, claims, origin)
+    v, n, cats = check_suitability(spoken, title, thumb, hook, sources, claims, origin, short.get("attributed") or ())
     checks["advertiser_suitability"] = {"verdict": v, "notes": n, "topics": cats}
     return {"claims": claims, "checks": checks,
             "verdict": worst(*(c["verdict"] for c in checks.values()))}

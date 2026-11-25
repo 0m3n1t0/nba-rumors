@@ -152,6 +152,8 @@ def refresh_checks(short: dict, sources: list[dict]) -> None:
     short["unsupported_quotes"] = script.quote_check(spoken, sources)
     short["banned_phrases"] = script.banned_check(f"{spoken} {on_screen}")
     old = (short.get("compliance") or {}).get("checks") or {}
+    # D95: the rewritten lines' ambiguous words judged in context, exactly as the script stage does
+    short["attributed"] = script.attributed_in(C.gate_statuses(short.get("claims") or [], sources), spoken)
     result = C.evaluate_script(short, sources)
     checks = result["checks"]
     for k in ("title_accuracy", "thumbnail_accuracy"):     # the title and thumbnail did not change: their

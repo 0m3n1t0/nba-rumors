@@ -789,6 +789,30 @@ def fact_sheet(sources: list[dict]) -> list[dict]:
     return sheet
 
 
+def relabel_from_sheet(claims: list[dict], sheet: list[dict]) -> list[str]:
+    """D95 (his answer 2026-11-25; the factsheet eval's Luka Short): a claim the writer marked
+    UNVERIFIED that the fact sheet holds (its words pulled word for word from an article, D82) takes
+    the sheet item's kind and article: Yahoo's own "with some interpreting Doncic's actions as
+    disrespectful" was marked UNVERIFIED and held the Short. The match is bare_claims' (most shared
+    content words, at least half of them, 2 at least). check_claims still downgrades a kind its
+    evidence does not carry (CONFIRMED needs official word or two independent reports). Returns the
+    texts changed."""
+    changed = []
+    items = [f for f in sheet or [] if f.get("kind") in FACT_KINDS and f["kind"] != "UNVERIFIED"]
+    for c in claims or []:
+        if str(c.get("status", "")).upper() != "UNVERIFIED":
+            continue
+        texts = [f["text"] for f in items]
+        hit = compliance.claim_sentence(c, texts)
+        if not hit:
+            continue
+        item = items[texts.index(hit)]
+        c["status"], c["source"] = item["kind"], item.get("source", c.get("source"))
+        c["relabelled"] = f"fact sheet: {item['kind']} ({item.get('who', '')})"[:120]
+        changed.append(c.get("text", ""))
+    return changed
+
+
 def facts_block(sheet: list[dict]) -> str:
     """D82: the sheet as the writer and the editors read it, under the articles; "" when empty
     (then every prompt is exactly as before)."""
@@ -1658,8 +1682,11 @@ def check_title_truth(titles: list[dict], sources: list[dict]) -> list[dict]:
 
 def hook_order_key(h: dict) -> tuple:
     # D27: a hook with profanity (spelled out or masked, "f—k") never leads: the gate rejects it
+    # D95 (his answer 2026-11-25): a hook telling a rumor / anonymous report / opinion as plain fact
+    # (no source in it: Murray's "Multiple teams now see Dejounte Murray as a distressed asset.") steps
+    # behind like an overstated one; all such: it leads and the gate holds, as before
     return (bool(compliance.PROFANITY.search(h["text"])), bool(h["unsupported_details"]),
-            bool(h.get("recycled")), bool(h.get("overstated")))
+            bool(h.get("recycled")), bool(h.get("overstated")) or bool(h.get("bare_report")))
 
 
 def first_words(text: str, n: int = 8) -> str:
@@ -1682,13 +1709,71 @@ def rewrite_keeps_hook_rules(new: str, old: str, lead: str = "") -> bool:
     return not names or bool(names & compliance.names_in(first_words(new)))
 
 
-def truth_order(hooks: list[dict], sources: list[dict], lead: str = "") -> None:
+ATTRIBUTION_ASK = """Each numbered sentence below is from an NBA news Short. Its only sign of being a report, a
+rumor or someone's words is a word that can also mean something plain: "per", "report", "may",
+"could", "might", "would", "if", "wants", "interested", "considering", "expected to", "expects",
+"suggests", "responded", "asked", "posted", "added", "heard", "hears", "buzz", "whispers".
+Judge each sentence by its meaning and the story: does it tell its main claim as someone's words,
+a report or something uncertain (a rumor, a possibility: "the Lakers may trade him", "per ESPN",
+"he posted on Instagram that...", "he added, 'we're fine'"), or does it state it as plain fact and
+the word only has its plain meaning ("30 points per game", "the injury report", "May 2025", "posted
+25 points", "added 10 rebounds", "responded with a 10-0 run", "heard boos", "would have ejected
+him" telling what happened)?
+
+THE SHORT (context):
+SHORT_TEXT
+
+SENTENCES:
+SENTENCES_TEXT
+
+Return ONLY JSON: {"words": [the numbers of the sentences that tell their claim as someone's words, a report or something uncertain]}"""
+
+_attribution_seen: dict[str, bool] = {}
+
+
+def judged_attributions(sentences: list[str], context: str) -> list[str]:
+    """D95 (his rule 2026-11-25: an ambiguous word is judged by its meaning in context, never by a
+    word list): the sentences that ARE a report, a hedge or someone's words. One call for the new ones (the main
+    model), cached for the run; a failed call or an unclear answer counts as NOT attribution (the
+    repair or the hold follows, the safe side); the Claude limit still stops the stage."""
+    todo = [x for x in dict.fromkeys(sentences) if x and x not in _attribution_seen]
+    if todo:
+        try:
+            ans = ask_claude(ATTRIBUTION_ASK.replace("SHORT_TEXT", context)
+                             .replace("SENTENCES_TEXT", "\n".join(f"{k}. {x}" for k, x in enumerate(todo, 1))),
+                             CLAUDE_MODEL, where="attribution")
+            yes = {int(k) for k in (ans or {}).get("words", []) if str(k).isdigit()}
+        except UsageLimit:
+            raise
+        except Exception as exc:
+            print(f"[!] ambiguous-word judgement failed ({str(exc)[:80]}): not counted as attribution")
+            yes = set()
+        for k, x in enumerate(todo, 1):
+            _attribution_seen[x] = k in yes
+    return [x for x in sentences if _attribution_seen.get(x)]
+
+
+def attributed_in(claims: list[dict] | None, spoken: str, context: str = "") -> list[str]:
+    """D95: the deciding ambiguous-word sentences of this text that Claude judged a report or someone's words."""
+    return judged_attributions(compliance.ambiguous_deciders(claims or [], spoken), context or spoken)
+
+
+def mark_bare_reports(hooks: list[dict], claims: list[dict] | None) -> None:
+    """D95: which hooks tell a hedged claim as plain fact (compliance.bare_claims on the hook alone)."""
+    for h in hooks:
+        h["bare_report"] = bool(claims) and bool(
+            compliance.bare_claims(claims, h["text"], attributed_in(claims, h["text"])))
+
+
+def truth_order(hooks: list[dict], sources: list[dict], lead: str = "", claims: list[dict] | None = None) -> None:
     """D17: the chosen hook is read against the sources (check_hook_truth), then the hooks are
     ordered: unsupported details, recycled, overstated go behind. Audit 2026-11-13: when the first
     hook was overstated and stepped behind, the one that took its place is read too; D75: and so on
     until a read hook leads (one more call per overstated hook), so no unread hook ever leads. D27: the order is applied FIRST too,
     so the hook that is read is the one that can lead (never a profane one, never one with an
     unsupported detail while a clean one waits)."""
+    claims = compliance.gate_statuses(claims or [], sources)   # D95: the statuses the gate judges by
+    mark_bare_reports(hooks, claims)                 # D95
     hooks.sort(key=hook_order_key)
     # D75 (Howard eval: two hooks overstated, the third led UNREAD and was false - "just admitted he
     # left Kobe too soon"; 4 of 23 eval stories had an unread lead; his answer 2026-11-18): the next
@@ -1699,6 +1784,7 @@ def truth_order(hooks: list[dict], sources: list[dict], lead: str = "") -> None:
             and not hooks[0].get("recycled"):
         read.append(id(hooks[0]))
         check_hook_truth(hooks[0], sources, lead)
+        mark_bare_reports(hooks, claims)             # D95: a rewritten hook is judged again
         hooks.sort(key=hook_order_key)
 
 
@@ -2028,12 +2114,23 @@ def repair_needed(hook: str, beats: list[dict], retention: dict, sources: list[d
                             "it instead (only the hook and the closing question ask)")
     if claims:
         said = " ".join(b.get("say", "") for b in beats)
+        judged = compliance.gate_statuses(claims, sources) if sources is not None else claims   # D95
+        whole = " ".join([hook] + [b.get("say", "") for b in beats])
+        heard = attributed_in(judged, whole)       # D95: ambiguous words judged in context
         for text in compliance.dropped_meaning(claims, said):
             problems.append(f"a word that changes what happened is missing: {text}: put it back in that "
                             "sentence exactly as the sources say it")
-        for text in compliance.bare_claims(claims, said):
+        for text in compliance.bare_claims(judged, said, heard):
             problems.append(f"this rumor / anonymous report / opinion sounds like a fact: \"{text[:90]}\": "
                             "say in the same sentence what it is (reportedly, sources say, he thinks)")
+        # D95 (his answer 2026-11-25): a report told as fact with no attribution anywhere was held at
+        # once (the gate REJECTS it); now the repair names the source in that sentence, in words the
+        # gate's HEDGE accepts by itself ("the Warriors said", "ESPN reported", "according to Yahoo"); kept
+        # only when the checks pass after it. The hook is fixed here: its own rule steps it behind.
+        for text in compliance.told_as_fact(judged, whole, heard):
+            if text.strip() and text.strip() not in hook:
+                problems.append(f"this report is said as fact with no source anywhere: \"{text[:90]}\": name in the same "
+                                "sentence who reports it, as the sources do (\"the Warriors said\", \"ESPN reported\", \"according to Yahoo\")")
     if sources is not None:
         turn = compliance.missed_turn(" ".join([hook] + [b.get("say", "") for b in beats]), sources)
         if turn:
@@ -2332,6 +2429,9 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
         hooks.sort(key=hook_rank)
         hooks = hooks[:5]
 
+    # D95 (his answer 2026-11-25): a claim marked UNVERIFIED that the fact sheet holds takes its kind
+    for text in relabel_from_sheet(draft.get("claims") or [], sheet):
+        print(f"[i] claim relabelled from the fact sheet: {text[:80]}")
     hooks = intrigue_pick(hooks, topic["headline"], " ".join(b.get("say", "") for b in draft.get("beats", [])),
                           topic.get("star_names"))
     # a hook built on the same template as a recent one goes to the back (stable: order kept otherwise)
@@ -2345,7 +2445,7 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     # the chosen hook keeps its place when only a detail's wording is off (fix_hook_detail)
     if hooks and hooks[0]["unsupported_details"] and not hooks[0].get("recycled"):
         fix_hook_detail(hooks[0], sources, lead)
-    truth_order(hooks, sources, lead)        # bold but true (D17); D27: the lead stays up front
+    truth_order(hooks, sources, lead, draft.get("claims"))   # bold but true (D17); D27: the lead stays up front; D95
 
     thumb = draft.get("thumbnail_text", "")
     titles = [niche_adjust(titlecheck.check(t, thumb)) for t in draft.get("titles", [])[:10]]
@@ -2529,6 +2629,8 @@ def build_short(n: int, topic_id: int, editor: dict, voice: str, formulas: dict)
     except Exception as exc:
         print(f"[!] official results check skipped: {exc}")
     # monetization safety, enforced in code (the media, music and video checks follow in gate.py)
+    # D95: the deciding ambiguous-word sentences judged in context, so the gate counts the same ones
+    short["attributed"] = attributed_in(compliance.gate_statuses(short.get("claims") or [], sources), short.get("spoken", ""))
     result = compliance.evaluate_script(short, sources, known)
     short["claims"] = result["claims"]
     short["compliance"] = {"verdict": result["verdict"], "checks": result["checks"]}

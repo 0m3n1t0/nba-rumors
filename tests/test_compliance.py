@@ -65,8 +65,13 @@ class Story(unittest.TestCase):
                        "Shams Charania. Rival executives want draft picks attached.")]
         claims = [{"text": "Warriors exploring a Porzingis trade", "status": "REPORTED", "source": 1,
                    "reported_by": "Shams Charania"}]
-        v, _, out = C.check_claims(claims, sources, "Per ESPN, the Warriors are exploring a Porzingis trade.")
+        said = "Per ESPN, the Warriors are exploring a Porzingis trade."
+        # D95 (his rule 2026-11-25, a changed rule): "per" is ambiguous ("30 points per game"), so the
+        # script stage asks Claude about this sentence in context and records it in short["attributed"];
+        # judged attribution: PASS, as before; not judged: the report stands bare
+        v, _, out = C.check_claims(claims, sources, said, [said])
         self.assertEqual(v, C.PASS)
+        self.assertEqual(C.check_claims(claims, sources, said)[0], C.REJECT)
         self.assertEqual(out[0]["status"], "REPORTED")
         # a title that says the trade is DONE is not allowed on a report; a question is
         self.assertNotEqual(C.check_headline("Warriors TRADED Porzingis", out, sources, "title")[0], C.PASS)

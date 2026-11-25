@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import no_real_claude  # noqa: F401,E402  D98: the tests never call the real Claude (first)
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 import os  # noqa: E402

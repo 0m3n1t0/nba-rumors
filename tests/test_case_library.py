@@ -14,9 +14,6 @@ case = the pre-push hook refuses the push (his answer "a failing case blocks mai
   F1 fact fidelity           tests/cases/f1_facts.json    (module 6 parts 1-2: articles, Short, titles)
   P1 / P2 words              tests/cases/d96_p_words.json (module 2 speech verbs, module 3 now/today)
   S1 story build (style)     tests/cases/s1_style.json    (module 6 part 3: hook clash / fog, payoff "so")
-  Q1 / P2 the final read's   tests/cases/q1_time.json     (D90b: "a time" = his team and role then;
-  "time" for a picture                                    the verdict is Claude's: the case pins the
-                                                         rule that decides it and the year it reads)
 
 Adding a case: a real one, clear under a rule he agreed, with "source" and "why". A case that today's
 code gets wrong is NOT added as an expected failure: it is fixed first (his answer "first fix, then
@@ -38,8 +35,7 @@ sys.path.insert(0, str(ROOT / "src"))
 CASES = ROOT / "tests" / "cases"
 
 
-LIBRARIES = ("p1_who.json", "p2_uniform.json", "e1_choice.json", "f1_facts.json", "d96_p_words.json", "s1_style.json",
-             "q1_time.json")
+LIBRARIES = ("p1_who.json", "p2_uniform.json", "e1_choice.json", "f1_facts.json", "d96_p_words.json", "s1_style.json")
 
 
 def load(name):
@@ -299,23 +295,3 @@ class D96MeaningLibrary(unittest.TestCase):
         finally:
             script._style_seen.clear()
             script._style_seen.update(saved)
-
-
-class Q1TimeLibrary(unittest.TestCase):
-    """D90b (his answers 2026-11-26): the final read judges "a time" as the team and role he had then.
-    The verdict itself is Claude's (seen only at the next run or eval); each real case here pins
-    that the rule deciding it is in the reader's rules (shared by CONFIRM and CHECK_DOUBT) on the
-    right side (error / not an error), and that the reader sees the photo's person and year."""
-
-    def test_q1_time(self):
-        import final_read
-        rules = " ".join(final_read.RULES.split())
-        wrong = rules[rules.index("4. WRONG PICTURE"):rules.index("5. BROKEN PROMISE")]
-        error_part, fine_part = wrong.split("NOT an error (at most a doubt)", 1)
-        for c in load("q1_time.json"):
-            with self.subTest(c["id"], line=c["line"]):
-                self.assertIn(c["clause"], error_part if c["expect"] else fine_part, c["why"])
-                self.assertNotIn(c["clause"], fine_part if c["expect"] else error_part, c["why"])
-                row = final_read.picture_line(c["photo"])
-                self.assertIn(c["photo"]["person"], row)
-                self.assertIn(c["photo"]["date"][:4], row)

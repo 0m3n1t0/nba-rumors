@@ -29,11 +29,6 @@ DATA = ROOT / "data"
 SCRIPTS, MEDIA, SOURCES, REVIEW = DATA / "scripts", DATA / "media", DATA / "sources", DATA / "review"
 EVIDENCE_MATCH = 0.85   # the evidence must really be in the Short or the sources (same bar as quotes)
 
-# D90b (his answers 2026-11-26, classes Q1/P2): "a time" in the WRONG PICTURE rule is the team and
-# role he had then, as the picture stages read it (media PICK, photo_tags: "never a third team or a
-# later era"); another year in the same team and role is at most a doubt (receipts2: Kerr on the
-# Warriors bench in 2015/2019 under "In 2024, Kerr said..." was an error); a time when he had another
-# team or role stays an error (D80: the 2013 Kerr photo). RULES carries it into CONFIRM and CHECK_DOUBT.
 PROMPT = """You are the last editor of a 30-second NBA news Short before it is published. You did
 not write it. Read it the way a viewer hears it: each spoken line, with the picture shown under
 it, against the SOURCE TEXTS it was written from. Report only CLEAR errors of these kinds:
@@ -59,15 +54,11 @@ it, against the SOURCE TEXTS it was written from. Report only CLEAR errors of th
 4. WRONG PICTURE: the viewer would take the wrong man for the one the line is about: another
    man with the same name; someone else shown while the line says what HE said or did ("He
    wrote...", "Murray deleted it" over a teammate's photo); or, when the line names a team or a
-   time ("as a Laker", "in 2004"), a picture from another team, or from a time when he had another
-   team or role than at the time the line names (a 2013 photo, before he coached that team, on a
-   line about what its coach said in 2024). NOT an error (at most a doubt): another person from
-   this story on a line about the team or the story as a whole; the right man in a former team's
-   jersey when the line names no team or time (the channel's picture rules allow both when better
-   photos are missing); a picture from another year that shows him in the same team and role he
-   had at the time the line names (a coach on that team's bench in 2015 or 2019, on a line about
-   what he said in 2024, when he coached that team in all those years). The first exception
-   (another person of this story) is only for a line about the team or the story as a whole: on a line saying what one man said or did, a picture
+   time ("as a Laker", "in 2004"), a picture from another team or time. NOT an error (at most a
+   doubt): another person from this story on a line about the team or the story as a whole, or
+   the right man in a former team's jersey when the line names no team or time (the channel's
+   picture rules allow both when better photos are missing). That exception is only for a line
+   about the team or the story as a whole: on a line saying what one man said or did, a picture
    of anyone else IS an error, another person of this story too. On a line telling what X said
    ABOUT Y ("Smith says LeBron...", "He said it over an anthem video" for Trump's words), the man the
    line is about is the speaker X: a picture of Y IS an error, also when no picture of X exists (a

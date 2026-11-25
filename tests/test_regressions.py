@@ -216,19 +216,6 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
- 144. D90b (his answers 2026-11-26, classes Q1/P2): the final read's WRONG PICTURE rule read "a
-     time" as the photo's year, the picture stages (media PICK, photo_tags, team_fits) as the team
-     and era: one stage chose what the other refused (receipts2: "In 2024, Kerr said..." over Kerr on
-     the Warriors bench in 2015/2019 was held; the same line was only a doubt in the run and in
-     classfix). Now "a time" = the team and role he had then: another year in the same team and
-     role is at most a doubt; a time with another team or role stays an error (D80: Kerr 2013,
-     before he coached; Howard in a Hawks jersey on the 2020-title line). Prompt only (RULES, so
-     CONFIRM and CHECK_DOUBT too): its effect shows at the next run or eval (D97). Library
-     tests/cases/q1_time.json.
- 143. D90c (his answers 2026-11-26, report only): the eval result's "on_screen" list lacked the
-     hook, so on_screen[k] belonged to line k+1 of picture_choice and the final read (misread once,
-     HANDOFF B3). Now line 0 is "HOOK", as media.spoken and tts name it; results kept before
-     2026-11-26 stay as they are (read them with "HOOK" prepended).
  142. D99 (his "კი" to all five recommendations 2026-11-26, class R1 "tests are offline"): the tests
      never reach the network (a full run tried commons.wikimedia.org twice, from test 104
      test_refused_never_offered via media.prewarm_searches -> commons_videos, which swallows the
@@ -5834,7 +5821,7 @@ class QualityEval(unittest.TestCase):
         self.assertEqual(r["final_read_full"]["doubts"], [{"line": 2, "what": "x"}])
         self.assertEqual(r["fixes"][0]["stopped"], "no progress")
         self.assertEqual(r["picture_choice"][0][0]["person"], "Draymond Green")
-        self.assertEqual(r["on_screen"], ["HOOK", "Steph Curry"])      # D90c: line 0 is the hook
+        self.assertEqual(r["on_screen"], ["Steph Curry"])
 
     def test_not_made_is_a_problem(self):
         r = self.e.result_of({"id": "a", "headline": "h"}, None, "no article")
@@ -8322,52 +8309,3 @@ class NoRealClaudeInTests(unittest.TestCase):
         self.assertEqual(sorted(t.id().rsplit(".", 1)[1] for t, _ in result.failures), ["test_child", "test_swallows"])
         self.assertTrue(all("called the real Claude" in text for _, text in result.failures))
         self.assertFalse(result.wasSuccessful())
-
-
-
-class EvalOnScreenStartsWithTheHook(unittest.TestCase):
-    """143. D90c (his answers 2026-11-26): the eval's on_screen list is aligned with picture_choice
-    and the final read's lines: line 0 is the hook ("HOOK", as media.spoken names it)."""
-
-    def test_aligned(self):
-        import eval_run
-        import media
-        tmp = Path(tempfile.mkdtemp())
-        saved = eval_run.DATA
-        try:
-            eval_run.DATA = tmp
-            (tmp / "media").mkdir(parents=True)
-            (tmp / "media" / "short_1.json").write_text(json.dumps(
-                [{"title": "a.jpg", "beat": 0, "alts": []}, {"title": "b.jpg", "beat": 1, "alts": []},
-                 {"title": "c.jpg", "beat": 2, "alts": []}]))
-            short = {"headline": "h", "hook": {"text": "Hook line"},
-                     "beats": [{"say": "one", "on_screen": "Steve Kerr"}, {"say": "two", "on_screen": "Jayson Tatum"}],
-                     "compliance": {"verdict": "PASS", "checks": {}}}
-            r = eval_run.result_of({"id": "a", "headline": "h"}, short)
-        finally:
-            eval_run.DATA = saved
-            shutil.rmtree(tmp, ignore_errors=True)
-        self.assertEqual(r["on_screen"], ["HOOK", "Steve Kerr", "Jayson Tatum"])
-        self.assertEqual(len(r["on_screen"]), len(r["picture_choice"]))
-        self.assertEqual(r["on_screen"], [b["on_screen"] for b in media.spoken(short)])
-
-
-class FinalReadTimeIsTheTeamAndRole(unittest.TestCase):
-    """144. D90b (his answers 2026-11-26): "a time" in the final read's WRONG PICTURE rule is the
-    team and role he had then; another year in the same team and role is at most a doubt; the
-    rule reaches the two second checks (CONFIRM, CHECK_DOUBT) through RULES."""
-
-    def test_rule(self):
-        import final_read
-        p = " ".join(final_read.PROMPT.split())
-        wrong = p[p.index("4. WRONG PICTURE"):p.index("5. BROKEN PROMISE")]
-        error_part, fine_part = wrong.split("NOT an error (at most a doubt)", 1)
-        self.assertIn("a picture from another team, or from a time when he had another team or role", error_part)
-        self.assertIn("a picture from another year that shows him in the same team and role", fine_part)
-        self.assertNotIn("a picture from another team or time", p)          # the old calendar reading
-        # the "another person of this story" exception keeps its limit (D80), not the new one
-        self.assertIn("The first exception (another person of this story) is only for a line about the team", p)
-        rules = " ".join(final_read.RULES.split())
-        self.assertIn("same team and role he had at the time the line names", rules)
-        for prompt in (final_read.CONFIRM, final_read.CHECK_DOUBT):
-            self.assertIn("RULES_TEXT", prompt)

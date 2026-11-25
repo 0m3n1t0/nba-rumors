@@ -216,6 +216,15 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 125. D94 (his answers 2026-11-25, class P1): a line telling what X said about Y shows ONLY the
+     speaker X: X is a story man named right before one of D68's speech verbs (said, says, told,
+     wrote, added, responded, replied, posted, explained, asked) who locks a line (a player or a
+     coach, D92 too), the hook included; a reporter's or TV host's words keep D50; a speech line
+     whose note names a real person outside sport (Wikidata human, no sports/media description;
+     unreachable: the name counts) shows no story man (a generic or team picture, else the previous
+     stays). Same rule in the writer's on_screen prompt, the pick, the top-ups and the final read.
+     Changed: 108 and P1-16 (Wade says it: Wade, no longer Wembanyama), 107's code check.
+     Cases: tests/cases/p1_who.json P1-35..41.
  124. D92 (his answers 2026-11-25, class P1): a named man whose NBA career could NOT be looked up
      (Wikipedia's person check unreachable, a confirmed page with no Wikidata item, the Wikidata or
      Wikipedia career request failing) locks the line to the men it names, like a known career
@@ -5875,8 +5884,11 @@ class ScreenNamesOnlyHim(unittest.TestCase):
     def test_the_pick_uses_it(self):
         src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
         self.assertIn('screen = beats[i].get("on_screen", "") if i < len(beats) else ""', src)
-        self.assertIn("onscreen = screen_players(screen, who_all)", src)
-        self.assertIn("team_ok = (lambda j, ok=team_ok: ok(j) and shows_only(cands[j], onscreen, who_all, screen))", src)
+        # D94 (his answers 2026-11-25): the pick asks line_lock, whose "note" mode is D71's shows_only
+        self.assertIn("mode, onscreen = line_lock(line, screen, who_all)", src)
+        self.assertIn("team_ok = (lambda j, ok=team_ok: ok(j) and lock_allows(cands[j], mode, onscreen, who_all, screen))", src)
+        self.assertIn('    return "note", screen_players(screen, who)', src)
+        self.assertIn('    if mode == "note":\n        return shows_only(c, men, who, screen)', src)
         self.assertIn("order = [j for j in order if team_ok(j)]", src)
 
 
@@ -5892,9 +5904,14 @@ class TopUpsReadTheNoteFirst(WhoTheWriterPutOnScreen):
                                     "author": "b", "team": "", "hoops": True, "tag": {"v": "C", "s": "game", "t": "dunks"}}]}
 
     def test_the_run_case(self):
+        # D94 (his answer 2026-11-25, a changed rule): Wade SAYS it, so Wade is the line's man
+        # (was Wembanyama, the note's man, by D72)
         got = self.fill_screen("Still, Wade says he has to get stronger.", "Victor Wembanyama dunking",
                                self.POOLS, ["Dwyane Wade", "Victor Wembanyama"])
-        self.assertEqual(got["title"], "Victor Wembanyama 2026.jpg")
+        self.assertEqual(got["title"], "Dwyane Wade splits defense.jpg")
+        got = self.fill_screen("Still, he has to get stronger.", "Victor Wembanyama dunking",
+                               self.POOLS, ["Dwyane Wade", "Victor Wembanyama"])
+        self.assertEqual(got["title"], "Victor Wembanyama 2026.jpg")      # no speaker: D72 as before
 
     def test_a_note_naming_nobody_as_before(self):
         got = self.fill_screen("Still, Wade says he has to get stronger.", "a crowded arena",
@@ -5903,7 +5920,7 @@ class TopUpsReadTheNoteFirst(WhoTheWriterPutOnScreen):
 
     def test_the_code_reads_the_note_first(self):
         src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
-        self.assertIn('said = screen_players(screens[i] if i < len(screens) else "", who or []) \\', src)
+        self.assertIn('said = men if mode == "speaker" else screen_players(screens[i] if i < len(screens) else "", who or []) \\', src)
 
 
 class EveryLeadingHookIsRead(unittest.TestCase):
@@ -6918,4 +6935,95 @@ class UnknownCareerLocksTheLine(unittest.TestCase):
                 {"careers": {"Luka Doncic": []}, "career_unknown": ["Luka Doncic"]}), encoding="utf-8")
             got = eval_run.result_of({"id": "s", "headline": "h"}, {"hook": {"text": "x"}, "beats": []})
         self.assertEqual((got["careers"], got["career_unknown"]), ({"Luka Doncic": []}, ["Luka Doncic"]))
+
+
+class OnlyTheSpeaker(unittest.TestCase):
+    """125. D94 (his answers 2026-11-25, class P1). receipts2: Trump's words over LeBron, Smith's
+    over LeBron, Breen's over Embiid: the writer's note named the man spoken ABOUT and the picker
+    obeyed (D71) while the final read (D80) called it an error. His rule: only the speaker."""
+
+    WHO = ["Dwyane Wade", "Victor Wembanyama", "Stephen A. Smith", "LeBron James"]
+
+    def setUp(self):
+        import media
+        self.m = media
+        self.p = patch.object(media, "career_teams", lambda p: set() if p == "Stephen A. Smith" else {"t"})
+        self.p.start()
+        self.saved = dict(media._outside)
+        media._outside.clear()
+
+    def tearDown(self):
+        self.p.stop()
+        self.m._outside.clear()
+        self.m._outside.update(self.saved)
+
+    @staticmethod
+    def ph(who):
+        return {"kind": "photo", "title": "x.jpg", "tag": {"v": "C", "s": "game", "t": "t", "who": who} if who else {}}
+
+    def test_the_verbs_are_d68s_list(self):
+        self.assertEqual(self.m.SPEECH_VERBS, ("said", "says", "told", "wrote", "added", "responded",
+                                               "replied", "posted", "explained", "asked"))
+
+    def test_speakers(self):
+        sp = self.m.speakers
+        self.assertEqual(sp("Still, Wade says he has to get stronger.", self.WHO), ["Dwyane Wade"])
+        self.assertEqual(sp("Dwyane Wade told reporters it was fair.", self.WHO), ["Dwyane Wade"])
+        self.assertEqual(sp("Victor said nothing, Wade wrote back.", self.WHO), ["Dwyane Wade", "Victor Wembanyama"])
+        self.assertEqual(sp("Wade, smiling, said it.", self.WHO), [])            # not right before the verb
+        self.assertEqual(sp("Wade claims it.", self.WHO), [])                    # not in the list
+        self.assertEqual(sp("He said Wade was right.", self.WHO), [])
+
+    def test_modes(self):
+        m = self.m
+        with patch.object(m, "outside_person", lambda n: n == "Donald Trump"):
+            self.assertEqual(m.line_lock("Still, Wade says he has to get stronger.", "Victor Wembanyama playing", self.WHO),
+                             ("speaker", ["Dwyane Wade"]))
+            self.assertEqual(m.line_lock("He said it over an anthem video.", "Donald Trump at a rally", self.WHO),
+                             ("outside", []))
+            self.assertEqual(m.line_lock("LeBron skipped the visit.", "Donald Trump at a rally", self.WHO), ("note", []))
+            # a TV host speaking keeps D50: the note decides, as before
+            self.assertEqual(m.line_lock("Smith says LeBron wouldn't visit.", "LeBron James speaking", self.WHO),
+                             ("note", ["LeBron James"]))
+            self.assertEqual(m.line_lock("Wembanyama dunked.", "Victor Wembanyama dunking", self.WHO),
+                             ("note", ["Victor Wembanyama"]))
+
+    def test_what_each_mode_allows(self):
+        m, W = self.m, self.WHO
+        self.assertFalse(m.lock_allows(self.ph("Victor Wembanyama"), "speaker", ["Dwyane Wade"], W, "Victor Wembanyama playing"))
+        self.assertTrue(m.lock_allows(self.ph("Dwyane Wade"), "speaker", ["Dwyane Wade"], W, "Victor Wembanyama playing"))
+        self.assertTrue(m.lock_allows(self.ph(""), "speaker", ["Dwyane Wade"], W, ""))                  # generic / team
+        self.assertFalse(m.lock_allows(self.ph("LeBron James"), "outside", [], W, "Donald Trump and LeBron James"))
+        self.assertTrue(m.lock_allows(self.ph("Donald Trump"), "outside", [], W, "Donald Trump at a rally"))
+        self.assertTrue(m.lock_allows(self.ph(""), "outside", [], W, "Donald Trump at a rally"))
+
+    def test_outside_person(self):
+        m = self.m
+
+        def fake(desc, p31):
+            def get(url, timeout=30):
+                if "wikipedia" in url:
+                    return json.dumps({"query": {"pages": {"1": {"title": "x", "pageprops": {
+                        "wikibase_item": "Q1", "wikibase-shortdesc": desc}}}}})
+                return json.dumps({"claims": {"P31": [{"mainsnak": {"datavalue": {"value": {"id": p31}}}}]}})
+            return get
+        cases = [("President of the United States", "Q5", True), ("American sports journalist", "Q5", False),
+                 ("American basketball player (born 1984)", "Q5", False), ("American TV personality", "Q5", False),
+                 ("2016 film", "Q11424", False)]
+        for desc, p31, want in cases:
+            m._outside.clear()
+            with patch.object(m, "get", fake(desc, p31)):
+                self.assertEqual(m.outside_person("Some Name"), want, desc)
+        m._outside.clear()
+        with patch.object(m, "get", side_effect=RuntimeError("down")), redirect_stdout(io.StringIO()):
+            self.assertTrue(m.outside_person("Some Name"))       # unreachable: the name counts
+
+    def test_every_stage_has_it(self):
+        src = (ROOT / "src" / "media.py").read_text(encoding="utf-8")
+        self.assertIn('if mode == "outside":\n            skip(i, "the speaker is outside sport")\n            return None', src)
+        self.assertIn("on_screen names the SPEAKER by", (ROOT / "src" / "script.py").read_text(encoding="utf-8"))
+        import final_read
+        self.assertIn("On a line telling what X said\n   ABOUT Y", final_read.RULES)
+        self.assertIn("the man the\n   line is about is the speaker X", final_read.PROMPT)
+        self.assertIn("a reporter's, TV host's or\n   commentator's words about a player may show that player", final_read.RULES)
 

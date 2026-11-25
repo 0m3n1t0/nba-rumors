@@ -115,9 +115,11 @@ class P1WhoLibrary(unittest.TestCase):
             for c in [c for c in load("p1_who.json") if c["kind"] == "pick"]:
                 with self.subTest(c["id"], on_screen=c["on_screen"], photo=c["photo"]["title"]):
                     photo = {"kind": "photo", **c["photo"]}
-                    with lookup_failed(m, c):
-                        named = m.screen_players(c["on_screen"], c["who"])
-                        self.assertEqual(m.shows_only(photo, named, c["who"], c["on_screen"]), c["expect"], c["why"])
+                    # D94: the pick asks line_lock (speaker, outsider, else D71's note); Wikipedia's
+                    # "outside sport" answer is the case's own list (offline)
+                    with lookup_failed(m, c), patch.object(m, "outside_person", lambda n, c=c: n in c.get("outside", [])):
+                        mode, men = m.line_lock(c["line"], c["on_screen"], c["who"])
+                        self.assertEqual(m.lock_allows(photo, mode, men, c["who"], c["on_screen"]), c["expect"], c["why"])
 
     def test_title_cases(self):
         # D73: a title counts as a suffixed man's only with the same suffix, both where an unjudged
@@ -163,7 +165,8 @@ class P1WhoLibrary(unittest.TestCase):
                                             image_ok=lambda path: True, picture_hash=lambda path: None,
                                             beat_seconds=lambda short, i: 2.0,
                                             college_faces=lambda person, shown: [], national_faces=lambda person, shown: []):
-                            with redirect_stdout(io.StringIO()), lookup_failed(m, c):
+                            with redirect_stdout(io.StringIO()), lookup_failed(m, c), \
+                                    patch.object(m, "outside_person", lambda n, c=c: n in c.get("outside", [])):
                                 got = m.fill_empty([None], 1, folder, set(), c["who"], {"_name": "t", "beats": [{}]})[0]
                         # D92: no expected person = the line must stay without another man's photo
                         want = f"{c['expect_person']} 2026.jpg" if c["expect_person"] else None

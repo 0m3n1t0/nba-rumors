@@ -59,7 +59,11 @@ it, against the SOURCE TEXTS it was written from. Report only CLEAR errors of th
    the right man in a former team's jersey when the line names no team or time (the channel's
    picture rules allow both when better photos are missing). That exception is only for a line
    about the team or the story as a whole: on a line saying what one man said or did, a picture
-   of anyone else IS an error, another person of this story too. A picture marked PRE-NBA (high
+   of anyone else IS an error, another person of this story too. On a line telling what X said
+   ABOUT Y ("Smith says LeBron...", "He said it over an anthem video" for Trump's words), the man the
+   line is about is the speaker X: a picture of Y IS an error, also when no picture of X exists (a
+   generic or team picture is fine there). The one exception: a reporter's, TV host's or
+   commentator's words about a player may show that player (not an error). A picture marked PRE-NBA (high
    school, college) on a line about his NBA career, his team or this season IS an error: the
    viewer sees a college player, not the NBA player of the story (fine only on a line about his
    school or college days). The one exception: a picture marked "PRE-NBA, NO NBA PHOTO EXISTS"

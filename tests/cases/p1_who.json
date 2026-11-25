@@ -338,8 +338,8 @@
   ],
   "line": "Still, Wade says he has to get stronger.",
   "on_screen": "Victor Wembanyama playing",
-  "expect_person": "Victor Wembanyama",
-  "why": "the note names him; the line's \"he\" is him (D72)"
+  "expect_person": "Dwyane Wade",
+  "why": "Wade says it: the speaker is the man the line is about (D94, his answer 2026-11-25; was Wembanyama by D72)"
  },
  {
   "id": "P1-17",
@@ -613,5 +613,165 @@
   },
   "expect": true,
   "why": "his own photo stays allowed when his career is unknown (D92)"
+ },
+ {
+  "id": "P1-35",
+  "kind": "pick",
+  "source": "run 44078900140 short_1 beat 3",
+  "who": [
+   "Dwyane Wade",
+   "Victor Wembanyama"
+  ],
+  "line": "Still, Wade says he has to get stronger.",
+  "on_screen": "Victor Wembanyama playing",
+  "photo": {
+   "title": "Victor Wembanyama 2026.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "dunks, Spurs",
+    "who": "Victor Wembanyama"
+   }
+  },
+  "expect": false,
+  "why": "Wade says it: only the speaker (D94, his answer 2026-11-25)"
+ },
+ {
+  "id": "P1-36",
+  "kind": "pick",
+  "source": "run 44078900140 short_1 beat 3",
+  "who": [
+   "Dwyane Wade",
+   "Victor Wembanyama"
+  ],
+  "line": "Still, Wade says he has to get stronger.",
+  "on_screen": "Victor Wembanyama playing",
+  "photo": {
+   "title": "Dwyane Wade 2016.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "drives, Heat",
+    "who": "Dwyane Wade"
+   }
+  },
+  "expect": true,
+  "why": "the speaker himself (D94)"
+ },
+ {
+  "id": "P1-37",
+  "kind": "pick",
+  "source": "run 44110628783 short_2 hook",
+  "who": [
+   "Draymond Green",
+   "Dillon Brooks"
+  ],
+  "line": "Draymond Green says Dillon Brooks' energy will not ever be respected.",
+  "on_screen": "HOOK",
+  "photo": {
+   "title": "Dillon Brooks 2023.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "defends, Grizzlies",
+    "who": "Dillon Brooks"
+   }
+  },
+  "expect": false,
+  "why": "the hook too: Draymond says it (D94, his answer: hook included)"
+ },
+ {
+  "id": "P1-38",
+  "kind": "pick",
+  "source": "receipts2 eval 2026-11-24, story 2026-11-16_43945813466_short_2 line 1, with the note the writer must now write",
+  "who": [
+   "Stephen A. Smith",
+   "LeBron James"
+  ],
+  "line": "He said it over an anthem video.",
+  "on_screen": "Donald Trump at a rally",
+  "outside": [
+   "Donald Trump"
+  ],
+  "photo": {
+   "title": "LeBron James 2024.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "stands for the anthem, Lakers",
+    "who": "LeBron James"
+   }
+  },
+  "expect": false,
+  "why": "Trump's words: no story man, LeBron would look like the speaker (D94)"
+ },
+ {
+  "id": "P1-39",
+  "kind": "pick",
+  "source": "receipts2 eval 2026-11-24, story 2026-11-16_43945813466_short_2 line 1 (neighbour: no speech on the line)",
+  "who": [
+   "Stephen A. Smith",
+   "LeBron James"
+  ],
+  "line": "LeBron skipped the White House visit.",
+  "on_screen": "Donald Trump at a rally",
+  "outside": [
+   "Donald Trump"
+  ],
+  "photo": {
+   "title": "LeBron James 2024.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "stands for the anthem, Lakers",
+    "who": "LeBron James"
+   }
+  },
+  "expect": true,
+  "why": "no speech verb: the outsider rule does not apply (his answer: speech lines only)"
+ },
+ {
+  "id": "P1-40",
+  "kind": "pick",
+  "source": "receipts2 eval 2026-11-24, story 2026-11-16_43945813466_short_2 line 4",
+  "who": [
+   "Stephen A. Smith",
+   "LeBron James"
+  ],
+  "line": "Smith says it's because LeBron wouldn't visit the White House.",
+  "on_screen": "LeBron James speaking to reporters",
+  "photo": {
+   "title": "LeBron James 2024.jpg",
+   "tag": {
+    "v": "C",
+    "s": "game",
+    "e": "calm",
+    "t": "speaks to reporters, Lakers",
+    "who": "LeBron James"
+   }
+  },
+  "expect": true,
+  "why": "a TV host's words about a player may show the player: D50 stays (his answer 2026-11-25)"
+ },
+ {
+  "id": "P1-41",
+  "kind": "top-up",
+  "source": "run 44034519940 short_2 beat 2 (neighbour of P1-16)",
+  "who": [
+   "Draymond Green",
+   "Steph Curry"
+  ],
+  "line": "Draymond Green told reporters it's unfair to make a rookie step into Steph's role.",
+  "on_screen": "Steph Curry on the bench",
+  "no_photo": [
+   "Draymond Green"
+  ],
+  "expect_person": null,
+  "why": "Draymond told it: Steph never stands in, even when the note names him (D94)"
  }
 ]

@@ -2158,8 +2158,10 @@ def collect_for(short: dict, folder: Path, used: set) -> list[dict | None]:
             # a generic or team picture still may; on_screen naming only reporters or executives:
             # as before (D50)
             screen = beats[i].get("on_screen", "") if i < len(beats) else ""
-            onscreen = screen_players(screen, who_all)
-            team_ok = (lambda j, ok=team_ok: ok(j) and shows_only(cands[j], onscreen, who_all, screen))
+            # D94 (his answers 2026-11-25): a line reporting a player's or coach's words shows only
+            # him; a speech line whose note names a real person outside sport shows no story man
+            mode, onscreen = line_lock(line, screen, who_all)
+            team_ok = (lambda j, ok=team_ok: ok(j) and lock_allows(cands[j], mode, onscreen, who_all, screen))
             order = [j for j in order if team_ok(j)]
             k = ranked[0] + 1 if ranked else None
             chosen = None
@@ -2646,6 +2648,91 @@ def screen_players(screen: str, who: list[str]) -> list[str]:
     return named if any(locks_line(p) for p in named) else []     # D92: an unknown career locks too
 
 
+# D94 (receipts2 eval: Trump's words over LeBron, Smith's over LeBron, Breen's over Embiid; his
+# answers 2026-11-25): a line reporting X's words about Y shows ONLY X, the speaker (the viewer must
+# never take Y for the man who said it). The speech verbs are D68's receipts list (his answer).
+SPEECH_VERBS = ("said", "says", "told", "wrote", "added", "responded", "replied", "posted", "explained", "asked")
+SPEECH = re.compile(r"\b(?:" + "|".join(SPEECH_VERBS) + r")\b")
+
+
+def speakers(line: str, who: list[str]) -> list[str]:
+    """D94: the story men named right before a speech verb ("Smith says", "Mike Breen said",
+    "Wade says he..."): full name, last name or first name, then the verb."""
+    text = fold(line or "")
+    out = []
+    for p in who:
+        parts = name_parts(p)
+        forms = {" ".join(parts), parts[-1], parts[0]} if parts else set()
+        if any(re.search(rf"\b{re.escape(f)}\s+(?:{'|'.join(SPEECH_VERBS)})\b", text) for f in forms if f):
+            out.append(p)
+    return out
+
+
+_outside: dict[str, bool] = {}
+
+
+def outside_person(name: str) -> bool:
+    """D94 (his answers 2026-11-25): is this full name a real person OUTSIDE sport: Wikidata
+    "instance of: human" whose Wikipedia description is no sports or sports-media one (a
+    politician, an actor; never a reporter or a player: D50 stays for them)? Wikipedia or
+    Wikidata unreachable: the name's form counts (as D92: an unanswered check locks)."""
+    if name in _outside:
+        return _outside[name]
+    try:
+        data = json.loads(get("https://en.wikipedia.org/w/api.php?" + urllib.parse.urlencode(
+            {"action": "query", "format": "json", "redirects": 1, "prop": "pageprops",
+             "ppprop": "wikibase_item|wikibase-shortdesc|disambiguation", "titles": name}), 30)).get("query", {})
+        page = next(iter((data.get("pages") or {}).values()), {})
+        props = page.get("pageprops") or {}
+        q = props.get("wikibase_item", "")
+        if "missing" in page or not q or "disambiguation" in props or is_person_desc(props.get("wikibase-shortdesc", "")):
+            _outside[name] = False
+            return False
+        claims = json.loads(get("https://www.wikidata.org/w/api.php?" + urllib.parse.urlencode(
+            {"action": "wbgetclaims", "format": "json", "entity": q, "property": "P31"}), 30)).get("claims", {}).get("P31") or []
+        ids = {((c.get("mainsnak") or {}).get("datavalue") or {}).get("value", {}).get("id") for c in claims}
+        _outside[name] = "Q5" in ids
+    except Exception as exc:
+        print(f"[!] person check failed for {name} ({exc}): its name form counts")
+        _outside[name] = True
+    return _outside[name]
+
+
+def outside_speaker(screen: str, who: list[str]) -> list[str]:
+    """D94: full names in the writer's note that are no story person and a real person outside
+    sport ("Donald Trump at a rally")."""
+    return [n for n in sorted(people_names(screen or ""))
+            if name_words_ok(n) and not any(names_him(n, p) for p in who) and outside_person(n)]
+
+
+def line_lock(say: str, screen: str, who: list[str]) -> tuple[str, list[str]]:
+    """D94 then D71: who may be on this line.
+    "speaker": the line reports the words of story men who lock a line (a player or coach, D92
+      included): only they, whatever the note says (Wade, not Wembanyama, on "Wade says he...");
+      a reporter or executive speaking keeps D50 (his answer): the note decides, as before;
+    "outside": a speech line whose note names a real person outside sport (Trump): no story
+      man at all, only a generic or team picture, else the previous picture stays;
+    "note": as before (D71: the note's men when one locks; none: no limit)."""
+    sp = [p for p in speakers(say, who) if locks_line(p)]
+    if sp:
+        return "speaker", sp
+    if SPEECH.search(fold(say or "")) and outside_speaker(screen, who):
+        return "outside", []
+    return "note", screen_players(screen, who)
+
+
+def lock_allows(c: dict, mode: str, men: list[str], who: list[str], screen: str) -> bool:
+    """D94: may this picture stand on a line locked by line_lock? "note" mode is D71's shows_only,
+    unchanged; "speaker": only the speakers or nobody known (the note's other men never);
+    "outside": nobody known, or the outside man himself."""
+    if mode == "note":
+        return shows_only(c, men, who, screen)
+    owner = photo_owner(c, who)
+    if not owner or any(same_man(owner, p, who) for p in men):
+        return True
+    return mode == "outside" and names_him(screen, owner) and not any(same_man(owner, p, who) for p in who)
+
+
 def same_man(owner: str, person: str, who: list[str]) -> bool:
     """D71: is the photo's owner this story person? The same name, the same Wikidata item, or (a
     tag written under another spelling, "Stephen Curry" for "Steph Curry", or an old tag's "Did
@@ -2762,7 +2849,14 @@ def fill_empty(items: list, n_beats: int, folder: Path, used: set, who: list[str
         # does (D71): when it names a man with an NBA career, the men it names ("Still, Wade says he
         # has to get stronger" with "Victor Wembanyama dunking" shows Wembanyama, not Wade);
         # otherwise the spoken line first, then the note (D50, D63), as before
-        said = screen_players(screens[i] if i < len(screens) else "", who or []) \
+        # D94 (his answers 2026-11-25): a line reporting a player's or coach's words shows only
+        # him, before the note ("Wade says he has to get stronger": Wade, no longer Wembanyama);
+        # a speech line whose note names a real person outside sport gets no story man
+        mode, men = line_lock(lines[i] if i < len(lines) else "", screens[i] if i < len(screens) else "", who or [])
+        if mode == "outside":
+            skip(i, "the speaker is outside sport")
+            return None
+        said = men if mode == "speaker" else screen_players(screens[i] if i < len(screens) else "", who or []) \
             or [p for p in (who or []) if names_him(lines[i] if i < len(lines) else "", p)]
         if not said:
             # D63 (run 44088855986; his answer 2026-11-17): a line naming nobody ("My read: he had

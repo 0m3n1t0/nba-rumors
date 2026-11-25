@@ -260,7 +260,11 @@ WHO SAID IT, AND IS IT STILL TRUE (run 43446225184): give each claim to the one 
    "say" (spoken words) and "on_screen" (WHO should be on screen for this line: the person or
    team the line is about, e.g. "[Player] at the podium", "[Coach] on the sideline". Never a
    literal object or place from the sentence such as "an empty locker" or "a contract": the
-   pipeline finds real licensed photos and clips of the story's people), and "tone": how
+   pipeline finds real licensed photos and clips of the story's people. On a line that tells
+   what someone SAID ("X said...", "He told...", "Smith says..."), on_screen names the SPEAKER by
+   full name, never the man the words are about: "Donald Trump at a rally" for Trump's words about
+   LeBron, never "LeBron James during the anthem"; only a reporter's or TV host's line may name the
+   player he talks about), and "tone": how
    the narrator FEELS saying this beat, judged from what the words mean, one of
    calm (plain facts, set-up), serious (injury, punishment, someone hurt or fired),
    tense (the clash, a threat, pressure building), shocked (the twist, something nobody

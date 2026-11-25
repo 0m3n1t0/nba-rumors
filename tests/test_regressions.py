@@ -216,6 +216,17 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 135. D96 module 6 part 3 (his answers 2026-11-25, class S1): the script's style words by meaning,
+     ONE small "style" call per Short before the hooks are scored (script.judge_style; the
+     rewritten hooks of the retry loop in a further small call): CLASH_WORDS keeps vs, versus,
+     calls out, fires back, beef, feud, rift, clash, ejected, fined, suspended, benched, shove,
+     heckler, disagree (CLASH_AMBIG the rest, "slams it home"); FOG_WORDS are all ambiguous ("talking
+     crazy" quoted, "the only thing standing between"); REASON_WORD keeps because / since,
+     REASON_AMBIG "so" ("So in 1985..."). No answer: as before (a style score). REFERENT,
+     AGREE_ONLY, SPOKEN_PER stay lists. Found while building it (class Q1): a judgement call
+     whose answer has no "yes" list (collect, signals, media picture words, style) counted as
+     "all no" instead of a failed call; now it is a failed call (each module's agreed side), and
+     the D95 call's missing PART C answer counts the lines as a time, as on failure.
  134. D96 case library (his "კი" 2026-11-25; FIX THE CLASS step 4, missed in modules 2-6 and filled
      now): the real cases of modules 2-6 with both answers in tests/cases/e1_choice.json,
      f1_facts.json and d96_p_words.json, run by test_case_library.D96MeaningLibrary. For them the
@@ -7820,3 +7831,94 @@ class ScriptWordsByMeaning(unittest.TestCase):
         self.assertIn('short["short_judged"] = judged_short(short_questions(short), short.get("spoken", ""))', sc)
         self.assertIn('short["titles"] = compliance.pick_safe_title(short["titles"], short.get("claims") or [], sources, known,', sc)
         self.assertIn("+ ambiguous_titles(short.get(\"titles\"), short.get(\"thumbnail_text\", \"\")),", sc)
+
+
+class StyleWordsByMeaning(unittest.TestCase):
+    """135. D96 module 6 part 3 (his rule 2026-11-25: an ambiguous word by meaning in context, never a list)."""
+
+    def setUp(self):
+        import script
+        self.s = script
+        self.saved = (script.ask_claude, dict(script._style_seen))
+        script._style_seen.clear()
+
+    def tearDown(self):
+        self.s.ask_claude = self.saved[0]
+        self.s._style_seen.clear()
+        self.s._style_seen.update(self.saved[1])
+
+    def test_one_call(self):
+        s = self.s
+        calls = []
+
+        def ask(prompt, model=None, **kw):
+            calls.append(prompt)
+            return {"yes": []}
+        s.ask_claude = ask
+        hooks = ["Did Draymond Green just warn NBA coaches that players will start talking crazy about them?",
+                 "The NBA just suspended Marcus Smart, and Bassey slams him for it."]
+        s.judge_style(hooks, ["So in 1985 he beat Boston.", "I think he's right, because Luka is so good."])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("CLASH: Did Draymond", calls[0])
+        self.assertIn("FOG: Did Draymond", calls[0])
+        self.assertIn("REASON: So in 1985", calls[0])
+        self.assertNotIn("CLASH: The NBA just suspended", calls[0])   # a clear clash word: no question
+        self.assertNotIn("because Luka", calls[0])              # a clear reason word: no question
+        self.assertFalse(any(f == "fog word" for f, _ in s.hook_flaws(hooks[0])))
+        self.assertEqual(s.clash_count(hooks[0]), 0)
+        self.assertFalse(s.gives_reason("So in 1985 he beat Boston."))
+        s.judge_style(hooks)
+        self.assertEqual(len(calls), 1)                        # cached
+
+    def test_failed_or_broken_answer_is_as_before(self):
+        s = self.s
+        for answer in (RuntimeError("down"), {"words": []}, "not json"):
+            s._style_seen.clear()
+
+            def ask(prompt, model=None, answer=answer, **kw):
+                if isinstance(answer, Exception):
+                    raise answer
+                return answer
+            s.ask_claude = ask
+            s.judge_style(["Jokic blasts Nuggets after a crazy loss."], ["So in 1985 he beat Boston."])
+            self.assertEqual(s._style_seen, {}, answer)
+            self.assertEqual(s.clash_count("Jokic blasts Nuggets after a crazy loss."), 1)
+            self.assertTrue(any(f == "fog word" for f, _ in s.hook_flaws("Jokic blasts Nuggets after a crazy loss.")))
+            self.assertTrue(s.gives_reason("So in 1985 he beat Boston."))
+
+    def test_broken_answers_elsewhere_are_failures(self):
+        import collect
+        import signals
+        import media
+        kept = collect.judge_titles([{"title": "NBA betting scandal grows", "tier": 1, "publisher": "x"}],
+                                    ask=lambda p: '{"answer": "fine"}')
+        self.assertTrue(collect.spec_title(kept[0]))                          # as before, not "all no"
+        signals._judged.clear()
+        signals.judge_signals(["get bad news game"], [], ask=lambda p: '{"answer": "fine"}')
+        self.assertTrue(signals.story_phrase("get bad news game"))
+        signals._judged.clear()
+        saved = (media.ask_claude, dict(media._meta_seen))
+        try:
+            media._meta_seen.clear()
+            media.ask_claude = lambda prompt, model=None, **kw: {"answer": "fine"}
+            self.assertFalse(media.meta_ok({"_ask": [("broadcast", "File:x.webm", "ESPN warmups")]}))   # the safe side
+        finally:
+            media.ask_claude = saved[0]
+            media._meta_seen.clear()
+            media._meta_seen.update(saved[1])
+        s = self.s
+        saved = s.ask_claude
+        try:
+            s._time_seen.clear()
+            s.ask_claude = lambda prompt, model=None, **kw: {"words": []}
+            s.judge_ambiguous([], [], "ctx", ["Today he rests."])
+            self.assertEqual(s.judged_time_lines(["Today he rests."]), ["Today he rests."])
+        finally:
+            s.ask_claude = saved
+            s._time_seen.clear()
+
+    def test_the_builder_calls_it(self):
+        src = (ROOT / "src" / "script.py").read_text(encoding="utf-8")
+        self.assertLess(src.index("    judge_style([h.get(\"text\", \"\") for h in draft.get(\"hooks\", [])[:5]],"),
+                        src.index("        parts, verdict, formula = nba_hook_score(h[\"text\"])\n        hooks.append"))
+        self.assertIn("        judge_style([h.get(\"text\", \"\") for h in more.get(\"hooks\", [])[:5]])", src)

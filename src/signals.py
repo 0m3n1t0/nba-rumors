@@ -343,7 +343,9 @@ def judge_signals(suggestions: list[str], trends: list[dict], ask=None) -> None:
             ask = lambda p: editor.ask_claude(p, where="signals")       # noqa: E731
         raw = ask(SIGNALS_ASK.replace("ITEMS_TEXT", "\n".join(f"{n}. {q}" for n, (_, _, q) in enumerate(todo, 1))))
         raw = raw if isinstance(raw, dict) else json.loads(raw[raw.find("{"):raw.rfind("}") + 1])
-        yes = {int(x) for x in raw.get("yes", []) if str(x).isdigit()}
+        if not isinstance(raw.get("yes"), list):              # a broken answer is a failed call
+            raise ValueError("no \"yes\" list in the answer")
+        yes = {int(x) for x in raw["yes"] if str(x).isdigit()}
     except BaseException as exc:          # noqa: BLE001 - a missing CLI, the limit, a broken answer
         if isinstance(exc, KeyboardInterrupt):
             raise

@@ -13,6 +13,7 @@ case = the pre-push hook refuses the push (his answer "a failing case blocks mai
   E1 story choice            tests/cases/e1_choice.json   (modules 4-5: collect, editor, signals)
   F1 fact fidelity           tests/cases/f1_facts.json    (module 6 parts 1-2: articles, Short, titles)
   P1 / P2 words              tests/cases/d96_p_words.json (module 2 speech verbs, module 3 now/today)
+  S1 story build (style)     tests/cases/s1_style.json    (module 6 part 3: hook clash / fog, payoff "so")
 
 Adding a case: a real one, clear under a rule he agreed, with "source" and "why". A case that today's
 code gets wrong is NOT added as an expected failure: it is fixed first (his answer "first fix, then
@@ -31,7 +32,7 @@ sys.path.insert(0, str(ROOT / "src"))
 CASES = ROOT / "tests" / "cases"
 
 
-LIBRARIES = ("p1_who.json", "p2_uniform.json", "e1_choice.json", "f1_facts.json", "d96_p_words.json")
+LIBRARIES = ("p1_who.json", "p2_uniform.json", "e1_choice.json", "f1_facts.json", "d96_p_words.json", "s1_style.json")
 
 
 def load(name):
@@ -255,3 +256,24 @@ class D96MeaningLibrary(unittest.TestCase):
                     self.assertEqual(got, c["expect"], c["why"])
         finally:
             media._TIME_LINES[0] = saved
+
+    def test_s1_style(self):
+        import script
+        saved = dict(script._style_seen)
+        try:
+            for c in load("s1_style.json"):
+                with self.subTest(c["id"], text=c["text"][:60]):
+                    script._style_seen.clear()
+                    key = {"fog": "FOG", "reason": "REASON", "clash": "CLASH"}[c["kind"]]
+                    if "judged" in c:
+                        script._style_seen[(key, c["text"])] = c["judged"]
+                    if c["kind"] == "fog":
+                        got = any(f == "fog word" for f, _ in script.hook_flaws(c["text"]))
+                    elif c["kind"] == "reason":
+                        got = script.gives_reason(c["text"])
+                    else:
+                        got = script.clash_count(c["text"])
+                    self.assertEqual(got, c["expect"], c["why"])
+        finally:
+            script._style_seen.clear()
+            script._style_seen.update(saved)

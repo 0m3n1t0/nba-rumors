@@ -1,0 +1,73 @@
+[
+ {
+  "id": "S1-01",
+  "kind": "fog",
+  "source": "run 2026-11-11_43080115985 short_2 hooks",
+  "text": "Did Draymond Green just warn NBA coaches that players will start talking crazy about them?",
+  "judged": false,
+  "expect": false,
+  "why": "\"talking crazy\" is his own phrase, not a vague word (D96 module 6 part 3)"
+ },
+ {
+  "id": "S1-02",
+  "kind": "fog",
+  "source": "run 2026-11-12_43208765485 short_2 hooks",
+  "text": "Is Draymond Green the only thing standing between Jordan Poole and a Warriors reunion, or is he not?",
+  "judged": false,
+  "expect": false,
+  "why": "\"the only thing standing between\" is a set phrase, no fog"
+ },
+ {
+  "id": "S1-03",
+  "kind": "fog",
+  "source": "run 2026-11-12_43208765485 short_2 hooks",
+  "text": "Is Draymond Green the only thing standing between Jordan Poole and a Warriors reunion, or is he not?",
+  "expect": true,
+  "why": "no answer: as before, the word counts (his answer: a style score keeps \"as before\")"
+ },
+ {
+  "id": "S1-04",
+  "kind": "reason",
+  "source": "run 2026-11-12_43262308476 short_2 payoff",
+  "text": "So in 1985 he beat Boston.",
+  "judged": false,
+  "expect": false,
+  "why": "\"So\" opens the sentence: no reason given"
+ },
+ {
+  "id": "S1-05",
+  "kind": "reason",
+  "source": "run 2026-11-13_43407418420 short_1 payoff",
+  "text": "No reply isn't a verdict, so I want his side first.",
+  "judged": true,
+  "expect": true,
+  "why": "\"so\" gives the consequence: a reason"
+ },
+ {
+  "id": "S1-06",
+  "kind": "clash",
+  "source": "run 2026-11-17_44088855986 short_1 hooks",
+  "text": "Jokic blasts Nuggets after Suns loss: don't be bored, accept your role.",
+  "judged": true,
+  "expect": 1,
+  "why": "\"blasts\" here is a public callout: one clash word"
+ },
+ {
+  "id": "S1-07",
+  "kind": "clash",
+  "source": "run 2026-11-17_44088855986 short_1 hooks",
+  "text": "Jokic blasts Nuggets after Suns loss: don't be bored, accept your role.",
+  "judged": false,
+  "expect": 0,
+  "why": "if judged no clash, the ambiguous word adds nothing"
+ },
+ {
+  "id": "S1-08",
+  "kind": "clash",
+  "source": "run 2026-11-13_43353547001 short_1 hooks",
+  "text": "The NBA just suspended Marcus Smart for punching Charles Bassey in the face.",
+  "judged": false,
+  "expect": 1,
+  "why": "\"suspended\" is a clear clash word: counts whatever the answer"
+ }
+]

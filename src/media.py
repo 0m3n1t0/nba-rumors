@@ -1180,7 +1180,9 @@ def meta_judge_pending() -> None:
     try:
         ans = ask_claude(META_ASK.replace("ITEMS_TEXT", "\n".join(f"{n}. {q}" for n, (_, q) in enumerate(todo, 1))),
                          model=CLAUDE_MODEL, where="picture words")
-        yes = {int(x) for x in (ans or {}).get("yes", []) if str(x).isdigit()}
+        if not isinstance((ans or {}).get("yes"), list):      # a broken answer is a failed call (the safe side)
+            raise ValueError("no \"yes\" list in the answer")
+        yes = {int(x) for x in ans["yes"] if str(x).isdigit()}
     except UsageLimit:
         raise
     except Exception as exc:

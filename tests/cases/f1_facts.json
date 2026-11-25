@@ -1,0 +1,114 @@
+[
+ {
+  "id": "F1-01",
+  "kind": "official",
+  "source": "run 2026-11-13_43513168042 sources short_1",
+  "text": "Murray won't play in Friday night's NBA Cup group-play game between New Orleans and the Memphis Grizzlies, the Pelicans announced, citing his left ankle sprain.",
+  "signs": {
+   "official": true
+  },
+  "expect": true,
+  "why": "the team's own announcement (judged official)"
+ },
+ {
+  "id": "F1-02",
+  "kind": "official",
+  "source": "run 2026-11-16_43945813466 sources short_2",
+  "text": "This beef officially began on March 6, 2025, when LeBron's Los Angeles Lakers took on the New York Knicks at Crypto.com Arena.",
+  "signs": {
+   "official": false
+  },
+  "expect": false,
+  "why": "\"officially began\" tells a story, it is no official word"
+ },
+ {
+  "id": "F1-03",
+  "kind": "official",
+  "source": "run 2026-11-16_43945813466 sources short_2",
+  "text": "This beef officially began on March 6, 2025, when LeBron's Los Angeles Lakers took on the New York Knicks at Crypto.com Arena.",
+  "expect": false,
+  "why": "no answer: the stricter side, the ambiguous word does not count"
+ },
+ {
+  "id": "F1-04",
+  "kind": "reaction",
+  "source": "run 2026-11-13_43513168042 sources short_1",
+  "text": "Comments (0)",
+  "expect": false,
+  "why": "page furniture is no fan reaction (no answer: not counted)"
+ },
+ {
+  "id": "F1-05",
+  "kind": "response_articles",
+  "source": "run 2026-11-13_43513168042 sources short_2",
+  "text": "The Philadelphia 76ers needed a response after their 123–101 defeat to the Boston Celtics, but their Thursday night matchup against the Toronto Raptors nearly brought another setback.",
+  "signs": {
+   "response": false
+  },
+  "expect": false,
+  "why": "a team needing a response on the court is no reply to an accusation"
+ },
+ {
+  "id": "F1-06",
+  "kind": "response_articles",
+  "source": "run 2026-11-13_43513168042 sources short_1",
+  "text": "As reported by The Athletic, Murray responded to one of those posts, which showcased footage of him apparently misplacing a pass intended for forward Saddiq Bey.",
+  "expect": true,
+  "why": "no answer: the stricter side, the response counts (a Short leaving it out is held)"
+ },
+ {
+  "id": "F1-07",
+  "kind": "silence",
+  "source": "run 2026-11-12_43317261723 script",
+  "text": "Green says even after Kevin Durant's 54-point game, he never stopped talking.",
+  "judged": {
+   "silence": false
+  },
+  "expect": false,
+  "why": "he kept talking: no silence"
+ },
+ {
+  "id": "F1-08",
+  "kind": "silence",
+  "source": "run 2026-11-12_43262308476 script (D13)",
+  "text": "Barkley says Jordan cussed him out, and they stopped talking. He later called the silence stubborn, and there's still no update on a reunion.",
+  "expect": true,
+  "why": "the D13 Barkley-Jordan silence: counts (also with no answer, the stricter side)"
+ },
+ {
+  "id": "F1-09",
+  "kind": "turn_articles",
+  "source": "run 2026-11-17_44053022347 sources short_1",
+  "text": "But Bron made sure that any narrative around his health is squashed at the earliest.",
+  "signs": {
+   "reconciled": false
+  },
+  "expect": false,
+  "why": "a narrative squashed is no reconciliation"
+ },
+ {
+  "id": "F1-10",
+  "kind": "title",
+  "source": "run 2026-11-17_44110628783 script short_1 titles",
+  "text": "Curry could play 20 STRAIGHT seasons for GSW",
+  "expect": false,
+  "why": "\"could\" here is a plain possibility in a fact title, not a hedge (not judged a report)"
+ },
+ {
+  "id": "F1-11",
+  "kind": "title",
+  "source": "run 2026-11-13_43446225184 script short_1 titles",
+  "text": "Kyrie Irving trade RUMORS heat up 🔥",
+  "expect": true,
+  "why": "\"rumors\" is a clear hedge"
+ },
+ {
+  "id": "F1-12",
+  "kind": "title",
+  "source": "run 2026-11-16_43934705382 summary titles",
+  "text": "Teams want to be PAID to take Murray 💀",
+  "attributed": true,
+  "expect": true,
+  "why": "a reported stance, judged a report (PART A)"
+ }
+]

@@ -494,6 +494,11 @@ def headline_people(topic: dict) -> list[str]:
     return [w for _, w in sorted(found)]
 
 
+def major_turn(headline: str, turn=None) -> bool:
+    """D96 module 4: a clear turn word, or an ambiguous one the editor did not judge "no new turn"."""
+    return bool(MAJOR_TURN.search(headline)) or (bool(MAJOR_TURN_AMBIG.search(headline)) and turn is not False)
+
+
 def same_feud_recent(topic: dict, made: list[dict], now=None, turn=None) -> str:
     """Run 43088629255: three Shorts in one day on Brown and Tatum ("explains", "wasn't paying
     attention", "Tatum responds"), each with one small new detail. A story whose headline names
@@ -506,7 +511,7 @@ def same_feud_recent(topic: dict, made: list[dict], now=None, turn=None) -> str:
     from datetime import datetime, timezone
     who = headline_people(topic)
     head = topic.get("headline", "")
-    if len(who) < 2 or MAJOR_TURN.search(head) or (MAJOR_TURN_AMBIG.search(head) and turn is not False):
+    if len(who) < 2 or major_turn(head, turn):
         return ""
     now = now or datetime.now(timezone.utc)
     for m in made:

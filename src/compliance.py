@@ -311,14 +311,21 @@ TURN_AMBIG = re.compile(r"\b(made up|apologi[sz]\w*|time to talk|reached out|squ
 NAME = re.compile(r"\b[A-Z][a-z]{2,}\b")
 
 
+def silence_told(spoken: str, judged: dict | None = None) -> bool:
+    """D96 module 6 part 2: the Short speaks of silence (an ambiguous phrase unless judged not; stricter side)."""
+    return bool(SILENT.search(spoken)) or (bool(SILENT_AMBIG.search(spoken)) and (judged or {}).get("silence") is not False)
+
+
+def turn_told(spoken: str, judged: dict | None = None) -> bool:
+    """D96 module 6 part 2: the Short tells a turn (an ambiguous phrase only when judged so; stricter side)."""
+    return bool(TURN.search(spoken)) or (bool(TURN_AMBIG.search(spoken)) and (judged or {}).get("turn") is True)
+
+
 def missed_turn(spoken: str, sources: list[dict], judged: dict | None = None, signs: dict | None = None) -> str:
     """A source sentence telling of contact since the falling-out (with a name the Short says
     within two sentences of it), when the Short speaks of silence and never of that turn. ""=fine.
     D96 module 6 part 2: the ambiguous phrases by meaning (see SILENT / TURN above)."""
-    judged = judged or {}
-    silence = bool(SILENT.search(spoken)) or (bool(SILENT_AMBIG.search(spoken)) and judged.get("silence") is not False)
-    turn_told = bool(TURN.search(spoken)) or (bool(TURN_AMBIG.search(spoken)) and judged.get("turn") is True)
-    if not silence or turn_told:
+    if not silence_told(spoken, judged) or turn_told(spoken, judged):
         return ""
     ambiguous_ok = not (signs and signs.get("reconciled") is False)     # the articles' turn: stricter side
     said = {w.lower() for w in NAME.findall(spoken)}
@@ -603,6 +610,12 @@ def known_names(headlines: list[str]) -> set[str]:
     return out
 
 
+def title_hedged(text: str, attributed=()) -> bool:
+    """D96 module 6 part 2: a clear hedge, or an ambiguous one in a title judged a report (PART A)."""
+    return bool(TITLE_HEDGE.search(text)) or (bool(TITLE_HEDGE_AMBIG.search(text))
+                                              and _norm(text) in {_norm(x) for x in attributed or ()})
+
+
 def check_headline(text: str, claims: list[dict], sources: list[dict], kind: str,
                    known: set[str] | None = None, attributed=()) -> tuple[str, list[str]]:
     """kind = "title" or "thumbnail". Names must be in the story; an event word (traded,
@@ -623,8 +636,7 @@ def check_headline(text: str, claims: list[dict], sources: list[dict], kind: str
             if not re.search(pat, mat):
                 verdict = REJECT
                 notes.append(f"{kind} says \"{event}\" but no source reports it")
-            elif "CONFIRMED" not in statuses and not TITLE_HEDGE.search(text) \
-                    and not (TITLE_HEDGE_AMBIG.search(text) and _norm(text) in {_norm(x) for x in attributed or ()}):
+            elif "CONFIRMED" not in statuses and not title_hedged(text, attributed):
                 verdict = worst(verdict, REVIEW)
                 notes.append(f"{kind} states \"{event}\" as done, but the story is only reported")
     return verdict, notes
@@ -654,6 +666,16 @@ RESPONSE = re.compile(r"\b(denied|denies|deny|declined to comment|"
 # response") count only when the fact sheet says the accused responded; the spoken side (part 2)
 # still counts them as before
 RESPONSE_AMBIG = re.compile(r"\b(responded|response|statement)\b", re.I)
+
+
+def response_in_articles(mat: str, signs: dict | None = None) -> bool:
+    """D96 module 6: a clear word, or an ambiguous one unless the fact sheet said "no response" (stricter side)."""
+    return bool(RESPONSE.search(mat)) or (bool(RESPONSE_AMBIG.search(mat)) and not (signs and signs.get("response") is False))
+
+
+def response_in_short(spoken: str, judged: dict | None = None) -> bool:
+    """D96 module 6 part 2: a clear word, or an ambiguous one only when PART D said the Short tells it."""
+    return bool(RESPONSE.search(spoken)) or (bool(RESPONSE_AMBIG.search(spoken)) and (judged or {}).get("response") is True)
 
 
 def check_suitability(spoken: str, title: str, thumb: str, hook: str, sources: list[dict],
@@ -687,10 +709,8 @@ def check_suitability(spoken: str, title: str, thumb: str, hook: str, sources: l
         # D96 module 6 (his answer 2026-11-25: the safe side is always the STRICTER check): an
         # ambiguous word in the articles counts unless the fact sheet said "no response"; in the
         # Short only when the D95 call said the Short tells the response
-        response_known = bool(RESPONSE.search(mat)) or (bool(RESPONSE_AMBIG.search(mat))
-                                                        and not (signs and signs.get("response") is False))
-        response_told = bool(RESPONSE.search(spoken)) or (bool(RESPONSE_AMBIG.search(spoken))
-                                                          and (judged or {}).get("response") is True)
+        response_known = response_in_articles(mat, signs)
+        response_told = response_in_short(spoken, judged)
         if "private" in found:
             verdict = REJECT
             notes.append("private personal information")

@@ -7,6 +7,12 @@ case = the pre-push hook refuses the push (his answer "a failing case blocks mai
   P1 who is in the picture   tests/cases/p1_who.json      (the pick: D71; the top-ups: D50, D63, D72;
                                                          titles and names with a suffix: D73)
   P2 which uniform / era     tests/cases/p2_uniform.json  (team_fits: D30, D38, D42, D59, D60, D61)
+  D96 ambiguous words by meaning (his rule 2026-11-25), the real cases of each module, with the
+  judgement recorded as Claude gave or would give it ("judged" / "signs" / "attributed"; absent =
+  no answer, the agreed safe side):
+  E1 story choice            tests/cases/e1_choice.json   (modules 4-5: collect, editor, signals)
+  F1 fact fidelity           tests/cases/f1_facts.json    (module 6 parts 1-2: articles, Short, titles)
+  P1 / P2 words              tests/cases/d96_p_words.json (module 2 speech verbs, module 3 now/today)
 
 Adding a case: a real one, clear under a rule he agreed, with "source" and "why". A case that today's
 code gets wrong is NOT added as an expected failure: it is fixed first (his answer "first fix, then
@@ -23,6 +29,9 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 CASES = ROOT / "tests" / "cases"
+
+
+LIBRARIES = ("p1_who.json", "p2_uniform.json", "e1_choice.json", "f1_facts.json", "d96_p_words.json")
 
 
 def load(name):
@@ -85,7 +94,7 @@ def lookup_failed(m, case):
 
 class LibraryShape(unittest.TestCase):
     def test_every_case_has_its_source_and_reason(self):
-        for name in ("p1_who.json", "p2_uniform.json"):
+        for name in LIBRARIES:
             ids = set()
             for c in load(name):
                 self.assertTrue(c.get("source") and c.get("why"), c.get("id"))
@@ -95,7 +104,7 @@ class LibraryShape(unittest.TestCase):
     def test_both_answers_are_in_the_library(self):
         # a library of only "refused" (or only "allowed") cases would let a rule that refuses (or
         # allows) everything pass
-        for name in ("p1_who.json", "p2_uniform.json"):
+        for name in LIBRARIES:
             exp = {c["expect"] for c in load(name) if "expect" in c}
             self.assertEqual(exp, {True, False}, name)
 
@@ -177,3 +186,72 @@ class P1WhoLibrary(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class D96MeaningLibrary(unittest.TestCase):
+    """D96 (his rule 2026-11-25): each module's real cases; both answers present per file."""
+
+    def test_e1_story_choice(self):
+        import collect
+        import editor
+        import signals
+        for c in load("e1_choice.json"):
+            with self.subTest(c["id"], title=c["title"]):
+                j, k = c.get("judged"), c["kind"]
+                if k == "speculation":
+                    item = {"title": c["title"], **({"speculative": j} if j is not None else {})}
+                    got = collect.spec_title(item)
+                elif k == "league":
+                    it = {"title": c["title"], "tier": 1, "publisher": "x", "_ask_league": True}
+                    if collect.OTHER_LEAGUE.search(c["title"]):
+                        got = False                               # normalize drops it before any question
+                    else:
+                        got = bool(collect.judge_titles([it], ask=lambda p, j=j: '{"yes": [1]}' if j else '{"yes": []}'))
+                elif k == "turn":
+                    got = editor.major_turn(c["title"], j)
+                elif k == "opinion":
+                    got = bool(editor.OPINION.search(c["title"]))
+                else:
+                    signals._judged.clear()
+                    key = "nba" if k == "trend" else "story"
+                    if j is not None:
+                        signals._judged[(key, c["title"])] = j
+                    got = signals.nba_text(c["title"]) if k == "trend" else signals.story_phrase(c["title"])
+                    signals._judged.clear()
+                self.assertEqual(got, c["expect"], c["why"])
+
+    def test_f1_facts(self):
+        import compliance as C
+        for c in load("f1_facts.json"):
+            with self.subTest(c["id"], text=c["text"][:60]):
+                k, signs, judged = c["kind"], c.get("signs"), c.get("judged")
+                src = [{"title": "", "summary": "", "text": c["text"], "tier": 1, "publisher": "x"}]
+                if k == "official":
+                    got = C.original_reporters(src, signs)["official"]
+                elif k == "reaction":
+                    got = C.check_social_proof("Fans are furious about it.", src, False, signs)[0] == C.PASS
+                elif k == "response_articles":
+                    got = C.response_in_articles(c["text"], signs)
+                elif k == "silence":
+                    got = C.silence_told(c["text"], judged)
+                elif k == "turn_articles":
+                    got = bool(C.missed_turn("Bron and the critics stopped talking.", src, {}, signs))
+                else:
+                    got = C.title_hedged(c["text"], [c["text"]] if c.get("attributed") else ())
+                self.assertEqual(got, c["expect"], c["why"])
+
+    def test_p_words(self):
+        import media
+        saved = media._TIME_LINES[0]
+        try:
+            for c in load("d96_p_words.json"):
+                with self.subTest(c["id"], line=c["line"]):
+                    if c["kind"] == "speech":
+                        got = media.is_speech_line(c["line"], [c["line"]] if c.get("judged") else [])
+                    else:
+                        tl = c.get("time_lines")
+                        media._TIME_LINES[0] = None if tl is None else set(tl)
+                        got = media.names_a_time(c["line"], "")
+                    self.assertEqual(got, c["expect"], c["why"])
+        finally:
+            media._TIME_LINES[0] = saved

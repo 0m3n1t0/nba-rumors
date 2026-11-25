@@ -216,6 +216,12 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 134. D96 case library (his "კი" 2026-11-25; FIX THE CLASS step 4, missed in modules 2-6 and filled
+     now): the real cases of modules 2-6 with both answers in tests/cases/e1_choice.json,
+     f1_facts.json and d96_p_words.json, run by test_case_library.D96MeaningLibrary. For them the
+     decisions became small named predicates, the behaviour unchanged (replay identical):
+     editor.major_turn, compliance.silence_told / turn_told / title_hedged / response_in_articles /
+     response_in_short.
  133. D96 module 6 part 2 (his answers 2026-11-25, classes F1, Q1): the script's and title's
      ambiguous words by meaning, in the D95 call (no new call). SILENT keeps still silent / still
      feuding / haven't spoken / no reunion / went silent / cut off; TURN keeps reunited,

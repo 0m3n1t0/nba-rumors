@@ -1,0 +1,66 @@
+[
+ {
+  "id": "P1-42",
+  "kind": "speech",
+  "source": "run 2026-11-13_43407418420 short_2 script",
+  "line": "Dejounte Murray just posted that the sabotage is real, then deleted it.",
+  "judged": true,
+  "expect": true,
+  "why": "\"posted that...\" reports his own words (D96 module 2)"
+ },
+ {
+  "id": "P1-43",
+  "kind": "speech",
+  "source": "run 2026-11-13_43513168042 short_1 script",
+  "line": "Dejounte Murray ripped a fan, then asked out.",
+  "judged": false,
+  "expect": false,
+  "why": "\"asked out\" is a trade request, not his words"
+ },
+ {
+  "id": "P1-44",
+  "kind": "speech",
+  "source": "run 2026-11-17_44110628783 short_1 script",
+  "line": "Steph Curry could have asked for a max extension and took less.",
+  "judged": false,
+  "expect": false,
+  "why": "a request that never happened, not his words"
+ },
+ {
+  "id": "P1-45",
+  "kind": "speech",
+  "source": "run 2026-11-12_43199348111 short_2 script",
+  "line": "Bassey asked, \"What you gonna do?\"",
+  "judged": true,
+  "expect": true,
+  "why": "his own words"
+ },
+ {
+  "id": "P2-T1",
+  "kind": "time",
+  "source": "run 2026-11-12_43145065648 short_1 script",
+  "line": "Will the Bucks get the same hammer the Clippers got, now that Gary Trent Jr. is under investigation?",
+  "time_lines": [],
+  "expect": false,
+  "why": "\"now that\" is no present-time marker when judged so (D96 module 3)"
+ },
+ {
+  "id": "P2-T2",
+  "kind": "time",
+  "source": "run 2026-11-17_44053022347 short_1 script",
+  "line": "McMenamin reported that LeBron, now with the 76ers, asked coaches to be patient.",
+  "time_lines": [
+   "McMenamin reported that LeBron, now with the 76ers, asked coaches to be patient."
+  ],
+  "expect": true,
+  "why": "\"now with the 76ers\" places it at the present (judged)"
+ },
+ {
+  "id": "P2-T3",
+  "kind": "time",
+  "source": "run 2026-11-12_43145065648 short_1 script",
+  "line": "Will the Bucks get the same hammer the Clippers got, now that Gary Trent Jr. is under investigation?",
+  "expect": true,
+  "why": "a Short never judged: as before, \"now\" counts"
+ }
+]

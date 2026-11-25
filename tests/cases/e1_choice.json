@@ -1,0 +1,148 @@
+[
+ {
+  "id": "E1-01",
+  "kind": "speculation",
+  "source": "run 2026-11-11_43080115985 editor topics",
+  "title": "Bucks rumors: Brian Windhorst warns of guilty verdict, stripped draft picks, suspensions in $64 million Gary Trent Jr. case",
+  "judged": false,
+  "expect": false,
+  "why": "\"draft picks\" stripped in an investigation is a real event, not betting picks (D96 module 4)"
+ },
+ {
+  "id": "E1-02",
+  "kind": "speculation",
+  "source": "run 2026-11-11_43080115985 editor topics",
+  "title": "Jontay Porter Says Mafia Threats Drove NBA Betting Scandal, But Were They Even Real?",
+  "judged": false,
+  "expect": false,
+  "why": "a betting scandal is a real scandal, not betting content"
+ },
+ {
+  "id": "E1-03",
+  "kind": "speculation",
+  "source": "run 2026-11-11_43080115985 summary",
+  "title": "‘Would Welcome With Closed Fists,’ ‘Stop Lying’ — NBA Fans Mock Draymond Green’s Claim That He’d Have ‘No Issue’ With Jordan Poole Warriors Reunion",
+  "judged": false,
+  "expect": false,
+  "why": "fans mocking Draymond is beef, not a mock draft"
+ },
+ {
+  "id": "E1-04",
+  "kind": "speculation",
+  "source": "run 2026-11-16_43934705382 editor topics",
+  "title": "Rockets vs. Heat NBA picks: One 4-game winning streak will end as Giannis Antetokounmpo, Kevin Durant duel",
+  "judged": true,
+  "expect": true,
+  "why": "a betting picks preview: speculation when judged so"
+ },
+ {
+  "id": "E1-05",
+  "kind": "speculation",
+  "source": "run 2026-11-13_43513168042 editor topics",
+  "title": "NBA player props, odds, picks: James Harden, Shai Gilgeous-Alexander featured in Friday's best bets",
+  "expect": true,
+  "why": "clear words (player props, best bets) decide alone, no question"
+ },
+ {
+  "id": "E1-06",
+  "kind": "league",
+  "source": "run 2026-11-13_43513168042 editor topics",
+  "title": "Jimmy Butler Plans G League Game Rehab Stint Before Return To Warriors",
+  "judged": true,
+  "expect": true,
+  "why": "an NBA player's G League rehab stint is an NBA story (kept when judged NBA)"
+ },
+ {
+  "id": "E1-07",
+  "kind": "league",
+  "source": "run 2026-11-17_44110628783 editor topics",
+  "title": "Chargers' first win shakes up 2027 NFL Draft order; Texas climbs in college football Power Rankings",
+  "expect": false,
+  "why": "\"NFL\" is a clear word: dropped without a question"
+ },
+ {
+  "id": "E1-08",
+  "kind": "turn",
+  "source": "run 2026-11-13_43395656602 editor topics",
+  "title": "4 Clippers Players Who Could Be Traded By The 2027 NBA Trade Deadline",
+  "judged": false,
+  "expect": false,
+  "why": "a possibility, not a new turn (judged no)"
+ },
+ {
+  "id": "E1-09",
+  "kind": "turn",
+  "source": "run 2026-11-16_43945813466 summary",
+  "title": "If Brian Keefe were fired, who would be the Wizards’ interim head coach?",
+  "judged": false,
+  "expect": false,
+  "why": "hypothetical firing, no new turn"
+ },
+ {
+  "id": "E1-10",
+  "kind": "turn",
+  "source": "run 2026-11-13_43353547001 summary",
+  "title": "Warriors G-League affiliate re-signs Dalen Terry after Thunder stint",
+  "judged": false,
+  "expect": false,
+  "why": "a routine roster move, no turn in a feud"
+ },
+ {
+  "id": "E1-11",
+  "kind": "turn",
+  "source": "run 2026-11-12_43288011054 editor topics",
+  "title": "Smart ejected for punching Bassey as Warriors lose Curry to injury in defeat to Rockets",
+  "expect": true,
+  "why": "\"ejected\" is a clear turn word: decides alone"
+ },
+ {
+  "id": "E1-12",
+  "kind": "opinion",
+  "source": "run 2026-11-12_43317261723 editor topics",
+  "title": "How Victor Wembanyama's Spurs find tranquility in locker room commotion",
+  "expect": false,
+  "why": "a \"How\" start is no longer filler by the word: the editor's own kind decides"
+ },
+ {
+  "id": "E1-13",
+  "kind": "opinion",
+  "source": "run 2026-11-12_43253965466 summary",
+  "title": "10 Takeaways from a chaotic Celtics win over Raptors",
+  "expect": true,
+  "why": "\"takeaways\" is a clear listicle word: filler"
+ },
+ {
+  "id": "E1-14",
+  "kind": "trend",
+  "source": "run 2026-11-13_43353547001 summary (basketball trends)",
+  "title": "islanders vs kings",
+  "judged": false,
+  "expect": false,
+  "why": "hockey (LA Kings), not basketball, when judged"
+ },
+ {
+  "id": "E1-15",
+  "kind": "trend",
+  "source": "run 2026-11-12_43145065648 summary (basketball trends)",
+  "title": "knicks standings",
+  "expect": true,
+  "why": "\"knicks\" is a clear NBA word"
+ },
+ {
+  "id": "E1-16",
+  "kind": "story",
+  "source": "run 2026-11-16_43934705382 summary (search phrases)",
+  "title": "history career will",
+  "judged": false,
+  "expect": false,
+  "why": "a broken autocomplete, no story search"
+ },
+ {
+  "id": "E1-17",
+  "kind": "story",
+  "source": "run 2026-11-17_44098884631 editor topics (search phrases)",
+  "title": "luka doncic trade reaction",
+  "expect": true,
+  "why": "\"trade\" is a clear story word"
+ }
+]

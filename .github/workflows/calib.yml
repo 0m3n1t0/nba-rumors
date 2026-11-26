@@ -1,0 +1,66 @@
+name: Check calibration (by hand)
+
+# D81b (his answers 2026-11-26): runs the hook truth check again on the labelled hook cases
+# (nba/eval/calib/hook_cases.json in the private repo) and saves the verdicts there. Claude calls:
+# dispatched only with his yes (CLAUDE.md, EVALS ONLY WHEN TRULY NEEDED).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-pipeline        # never at the same time as a real run (one Claude limit)
+  cancel-in-progress: false
+
+env:
+  CHANNEL: nba
+  CLAUDE_MODEL: claude-sonnet-5-5
+  CLAUDE_MODEL_LIGHT: claude-haiku-5-5
+  CLAUDE_CODE_VERSION: "2.1.322"
+  DISABLE_AUTOUPDATER: "1"
+
+jobs:
+  calib:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Private state repository (the cases; verdicts are saved here)
+        uses: actions/checkout@v5
+        with:
+          repository: 0m3n1t0/nba-rumors-state
+          token: ${{ secrets.STATE_REPO_TOKEN }}
+          path: state
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Safety tests
+        run: python -m unittest discover -s tests
+
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/claude" --version
+
+      - name: Hook truth check on the hook cases
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: python src/calib.py hooks > /dev/null   # verdicts go to the private repo only
+
+      - name: Save the verdicts (private repo)
+        run: |
+          cd state
+          git config user.name nba-rumors-bot
+          git config user.email nba-rumors-bot@users.noreply.github.com
+          git add nba/eval/calib/hook_verdicts.json
+          git diff --cached --quiet || git commit -m "calib: hook truth verdicts"
+          for i in 1 2 3; do git push && break; git pull --rebase --autostash; sleep 5; done

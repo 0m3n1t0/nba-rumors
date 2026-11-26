@@ -216,6 +216,12 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 143. D81b (his answers 2026-11-19 and 2026-11-26): a measuring set for two checks. The final
+     read: one case = a whole Short of the receipts2 and factsheet evals with its STORED final verdict
+     (no Claude); the hook truth check: the chosen hook of every receipts2 and classfix base Short,
+     checked again by hand (calib.yml, his yes). A catch = line AND kind; a line-only match, a miss
+     and a false alarm are counted apart (never one accuracy, D85 item 2); excluded lines (rule
+     changed after the verdict, a prompt's example: D85 item 6) count in none of them.
  142. D90d (his answer 2026-11-26): the RECEIPTS format (quote against quote, D68) is on again in
      the daily runs (collect.yml NBA_FORMATS) after receipts3 on the D82 fact-sheet code (3 of 3
      clean, receipts2 0 of 3: quotes given to the wrong man); an eval with no formats given runs
@@ -8187,3 +8193,56 @@ class ReceiptsOnAgain(unittest.TestCase):
         self.assertRegex(y, r'(?m)^  NBA_FORMATS: "receipts"')
         e = (ROOT / ".github" / "workflows" / "eval.yml").read_text(encoding="utf-8")
         self.assertIn("NBA_FORMATS: ${{ github.event.inputs.formats || 'receipts' }}", e)
+
+
+class CalibrationSet(unittest.TestCase):
+    """143. D81b: the measuring set and its scoring."""
+
+    def setUp(self):
+        import importlib
+        self.c = importlib.import_module("calib")
+
+    def test_score_counts_apart(self):
+        cases = [{"case": "a"}, {"case": "b"}, {"case": "c"}]
+        verdicts = {"a": [{"line": 1, "kind": "WRONG WORDS"}, {"line": 3, "kind": "NOT IN THE SOURCES"}],
+                    "b": [{"line": 2, "kind": "WRONG PICTURE"}, {"line": 4, "kind": "WRONG PICTURE"}]}
+        labels = {"a": {"errors": [{"line": 1, "kind": "WRONG WORDS"}, {"line": 5, "kind": "WRONG WORDS"}]},
+                  "b": {"errors": [{"line": 2, "kind": "WRONG WORDS"}, {"line": 4, "kind": "WRONG PICTURE"}],
+                        "excluded": [{"line": 4, "why": "D90b rule changed"}]}}
+        r = self.c.score(cases, verdicts, labels)
+        self.assertEqual(r["catch"], [("a", 1, "WRONG WORDS")])
+        self.assertEqual(r["line_only"], [("b", 2, "WRONG WORDS")])
+        self.assertEqual(r["miss"], [("a", 5, "WRONG WORDS")])
+        self.assertEqual(r["false_alarm"], [("a", 3, "NOT IN THE SOURCES")])
+        self.assertEqual(r["excluded"], [("b", 4, "D90b rule changed")])     # in none of the counts
+        self.assertEqual(r["unlabelled"], ["c"])
+
+    def test_cases_from_stored_results(self):
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            ev = Path(t)
+            (ev / "results" / "receipts2").mkdir(parents=True)
+            (ev / "results" / "factsheet").mkdir(parents=True)
+            r = {"id": "s1", "made": True, "headline": "h", "script": {"hook": "H", "beats": ["b1", "b2"]},
+                 "final_read_errors": ["ignored"], "final_read_full": {"errors": [{"line": 2, "kind": "WRONG WORDS", "what": "x"}]}}
+            (ev / "results" / "receipts2" / "s1.json").write_text(json.dumps(r))
+            (ev / "results" / "receipts2" / "s2.json").write_text(json.dumps({"id": "s2", "made": False}))
+            got = self.c.final_read_cases(ev)
+            self.assertEqual(len(got), 1)                                    # only made Shorts
+            self.assertEqual(got[0]["lines"], ["H", "b1", "b2"])            # line 0 = the hook
+            self.assertEqual(got[0]["verdict"], [{"line": 2, "kind": "WRONG WORDS"}])
+            for base in ("receipts2", "classfix"):
+                d = ev / "base" / base / f"{base}_x"
+                d.mkdir(parents=True)
+                (d / "script.json").write_text(json.dumps({"hook": {"text": f"hook {base}"}, "hooks": [{"text": "other"}]}))
+            hooks = self.c.hook_cases(ev)
+            self.assertEqual([h["hook"] for h in hooks], ["hook receipts2", "hook classfix"])   # the chosen hook
+            self.assertEqual(hooks[0]["sources"], "base/receipts2/receipts2_x/sources.json")
+
+    def test_hook_run_by_hand_only(self):
+        y = (ROOT / ".github" / "workflows" / "calib.yml").read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", y)
+        self.assertNotIn("schedule:", y)
+        self.assertIn("group: claude-pipeline", y)
+        self.assertIn("python src/calib.py hooks > /dev/null", y)            # verdicts never in the public log

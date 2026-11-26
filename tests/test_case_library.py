@@ -23,6 +23,9 @@ import json
 import shutil
 import sys
 import unittest
+
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))   # also when run by name
+import clean_env  # noqa: F401,E402  D90d: the tests see the code's defaults, here and on GitHub
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch

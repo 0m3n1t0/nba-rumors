@@ -216,6 +216,11 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 144. D90d follow-up (his answer 2026-11-26, class R1): the tests see the code's own defaults
+     wherever they run. collect.yml set NBA_FORMATS "receipts" for the whole run and the "Safety
+     tests" step inherited it, so a test that assumed the format off failed on GitHub only (run
+     45772374347, nothing made). tests/clean_env.py removes every setting the workflows give the
+     whole run; each test file imports it before src/.
  143. D81b (his answers 2026-11-19 and 2026-11-26): a measuring set for two checks. The final
      read: one case = a whole Short of the receipts2 and factsheet evals with its STORED final verdict
      (no Claude); the hook truth check: the chosen hook of every receipts2 and classfix base Short,
@@ -450,6 +455,9 @@ import sys
 import tempfile
 import types
 import unittest
+
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))   # also when run by name
+import clean_env  # noqa: F401,E402  D90d: the tests see the code's defaults, here and on GitHub
 import urllib.parse
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -8246,3 +8254,27 @@ class CalibrationSet(unittest.TestCase):
         self.assertNotIn("schedule:", y)
         self.assertIn("group: claude-pipeline", y)
         self.assertIn("python src/calib.py hooks > /dev/null", y)            # verdicts never in the public log
+
+
+class TestsSeeDefaults(unittest.TestCase):
+    """144. D90d follow-up: no workflow-wide setting reaches the tests."""
+
+    def test_every_workflow_setting_is_cleared(self):
+        import clean_env
+        for wf in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+            y = wf.read_text(encoding="utf-8")
+            if "unittest discover" not in y or "\nenv:\n" not in y:
+                continue
+            block = y.split("\nenv:\n", 1)[1].split("\njobs:", 1)[0]
+            for name in re.findall(r"(?m)^  ([A-Z_]+):", block):
+                if name in ("CLAUDE_CODE_VERSION", "DISABLE_AUTOUPDATER"):
+                    continue                                 # read by the installer, never by src/
+                self.assertIn(name, clean_env.WORKFLOW_SETTINGS, f"{wf.name}: {name}")
+                self.assertNotIn(name, os.environ, name)
+
+    def test_every_test_file_imports_it_first(self):
+        for f in sorted((ROOT / "tests").glob("test_*.py")):
+            t = f.read_text(encoding="utf-8")
+            self.assertIn("import clean_env", t, f.name)
+            first_src = min(t.index(x) for x in ('sys.path.insert(0, str(ROOT / "src"))',) if x in t)
+            self.assertLess(t.index("import clean_env"), first_src, f.name)

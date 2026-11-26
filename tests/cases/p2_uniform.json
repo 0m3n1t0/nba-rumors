@@ -622,5 +622,59 @@
   },
   "expect": true,
   "why": "the Spurs are not his team, so they judge no jersey (D61): no team of his named (D30)"
+ },
+ {
+  "id": "P2-35",
+  "source": "run 2026-11-17_44040546534 short_2 line 0 (its own photo candidate, receipts2 base)",
+  "person": "Luka Doncic",
+  "line": "Luka Doncic took a clipboard from Lindsey Harding while the Lakers nearly blew 31 points.",
+  "photo": {
+   "title": "Luka Doncic (51914977481).jpg",
+   "tag": {
+    "v": "C",
+    "s": "allstar",
+    "e": "intense",
+    "t": "shoots one-handed in warmup",
+    "who": "Luka Doncic"
+   },
+   "team": "",
+   "date": "2022-02-19"
+  },
+  "expect": false,
+  "why": "D101: the line names the Lakers (his team since 2025); a 2022 photo with no jersey seen is from his Dallas years"
+ },
+ {
+  "id": "P2-36",
+  "source": "receipts2 base 2026-11-16_43934705382_short_1 photo, on the line of P2-35",
+  "person": "Luka Doncic",
+  "line": "Luka Doncic took a clipboard from Lindsey Harding while the Lakers nearly blew 31 points.",
+  "photo": {
+   "title": "Luka Doncic Lakers Jarrett Allen Donovan Mitchell Cavaliers Jan 2026.jpg",
+   "tag": {
+    "v": "S",
+    "s": "game",
+    "e": "unclear",
+    "t": "handles ball while double-teamed",
+    "who": "Luka Doncic"
+   },
+   "team": "current",
+   "date": "2026-01-28"
+  },
+  "expect": true,
+  "why": "D101: a January 2026 photo falls in his Lakers years"
+ },
+ {
+  "id": "P2-37",
+  "source": "run 2026-11-17_44078900140 short_2 line 0; photo from run 2026-11-12_43145065648",
+  "person": "Kawhi Leonard",
+  "line": "Kawhi Leonard was reportedly open to returning to the Spurs.",
+  "photo": {
+   "title": "1 kawhi leonard 2019 nba finals (cropped).jpg",
+   "tag": {},
+   "team": "",
+   "date": "2019-06-02"
+  },
+  "expect": false,
+  "why": "D101: the line names the Spurs; a 2019 Finals photo is from his Toronto year, not his Spurs years"
  }
 ]

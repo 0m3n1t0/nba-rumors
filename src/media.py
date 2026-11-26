@@ -622,6 +622,7 @@ _career: dict[str, set[str]] = {}                 # Wikidata item -> every NBA t
 _spells: dict[str, list[tuple[str, int, int]]] = {}   # Wikidata item -> (NBA team, first year, last year), infobox
 _coached: dict[str, set[str]] = {}                # Wikidata item -> NBA teams he coached (infobox coach_teamN)
 _coach_since: dict[str, int] = {}                 # D90b: Wikidata item -> year his coaching spell "present" began
+_coach_team: dict[str, str] = {}                  # D101: Wikidata item -> the NBA team of that coaching spell
 _college: dict[str, list[str]] = {}               # Wikidata item -> his college's names (infobox "college =")
 
 
@@ -712,6 +713,7 @@ def add_wiki_career(person: str, q: str) -> None:
     _coached[q] = wiki_coached(text)
     if wiki_coach_since(text):
         _coach_since[q] = wiki_coach_since(text)     # D90b (his answer 2026-11-26: coaches too)
+        _coach_team[q] = wiki_coach_team(text)       # D101
     _college[q] = wiki_college(text)
     if not teams:
         return                         # no NBA spell on the page: nothing to add
@@ -829,7 +831,16 @@ def wiki_coached(text: str) -> set[str]:
     return out
 
 
+def wiki_coach_team(text: str) -> str:
+    """D101: the NBA team of his coaching spell ending "present" (as wiki_coach_since), else ""."""
+    return _coach_present(text)[0]
+
+
 def wiki_coach_since(text: str) -> int:
+    return _coach_present(text)[1]
+
+
+def _coach_present(text: str) -> tuple[str, int]:
     """D90b (his answer 2026-11-26: coaches too): the year his NBA coaching spell ending "present" began
     (infobox coach_teamN with its coach_yearsN), else 0 (unknown: nothing changes, his answer)."""
     fields = {m.group(1).lower(): m.group(2).strip()
@@ -843,8 +854,8 @@ def wiki_coach_since(text: str) -> int:
         years = fields.get(f"coach_years{m.group(1)}", "")
         start = re.search(r"((?:19|20)\d\d)", years)
         if name in NBA_TEAMS and start and re.search(r"present", years, re.I):
-            return int(start.group(1))
-    return 0
+            return name, int(start.group(1))
+    return "", 0
 
 
 def wiki_career(text: str) -> tuple[set[str], str, int, int]:
@@ -2866,6 +2877,9 @@ def line_scope(line: str, person: str, names: list[str] | tuple = ()) -> dict:
             "spells": _spells.get(_wikidata.get(person, ""), []) if person else [],
             # D90b: when today's spell began (playing; else coaching, his answer), and the line's years
             "since": (since or _coach_since.get(_wikidata.get(person, ""), 0)) if person else 0,
+            # D101: his coaching team now and since when (a named team he coaches today)
+            "coach_team": _coach_team.get(_wikidata.get(person, ""), "") if person else "",
+            "coach_since": _coach_since.get(_wikidata.get(person, ""), 0) if person else 0,
             "line_years": [int(y) for y in LINE_YEAR.findall(line or "")]}
 
 
@@ -2886,7 +2900,17 @@ def era_allowed(era: dict, scope: dict) -> bool:
         return not scope["nba_named"] and not scope["timed"]
     # a named team of his: that jersey; no jersey seen: not a known former team (his answer)
     if scope["named"]:
-        return era["jersey"] in scope["named"] if era["jersey"] else not era["former"]
+        if era["jersey"]:
+            return era["jersey"] in scope["named"]
+        if era["former"]:
+            return False
+        # D101 (his answer 2026-11-26, D90b's rule for a named team): no jersey seen, so the photo's
+        # year decides: it must fall in his years with a named team (run 45773826552: Durant in 2012
+        # on "Houston won", a Rocket since 2025). Unknown year or years with that team: as before.
+        years = [(a, b) for team, a, b in scope.get("spells", []) if team in scope["named"]]
+        if scope.get("coach_team") in scope["named"] and scope.get("coach_since"):
+            years.append((scope["coach_since"], 9999))
+        return not (era.get("year") and years and not any(a <= era["year"] <= b for a, b in years))
     if not scope["timed"]:
         return True
     # a time ("now", "this season", a year of today's spell): today's team (D42)

@@ -216,6 +216,11 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 145. D101 (his answer 2026-11-26, class P2/Q1, real run 45773826552): a line naming a team of his
+     ("Houston won") showed Durant in a 2012 practice photo (no jersey seen; a Rocket since 2025): the
+     picker passed it, the final read did not flag it. Now, with no jersey seen, the photo's year
+     must fall in his years with a named team (infobox spells; for a team he coaches today, his
+     coaching spell); both stages. Unknown year or years with that team: as before.
  144. D90d follow-up (his answer 2026-11-26, class R1): the tests see the code's own defaults
      wherever they run. collect.yml set NBA_FORMATS "receipts" for the whole run and the "Safety
      tests" step inherited it, so a test that assumed the format off failed on GitHub only (run
@@ -8278,3 +8283,34 @@ class TestsSeeDefaults(unittest.TestCase):
             self.assertIn("import clean_env", t, f.name)
             first_src = min(t.index(x) for x in ('sys.path.insert(0, str(ROOT / "src"))',) if x in t)
             self.assertLess(t.index("import clean_env"), first_src, f.name)
+
+
+class NamedTeamYears(unittest.TestCase):
+    """145. D101: on a named-team line, a photo with no jersey must be from his years with that team."""
+
+    def test_years_with_the_named_team(self):
+        import media as m
+        scope = {"nba_named": True, "named": {"houston rockets"}, "timed": False, "national_line": False,
+                 "current": "houston rockets", "past_years": [], "since": 2025, "line_years": [],
+                 "spells": [("oklahoma city thunder", 2008, 2016), ("houston rockets", 2025, 9999)],
+                 "coach_team": "", "coach_since": 0}
+        era = {"jersey": "", "pre_nba": False, "former": False, "national": False, "national_only": False}
+        self.assertFalse(m.era_allowed({**era, "year": 2012}, scope))                     # Durant 2012
+        self.assertTrue(m.era_allowed({**era, "year": 2025}, scope))
+        self.assertTrue(m.era_allowed({**era, "year": 0}, scope))                         # unknown year
+        self.assertTrue(m.era_allowed({**era, "year": 2012, "jersey": "houston rockets"}, scope))   # his jersey
+        self.assertFalse(m.era_allowed({**era, "year": 2012, "jersey": "oklahoma city thunder"}, scope))
+        self.assertTrue(m.era_allowed({**era, "year": 2012}, {**scope, "spells": []}))   # years unknown
+        self.assertFalse(m.era_allowed({**era, "former": True, "year": 0}, scope))        # as before
+        kerr = {**scope, "named": {"golden state warriors"}, "spells": [("chicago bulls", 1993, 1998)],
+                "coach_team": "golden state warriors", "coach_since": 2014}
+        self.assertFalse(m.era_allowed({**era, "year": 2013}, kerr))                      # before he coached them
+        self.assertTrue(m.era_allowed({**era, "year": 2017}, kerr))
+
+    def test_coach_team_and_final_read(self):
+        import media as m
+        box = "| coach_team1 = [[Golden State Warriors]]\n| coach_years1 = {{nbay|2014|start}}\u2013present\n"
+        self.assertEqual(m.wiki_coach_team(box), "golden state warriors")
+        self.assertEqual(m.wiki_coach_since(box), 2014)
+        fr = (ROOT / "src" / "final_read.py").read_text(encoding="utf-8")
+        self.assertIn("The same for a named team (D101)", fr)

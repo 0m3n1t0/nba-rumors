@@ -216,6 +216,10 @@ the "Safety tests" step before anything is installed or made.
      picture pick shows no OTHER known man on that line (Arenas run: Draymond on "Steph Curry tore
      his oblique"; kept runs: Garnett on "Carmelo Anthony speaking"); a generic picture may, and an
      on_screen naming only a reporter or an executive keeps D50 (Curry on Shams Charania's line).
+ 142. D90d (his answer 2026-11-26): the RECEIPTS format (quote against quote, D68) is on again in
+     the daily runs (collect.yml NBA_FORMATS) after receipts3 on the D82 fact-sheet code (3 of 3
+     clean, receipts2 0 of 3: quotes given to the wrong man); an eval with no formats given runs
+     as the daily runs do (his answer), so it measures what the channel ships.
  141. D90b/c (his answers 2026-11-26; class P2/Q1, two stages disagreed): a time named on a line
      ("In 2024, Kerr said...") means the team and role he had then. The final read no longer calls a
      photo of him in that same team and role from another year an error (Kerr as the Warriors'
@@ -8173,3 +8177,13 @@ class TimeMeansTeamAndRole(unittest.TestCase):
         self.assertIn("A time means the team and\n   role he had then (D90b)", fr)
         ev = (ROOT / "src" / "eval_run.py").read_text(encoding="utf-8")
         self.assertIn('"on_screen": ["HOOK"] + [b.get("on_screen", "") for b in short.get("beats") or []]', ev)
+
+
+class ReceiptsOnAgain(unittest.TestCase):
+    """142. D90d: receipts on in the daily runs; an eval with no formats = the daily runs."""
+
+    def test_on(self):
+        y = (ROOT / ".github" / "workflows" / "collect.yml").read_text(encoding="utf-8")
+        self.assertRegex(y, r'(?m)^  NBA_FORMATS: "receipts"')
+        e = (ROOT / ".github" / "workflows" / "eval.yml").read_text(encoding="utf-8")
+        self.assertIn("NBA_FORMATS: ${{ github.event.inputs.formats || 'receipts' }}", e)

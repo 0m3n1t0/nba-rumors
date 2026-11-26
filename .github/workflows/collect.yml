@@ -29,6 +29,7 @@ env:
   CLAUDE_MODEL: claude-sonnet-5-5         # writing, judging, choosing pictures (Opus would use the plan 5x faster)
   CLAUDE_MODEL_LIGHT: claude-haiku-5-5    # simple steps (trimming, search words)
   MUSIC_UNDER_DB: "14"         # background music this many dB under the voice (14 = clearly audible, voice stays on top)
+  NBA_FORMATS: "receipts"      # D90d (his answer 2026-11-26): the RECEIPTS format is on again after receipts3 (3 of 3 clean)
   # Claude Code is PINNED (owner's decision 2026-11-11): a new release can never change a run
   # unseen. Claude checks the newest version once a month and proposes the update in chat.
   CLAUDE_CODE_VERSION: "2.1.322"

@@ -121,7 +121,7 @@ jobs:
       - name: "Eval: make the stories again (stops cleanly on the Claude limit)"
         env:
           EVAL_LABEL: ${{ github.event.inputs.label }}
-          NBA_FORMATS: ${{ github.event.inputs.formats }}
+          NBA_FORMATS: ${{ github.event.inputs.formats || 'receipts' }}   # D90d: empty = as in the daily runs
           EVAL_FROM: ${{ github.event.inputs.from_stage }}
           EVAL_BASE: ${{ github.event.inputs.base }}
           EVAL_STORIES: ${{ github.event.inputs.stories }}
